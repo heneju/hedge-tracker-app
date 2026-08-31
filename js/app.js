@@ -7,15 +7,15 @@
 // status, comentario, classificacao de conta). Execucoes, trades e vinculos sao
 // do coletor, e aparecem aqui somente como leitura.
 
-import { load, save, supabase, currentUser, signInWithEmail, signOut } from "./db.js?v=b0ee757df1";
+import { load, save, supabase, currentUser, signInWithEmail, signOut } from "./db.js?v=a13a6ffe9b";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor, magicSourcePart,
   accountShort,
-} from "./util.js?v=b0ee757df1";
+} from "./util.js?v=a13a6ffe9b";
 import {
   equityCurve, equityFinal, gauges, monthlyBars, firmBreakdown, accountProgress,
-} from "./charts.js?v=b0ee757df1";
+} from "./charts.js?v=a13a6ffe9b";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -726,11 +726,16 @@ async function renderConfig() {
       <td class="muted">${esc(a.login_or_name)}</td>
       <td class="num">${st && st.trade_count ? cash(st.net_pnl) : `<span class="dim">—</span>`}</td>
       <td class="num muted">${st?.trade_count || "—"}</td>
+      <td class="num">${a.cash_value != null
+        ? `<span class="bright">${money0(a.cash_value)}</span>`
+        : `<span class="dim">—</span>`}</td>
       <td>${a.kind === "prop" ? `<select data-plan="${a.id}">
         <option value="">— size —</option>
         ${plans.map((pl) => `<option value="${pl.id}" ${pl.id === a.plan_id ? "selected" : ""}>${
           esc(`${pl.prop_firms?.name ?? ""} ${money0(pl.account_size)}`)}</option>`).join("")}
-      </select>` : `<span class="dim">—</span>`}</td>
+      </select>${a.plan_id && a.plan_source === "inferred"
+        ? `<div style="font-size:9px;color:#555;margin-top:2px">from balance</div>` : ""}`
+        : `<span class="dim">—</span>`}</td>
       <td class="muted">${esc(a.label || a.terminal_path || "—")}</td>
       <td class="num muted">${a.magic_source_part ?? "—"}</td>
       <td><button class="btn ghost" data-toggle="${a.id}" data-kind="${a.kind}">
@@ -761,9 +766,10 @@ async function renderConfig() {
       <h2>Registered accounts</h2>
       <div class="scroll"><table>
         <thead><tr><th>Kind</th><th>ID</th><th>Platform</th><th>Account</th>
-          <th class="num">P&amp;L</th><th class="num">Trades</th><th>Plan</th>
+          <th class="num">P&amp;L</th><th class="num">Trades</th>
+          <th class="num">Balance</th><th>Plan</th>
           <th>Terminal</th><th class="num">magic_source_part</th><th></th></tr></thead>
-        <tbody>${accountRows || `<tr><td colspan="10">${empty("no accounts yet — register one below")}</td></tr>`}</tbody>
+        <tbody>${accountRows || `<tr><td colspan="11">${empty("no accounts yet — register one below")}</td></tr>`}</tbody>
       </table></div>
     </div>
 
@@ -809,8 +815,12 @@ async function renderConfig() {
   // O plano define alvo, drawdown e regras -- sem ele o painel não tem o que medir.
   view.querySelectorAll("[data-plan]").forEach((sel) => {
     sel.onchange = async () => {
-      await guard(() => save.account(Number(sel.dataset.plan),
-        { plan_id: sel.value ? Number(sel.value) : null }), "Plan set");
+      await guard(() => save.account(Number(sel.dataset.plan), {
+        plan_id: sel.value ? Number(sel.value) : null,
+        // Escolha do usuário vence: marcada como manual, o coletor não a
+        // sobrepõe mesmo que o saldo sugira outro tamanho.
+        plan_source: sel.value ? "manual" : null,
+      }), "Plan set");
       renderConfig();
     };
   });
