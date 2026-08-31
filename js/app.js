@@ -7,16 +7,16 @@
 // status, comentario, classificacao de conta). Execucoes, trades e vinculos sao
 // do coletor, e aparecem aqui somente como leitura.
 
-import { load, save, supabase, currentUser, signInWithEmail, signOut } from "./db.js?v=ddbbfac6b4";
+import { load, save, supabase, currentUser, signInWithEmail, signOut } from "./db.js?v=7cf98dc2b9";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor, magicSourcePart,
   accountShort,
-} from "./util.js?v=ddbbfac6b4";
+} from "./util.js?v=7cf98dc2b9";
 import {
   equityCurve, equityFinal, gauges, monthlyBars, firmBreakdown, accountProgress,
-} from "./charts.js?v=ddbbfac6b4";
-import { cell, locked, wireEditables } from "./editable.js?v=ddbbfac6b4";
+} from "./charts.js?v=7cf98dc2b9";
+import { cell, locked, wireEditables } from "./editable.js?v=7cf98dc2b9";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
