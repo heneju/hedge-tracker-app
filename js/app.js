@@ -7,15 +7,15 @@
 // status, comentario, classificacao de conta). Execucoes, trades e vinculos sao
 // do coletor, e aparecem aqui somente como leitura.
 
-import { load, save, supabase, currentUser, signInWithEmail, signOut } from "./db.js?v=a13a6ffe9b";
+import { load, save, supabase, currentUser, signInWithEmail, signOut } from "./db.js?v=515d2bba84";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor, magicSourcePart,
   accountShort,
-} from "./util.js?v=a13a6ffe9b";
+} from "./util.js?v=515d2bba84";
 import {
   equityCurve, equityFinal, gauges, monthlyBars, firmBreakdown, accountProgress,
-} from "./charts.js?v=a13a6ffe9b";
+} from "./charts.js?v=515d2bba84";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -956,6 +956,38 @@ async function go(page) {
 // Relógio do cabeçalho. Um segundo é a granularidade certa para o que ele
 // mostra e o custo é um innerHTML minúsculo.
 setInterval(renderStatus, 1000);
+
+/**
+ * Recarrega quando há versão nova publicada.
+ *
+ * O deploy versiona os módulos (`?v=<hash>`), então o JS novo sempre chega --
+ * mas o index.html que aponta para ele vem do GitHub Pages com `max-age=600`.
+ * Sem isto, por até dez minutos depois de publicar o navegador segue servindo o
+ * HTML antigo e a correção "não aparece", mesmo estando no ar.
+ */
+async function checkForUpdate() {
+  const mine = new URL(import.meta.url).searchParams.get("v");
+  if (!mine) return; // rodando local, sem versão carimbada
+
+  try {
+    const html = await fetch(new URL(location.pathname, location.origin), {
+      cache: "no-store",
+    }).then((r) => r.text());
+    const live = html.match(/app\.js\?v=([a-f0-9]+)/)?.[1];
+    if (!live || live === mine) return;
+
+    // Uma recarga por versão: se ainda divergir depois disso o problema é
+    // outro, e recarregar em laço deixaria o app inutilizável.
+    if (sessionStorage.getItem("tracking:reloaded") === live) return;
+    sessionStorage.setItem("tracking:reloaded", live);
+    location.reload();
+  } catch {
+    // Offline ou bloqueado: seguir com o que já está carregado.
+  }
+}
+
+checkForUpdate();
+setInterval(checkForUpdate, 5 * 60 * 1000);
 
 async function boot() {
   const user = await currentUser();
