@@ -24,7 +24,14 @@ const PAGES = [
   { id: "calc",       label: "Calculadora" },
 ];
 
-const state = { page: "overview", filters: { status: "", firm: "", month: "" } };
+const state = {
+  page: "overview",
+  filters: { status: "", firm: "", month: "" },
+  // Alimentado sempre que o journal e carregado, para a barra de status nao
+  // precisar de uma consulta so dela.
+  totals: { pnl: null, challenges: null },
+  email: "",
+};
 
 // ------------------------------------------------------------------- helpers
 
@@ -59,6 +66,47 @@ function render(html) {
   view.innerHTML = html;
 }
 
+// Barra de status do cabecalho. Mostra só o que é verdade: relógio, quem está
+// logado e o total já carregado. Sem métrica inventada.
+function renderStatus() {
+  const el = document.getElementById("status");
+  if (!el) return;
+  // Deslogado nao tem status a mostrar -- e o relogio redesenha a barra a cada
+  // segundo, entao sem esta guarda ela reaparece sozinha na tela de login.
+  if (!state.email) {
+    el.innerHTML = "";
+    return;
+  }
+  const { pnl, challenges } = state.totals;
+  const utc = new Date().toISOString().slice(11, 19);
+
+  el.innerHTML = `
+    <span><span class="dot"></span>ao vivo</span>
+    <span>utc <b>${utc}</b></span>
+    ${challenges != null ? `<span>contas <b>${challenges}</b></span>` : ""}
+    ${pnl != null ? `<span>pnl <b class="${signClass(pnl)} ${
+      Number(pnl) >= 0 ? "glow-green" : "glow-red"}">${money0(pnl)}</b></span>` : ""}
+    <span class="dim" title="${esc(state.email)}">${esc(state.email.split("@")[0])}</span>
+    <span class="actions">
+      <button class="btn ghost icon" id="refresh" title="Recarregar">↻</button>
+      <button class="btn ghost icon" id="logout" title="Sair">⏻</button>
+    </span>`;
+
+  el.querySelector("#refresh").onclick = () => go(state.page);
+  el.querySelector("#logout").onclick = async () => {
+    await signOut();
+    location.reload();
+  };
+}
+
+function setTotals(journal) {
+  state.totals = {
+    pnl: journal.reduce((a, c) => a + Number(c.total_pnl || 0), 0),
+    challenges: journal.length,
+  };
+  renderStatus();
+}
+
 function empty(message) {
   return `<div class="empty">${esc(message)}</div>`;
 }
@@ -67,16 +115,16 @@ function empty(message) {
 
 function renderLogin() {
   render(`
-    <div class="panel" style="max-width:420px;margin:8vh auto">
-      <h2>Entrar</h2>
+    <div class="panel" style="max-width:340px;margin:12vh auto">
+      <h2>auth<span style="color:var(--ghostest)">v1</span></h2>
       <div class="panel-body">
-        <p class="muted" style="margin-top:0">
-          Um link de acesso é enviado para o seu email. Vale no PC e no celular.
-        </p>
         <div class="field"><label>Email</label>
           <input id="email" type="email" autocomplete="email" placeholder="voce@exemplo.com">
         </div>
-        <button class="btn" id="send" style="margin-top:12px;width:100%">Enviar link</button>
+        <button class="btn" id="send" style="margin-top:14px;width:100%">Enviar link</button>
+        <p class="muted" style="margin:14px 0 0;font-size:9px;letter-spacing:.1em;line-height:1.7">
+          Um link de acesso vai para o seu email.<br>Vale no PC e no celular.
+        </p>
       </div>
     </div>`);
 
@@ -100,6 +148,7 @@ function renderLogin() {
 
 async function renderOverview() {
   const [journal, monthly] = await Promise.all([load.journal(), load.monthly()]);
+  setTotals(journal);
 
   const sum = (f) => journal.reduce((a, c) => a + Number(c[f] || 0), 0);
   const total = sum("total_pnl");
@@ -107,13 +156,18 @@ async function renderOverview() {
   const hedge = sum("lost_hedging");
   const open = journal.filter((c) => ["phase1", "phase2", "funded"].includes(c.status));
 
+  const cost = sum("cost");
+  const payouts = sum("funded_payout");
+
+  // signClass em tudo: zero fica neutro, senao "US$ 0,00" apareceria em verde
+  // ou vermelho e sugeriria um resultado que nao existe.
   const cards = [
     ["PnL total", money(total), signClass(total), `${journal.length} challenges`],
     ["Sem hedge teria sido", money(noHedge), signClass(noHedge), "custo + payouts"],
     ["Resultado do hedge", money(hedge), signClass(hedge), "as três colunas live"],
-    ["Custos", money(sum("cost")), "neg", "challenges comprados"],
-    ["Payouts", money(sum("funded_payout")), "pos", "recebido das mesas"],
-    ["Contas ativas", String(open.length), "", "fases 1, 2 e funded"],
+    ["Custos", money(cost), signClass(cost), "challenges comprados"],
+    ["Payouts", money(payouts), signClass(payouts), "recebido das mesas"],
+    ["Contas ativas", String(open.length), open.length ? "bright" : "muted", "fases 1, 2 e funded"],
   ].map(([label, value, cls, sub]) => `
     <div class="card">
       <div class="label">${esc(label)}</div>
@@ -126,7 +180,7 @@ async function renderOverview() {
     const pnl = Number(m.pnl);
     const height = Math.max(2, Math.round((Math.abs(pnl) / peak) * 120));
     return `<div class="col" title="${esc(monthLabel(m.month))}: ${money(pnl)} · ${m.accounts} contas">
-      <span class="${signClass(pnl)}" style="font-size:11px;font-variant-numeric:tabular-nums">${money0(pnl)}</span>
+      <span class="val ${signClass(pnl)}">${money0(pnl)}</span>
       <div class="bar ${pnl < 0 ? "neg" : ""}" style="height:${height}px"></div>
       <span class="tick">${esc(monthLabel(m.month))}</span>
     </div>`;
@@ -170,6 +224,7 @@ async function renderOverview() {
 
 async function renderChallenges() {
   const [journal, firms] = await Promise.all([load.journal(), load.firms()]);
+  setTotals(journal);
 
   const months = [...new Set(journal.filter((c) => c.date_open)
     .map((c) => c.date_open.slice(0, 7)))].sort().reverse();
@@ -220,7 +275,7 @@ async function renderChallenges() {
         <div class="field"><label>Mês de abertura</label>
           <select id="f-month">${options(
             months.map((m) => ({ value: m, label: monthLabel(m) })), month, "Todos")}</select></div>
-        <div class="field" style="flex:0"><label>&nbsp;</label>
+        <div class="field auto"><label>&nbsp;</label>
           <button class="btn" id="new-challenge">Novo challenge</button></div>
       </div>
     </div>
@@ -354,7 +409,7 @@ async function openChallenge(id, journal, firms) {
           <option value="refund">Reembolso</option></select></div>
         <div class="field"><label>Valor</label><input id="cash-amount" type="number" step="0.01" placeholder="-99.00"></div>
         <div class="field"><label>Data</label><input id="cash-date" type="date" value="${new Date().toISOString().slice(0, 10)}"></div>
-        <div class="field" style="flex:0"><label>&nbsp;</label><button class="btn" id="add-cash">Lançar</button></div>
+        <div class="field auto"><label>&nbsp;</label><button class="btn" id="add-cash">Lançar</button></div>
       </div></div>
 
       <div class="panel"><h2>Trades pareadas (prop × live)</h2><div class="scroll"><table>
@@ -451,7 +506,7 @@ async function openChallengeEditor(c, firms) {
 
       <div class="row" style="margin-top:8px">
         <button class="btn" id="save-challenge">Salvar</button>
-        ${isNew ? "" : `<button class="btn ghost" id="delete-challenge">Excluir</button>`}
+        ${isNew ? "" : `<button class="btn danger" id="delete-challenge">Excluir</button>`}
       </div>
     </div>`;
 
@@ -630,7 +685,7 @@ async function renderConfig() {
           </select></div>
           <div class="field"><label>Split padrão (%)</label>
             <input id="firm-split" type="number" step="0.01" placeholder="90"></div>
-          <div class="field" style="flex:0"><label>&nbsp;</label>
+          <div class="field auto"><label>&nbsp;</label>
             <button class="btn" id="add-firm">Adicionar</button></div>
         </div>
       </div>
@@ -745,40 +800,38 @@ function renderNav() {
   document.querySelectorAll("[data-page]").forEach((b) => {
     b.onclick = () => go(b.dataset.page);
   });
+  const section = document.getElementById("section");
+  if (section) section.textContent = PAGES.find((p) => p.id === state.page)?.label ?? "";
 }
 
 async function go(page) {
   state.page = page;
   location.hash = page;
   renderNav();
-  render(`<div class="empty">Carregando…</div>`);
+  render(`<div class="empty">carregando</div>`);
   try {
     await RENDERERS[page]();
   } catch (err) {
-    render(`<div class="panel"><div class="panel-body">
-      <strong>Não foi possível carregar.</strong>
-      <p class="muted">${esc(err.message)}</p>
+    render(`<div class="panel"><h2>Falha</h2><div class="panel-body">
+      <p class="muted" style="margin:0">${esc(err.message)}</p>
     </div></div>`);
   }
 }
 
-document.getElementById("refresh").onclick = () => go(state.page);
-document.getElementById("theme").onclick = () => {
-  const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
-  document.documentElement.dataset.theme = next;
-  try { localStorage.setItem("theme", next); } catch {}
-};
-
-try {
-  const saved = localStorage.getItem("theme");
-  if (saved) document.documentElement.dataset.theme = saved;
-} catch {}
+// Relógio do cabeçalho. Um segundo é a granularidade certa para o que ele
+// mostra e o custo é um innerHTML minúsculo.
+setInterval(renderStatus, 1000);
 
 async function boot() {
-  if (!(await currentUser())) {
+  const user = await currentUser();
+  if (!user) {
     document.getElementById("nav").innerHTML = "";
+    document.getElementById("status").innerHTML = "";
+    document.getElementById("section").textContent = "auth";
     return renderLogin();
   }
+  state.email = user.email ?? "";
+  renderStatus();
   renderNav();
   const initial = location.hash.slice(1);
   await go(RENDERERS[initial] ? initial : "overview");
