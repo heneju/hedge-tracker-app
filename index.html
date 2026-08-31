@@ -109,6 +109,11 @@ main{padding:14px;padding-bottom:calc(40px + env(safe-area-inset-bottom));max-wi
   display:flex;justify-content:space-between;align-items:center;
 }
 .panel-body{padding:12px}
+.panel > h2 .dim{font-weight:600}
+/* Dois paineis lado a lado no desktop, empilhados no celular. */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.grid-2 > .panel{margin-bottom:0}
+.grid-2{margin-bottom:12px}
 
 .scroll{overflow-x:auto}
 table{border-collapse:collapse;width:100%;font-size:11px}
@@ -223,6 +228,7 @@ dialog th{background:#0b0b0b}
   th,td{padding:6px 7px}
   .bars{height:110px}
   .bars .val{display:none}
+  .grid-2{grid-template-columns:1fr}
 }
 </style>
 </head>
@@ -242,6 +248,6 @@ dialog th{background:#0b0b0b}
 
 <dialog id="modal"></dialog>
 
-<script type="module" src="./js/app.js"></script>
+<script type="module" src="./js/app.js?v=90a602f587"></script>
 </body>
 </html>

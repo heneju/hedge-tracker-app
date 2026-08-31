@@ -7,21 +7,22 @@
 // status, comentario, classificacao de conta). Execucoes, trades e vinculos sao
 // do coletor, e aparecem aqui somente como leitura.
 
-import { load, save, supabase, currentUser, signInWithEmail, signOut } from "./db.js";
+import { load, save, supabase, currentUser, signInWithEmail, signOut } from "./db.js?v=90a602f587";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
-  STATUS_LABEL, PHASE_LABEL, magicSourcePart,
-} from "./util.js";
+  STATUS_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor, magicSourcePart,
+} from "./util.js?v=90a602f587";
+import { equityCurve, equityFinal, gauges, monthlyBars, firmBreakdown } from "./charts.js?v=90a602f587";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
 
 const PAGES = [
-  { id: "overview",   label: "Visão geral" },
+  { id: "overview",   label: "Overview" },
   { id: "challenges", label: "Challenges" },
-  { id: "unassigned", label: "Não atribuídos" },
-  { id: "config",     label: "Configuração" },
-  { id: "calc",       label: "Calculadora" },
+  { id: "unassigned", label: "Unassigned" },
+  { id: "config",     label: "Setup" },
+  { id: "calc",       label: "Calculator" },
 ];
 
 const state = {
@@ -57,7 +58,7 @@ async function guard(fn, okMessage) {
     if (okMessage) toast(okMessage);
     return result;
   } catch (err) {
-    toast(`Erro: ${err.message}`);
+    toast(`Error: ${err.message}`);
     throw err;
   }
 }
@@ -81,15 +82,15 @@ function renderStatus() {
   const utc = new Date().toISOString().slice(11, 19);
 
   el.innerHTML = `
-    <span><span class="dot"></span>ao vivo</span>
+    <span><span class="dot"></span>live</span>
     <span>utc <b>${utc}</b></span>
-    ${challenges != null ? `<span>contas <b>${challenges}</b></span>` : ""}
+    ${challenges != null ? `<span>accts <b>${challenges}</b></span>` : ""}
     ${pnl != null ? `<span>pnl <b class="${signClass(pnl)} ${
       Number(pnl) >= 0 ? "glow-green" : "glow-red"}">${money0(pnl)}</b></span>` : ""}
     <span class="dim" title="${esc(state.email)}">${esc(state.email.split("@")[0])}</span>
     <span class="actions">
-      <button class="btn ghost icon" id="refresh" title="Recarregar">↻</button>
-      <button class="btn ghost icon" id="logout" title="Sair">⏻</button>
+      <button class="btn ghost icon" id="refresh" title="Reload">↻</button>
+      <button class="btn ghost icon" id="logout" title="Sign out">⏻</button>
     </span>`;
 
   el.querySelector("#refresh").onclick = () => go(state.page);
@@ -121,9 +122,9 @@ function renderLogin() {
         <div class="field"><label>Email</label>
           <input id="email" type="email" autocomplete="email" placeholder="voce@exemplo.com">
         </div>
-        <button class="btn" id="send" style="margin-top:14px;width:100%">Enviar link</button>
+        <button class="btn" id="send" style="margin-top:14px;width:100%">Send link</button>
         <p class="muted" style="margin:14px 0 0;font-size:9px;letter-spacing:.1em;line-height:1.7">
-          Um link de acesso vai para o seu email.<br>Vale no PC e no celular.
+          A sign-in link goes to your email.<br>Works on desktop and phone.
         </p>
       </div>
     </div>`);
@@ -131,13 +132,13 @@ function renderLogin() {
   const send = document.getElementById("send");
   send.onclick = async () => {
     const email = document.getElementById("email").value.trim();
-    if (!email) return toast("Informe o email");
+    if (!email) return toast("Enter your email");
     send.disabled = true;
     try {
       await signInWithEmail(email);
-      toast("Link enviado — confira seu email");
+      toast("Link sent — check your email");
     } catch (err) {
-      toast(`Erro: ${err.message}`);
+      toast(`Error: ${err.message}`);
     } finally {
       send.disabled = false;
     }
@@ -154,20 +155,19 @@ async function renderOverview() {
   const total = sum("total_pnl");
   const noHedge = sum("no_hedge_pnl");
   const hedge = sum("lost_hedging");
-  const open = journal.filter((c) => ["phase1", "phase2", "funded"].includes(c.status));
-
   const cost = sum("cost");
   const payouts = sum("funded_payout");
+  const open = journal.filter((c) => ["phase1", "phase2", "funded"].includes(c.status));
 
-  // signClass em tudo: zero fica neutro, senao "US$ 0,00" apareceria em verde
-  // ou vermelho e sugeriria um resultado que nao existe.
+  // signClass em tudo: zero fica neutro, senao "$0.00" apareceria colorido e
+  // sugeriria um resultado que nao existe.
   const cards = [
-    ["PnL total", money(total), signClass(total), `${journal.length} challenges`],
-    ["Sem hedge teria sido", money(noHedge), signClass(noHedge), "custo + payouts"],
-    ["Resultado do hedge", money(hedge), signClass(hedge), "as três colunas live"],
-    ["Custos", money(cost), signClass(cost), "challenges comprados"],
-    ["Payouts", money(payouts), signClass(payouts), "recebido das mesas"],
-    ["Contas ativas", String(open.length), open.length ? "bright" : "muted", "fases 1, 2 e funded"],
+    ["Total P&L", money(total), signClass(total), `${journal.length} challenges`],
+    ["Without hedge", money(noHedge), signClass(noHedge), "costs + payouts"],
+    ["Hedge result", money(hedge), signClass(hedge), "the three live columns"],
+    ["Costs", money(cost), signClass(cost), "challenges bought"],
+    ["Payouts", money(payouts), signClass(payouts), "received from firms"],
+    ["Active accounts", String(open.length), open.length ? "bright" : "muted", "phase 1, 2 and funded"],
   ].map(([label, value, cls, sub]) => `
     <div class="card">
       <div class="label">${esc(label)}</div>
@@ -175,16 +175,20 @@ async function renderOverview() {
       <div class="sub">${esc(sub)}</div>
     </div>`).join("");
 
-  const peak = Math.max(1, ...monthly.map((m) => Math.abs(Number(m.pnl))));
-  const bars = monthly.map((m) => {
-    const pnl = Number(m.pnl);
-    const height = Math.max(2, Math.round((Math.abs(pnl) / peak) * 120));
-    return `<div class="col" title="${esc(monthLabel(m.month))}: ${money(pnl)} · ${m.accounts} contas">
-      <span class="val ${signClass(pnl)}">${money0(pnl)}</span>
-      <div class="bar ${pnl < 0 ? "neg" : ""}" style="height:${height}px"></div>
-      <span class="tick">${esc(monthLabel(m.month))}</span>
-    </div>`;
-  }).join("");
+  // Indicadores só quando há base para eles -- null vira traço no anel.
+  //
+  // "paid" e não "pass rate": uma conta marcada como failed pode ter pago
+  // payout antes de estourar, e paga com frequência. Medir por status diria
+  // que quase nada dá certo, o que não é o que os números mostram.
+  const paid = journal.filter((c) => Number(c.funded_payout) > 0).length;
+  const spent = Math.abs(cost);
+  const gross = payouts + spent;
+
+  const stats = {
+    paidRate: journal.length ? (paid / journal.length) * 100 : null,
+    hedgeDrag: gross ? (Math.abs(hedge) / gross) * 100 : null,
+    roi: spent ? (total / spent) * 100 : null,
+  };
 
   const rows = monthly.slice().reverse().map((m) => `
     <tr>
@@ -199,22 +203,45 @@ async function renderOverview() {
 
   render(`
     <div class="cards">${cards}</div>
-    <div class="panel">
-      <h2>PnL por mês</h2>
-      <div class="panel-body">
-        ${monthly.length ? `<div class="bars">${bars}</div>` : empty("Sem dados ainda")}
+
+    <div class="grid-2">
+      <div class="panel">
+        <h2>Equity curve<span class="${signClass(equityFinal(monthly))}">${money0(equityFinal(monthly))}</span></h2>
+        <div class="panel-body">
+          ${monthly.length ? equityCurve(monthly) : empty("no data yet")}
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Gauges<span class="dim">paid / drag / roi</span></h2>
+        <div class="panel-body">${gauges(stats)}</div>
       </div>
     </div>
+
+    <div class="grid-2">
+      <div class="panel">
+        <h2>P&amp;L by month</h2>
+        <div class="panel-body">
+          ${monthly.length ? monthlyBars(monthly) : empty("no data yet")}
+        </div>
+      </div>
+      <div class="panel">
+        <h2>By firm</h2>
+        <div class="panel-body">
+          ${journal.length ? firmBreakdown(journal) : empty("no data yet")}
+        </div>
+      </div>
+    </div>
+
     <div class="panel">
-      <h2>Fechamento mensal</h2>
+      <h2>Monthly close</h2>
       <div class="scroll">
         <table>
           <thead><tr>
-            <th>Mês</th><th class="num">Contas</th><th class="num">PnL</th>
-            <th class="num">Custo</th><th class="num">Payouts</th>
-            <th class="num">Hedge</th><th class="num">Sem hedge</th>
+            <th>Month</th><th class="num">Accounts</th><th class="num">P&amp;L</th>
+            <th class="num">Cost</th><th class="num">Payouts</th>
+            <th class="num">Hedge</th><th class="num">No hedge</th>
           </tr></thead>
-          <tbody>${rows || `<tr><td colspan="7">${empty("Sem dados")}</td></tr>`}</tbody>
+          <tbody>${rows || `<tr><td colspan="7">${empty("no data")}</td></tr>`}</tbody>
         </table>
       </div>
     </div>`);
@@ -245,15 +272,21 @@ async function renderChallenges() {
     `<option value="">${esc(blank)}</option>` +
     list.map((v) => `<option value="${esc(v.value)}" ${v.value === selected ? "selected" : ""}>${esc(v.label)}</option>`).join("");
 
+  // Uma mesa de etapa unica (Tradeify) nunca tera fase 2. Se nenhuma linha em
+  // vista usa duas fases, a coluna some em vez de exibir zeros para sempre.
+  const showP2 = rows.some((c) => Number(c.eval_phases) === 2);
+  const p2 = (html) => (showP2 ? html : "");
+  const cols = showP2 ? 12 : 11;
+
   const body = rows.map((c) => `
     <tr class="clickable" data-id="${c.id}">
       <td>${esc(c.firm || "—")}</td>
       <td class="muted">${esc(c.platform || "—")}</td>
       <td>${day(c.date_open)}</td>
-      <td>${badge(c.status, STATUS_LABEL[c.status] || c.status)}</td>
+      <td>${badge(c.status, statusLabel(c.status, c.eval_phases))}</td>
       <td class="num">${cash(c.cost)}</td>
       <td class="num">${cash(c.p1_live)}</td>
-      <td class="num">${cash(c.p2_live)}</td>
+      ${p2(`<td class="num">${cash(c.p2_live)}</td>`)}
       <td class="num">${cash(c.funded_live)}</td>
       <td class="num">${cash(c.funded_payout)}</td>
       <td class="num">${cash(c.lost_hedging)}</td>
@@ -263,20 +296,20 @@ async function renderChallenges() {
 
   render(`
     <div class="panel">
-      <h2>Filtros</h2>
+      <h2>Filters</h2>
       <div class="panel-body row">
         <div class="field"><label>Status</label>
           <select id="f-status">${options(
             Object.entries(STATUS_LABEL).map(([value, label]) => ({ value, label })),
-            status, "Todos")}</select></div>
-        <div class="field"><label>Mesa</label>
+            status, "All")}</select></div>
+        <div class="field"><label>Firm</label>
           <select id="f-firm">${options(
-            firms.map((f) => ({ value: f.name, label: f.name })), firm, "Todas")}</select></div>
-        <div class="field"><label>Mês de abertura</label>
+            firms.map((f) => ({ value: f.name, label: f.name })), firm, "All")}</select></div>
+        <div class="field"><label>Opened in</label>
           <select id="f-month">${options(
-            months.map((m) => ({ value: m, label: monthLabel(m) })), month, "Todos")}</select></div>
+            months.map((m) => ({ value: m, label: monthLabel(m) })), month, "All")}</select></div>
         <div class="field auto"><label>&nbsp;</label>
-          <button class="btn" id="new-challenge">Novo challenge</button></div>
+          <button class="btn" id="new-challenge">New challenge</button></div>
       </div>
     </div>
 
@@ -285,18 +318,18 @@ async function renderChallenges() {
       <div class="scroll">
         <table>
           <thead><tr>
-            <th>Mesa</th><th>Plataforma</th><th>Aberta</th><th>Status</th>
-            <th class="num">Custo</th><th class="num">Fase 1 live</th>
-            <th class="num">Fase 2 live</th><th class="num">Funded live</th>
+            <th>Firm</th><th>Platform</th><th>Opened</th><th>Status</th>
+            <th class="num">Cost</th><th class="num">Phase 1 live</th>
+            ${p2(`<th class="num">Phase 2 live</th>`)}<th class="num">Funded live</th>
             <th class="num">Payout</th><th class="num">Hedge</th>
             <th class="num">Total</th><th class="num">Trades</th>
           </tr></thead>
-          <tbody>${body || `<tr><td colspan="12">${empty("Nenhum challenge com esses filtros")}</td></tr>`}</tbody>
+          <tbody>${body || `<tr><td colspan="${cols}">${empty("no challenges match these filters")}</td></tr>`}</tbody>
           <tfoot><tr style="font-weight:640">
             <td colspan="4">Total</td>
             <td class="num">${cash(totals.cost)}</td>
             <td class="num">${cash(totals.p1_live)}</td>
-            <td class="num">${cash(totals.p2_live)}</td>
+            ${p2(`<td class="num">${cash(totals.p2_live)}</td>`)}
             <td class="num">${cash(totals.funded_live)}</td>
             <td class="num">${cash(totals.funded_payout)}</td>
             <td class="num">${cash(totals.lost_hedging)}</td>
@@ -358,7 +391,7 @@ async function openChallenge(id, journal, firms) {
 
   const phaseRows = phases.map((p) => `
     <tr>
-      <td>${esc(PHASE_LABEL[p.phase] || p.phase)}</td>
+      <td>${esc(phaseLabel(p.phase, c.eval_phases))}</td>
       <td>${esc(p.accounts?.login_or_name || p.account_ref || "—")}</td>
       <td class="muted">${esc(p.accounts?.platform || "—")}</td>
       <td>${p.started_at ? day(p.started_at) : "—"} → ${p.ended_at ? day(p.ended_at) : "aberta"}</td>
@@ -368,10 +401,10 @@ async function openChallenge(id, journal, firms) {
   const cashRows = cashEvents.map((e) => `
     <tr>
       <td>${day(e.occurred_on)}</td>
-      <td>${esc({ cost: "Custo", payout: "Payout", refund: "Reembolso" }[e.kind] || e.kind)}</td>
+      <td>${esc({ cost: "Cost", payout: "Payout", refund: "Refund" }[e.kind] || e.kind)}</td>
       <td class="num">${cash(e.amount)}</td>
       <td class="muted">${esc(e.source)}</td>
-      <td><button class="btn ghost" data-del-cash="${e.id}">Remover</button></td>
+      <td><button class="btn ghost" data-del-cash="${e.id}">Remove</button></td>
     </tr>`).join("");
 
   modal.innerHTML = `
@@ -379,14 +412,14 @@ async function openChallenge(id, journal, firms) {
       <h1>${esc(c.firm || "Challenge")} · ${day(c.date_open)}</h1>
       <span class="spacer"></span>
       ${badge(c.status, STATUS_LABEL[c.status] || c.status)}
-      <button class="btn ghost" id="edit-challenge">Editar</button>
-      <button class="btn ghost" id="close-modal">Fechar</button>
+      <button class="btn ghost" id="edit-challenge">Edit</button>
+      <button class="btn ghost" id="close-modal">Close</button>
     </header>
     <div style="padding:16px;max-height:74vh;overflow:auto">
       <div class="cards">
         <div class="card"><div class="label">Total</div>
           <div class="value ${signClass(c.total_pnl)}">${money(c.total_pnl)}</div></div>
-        <div class="card"><div class="label">Custo</div>
+        <div class="card"><div class="label">Cost</div>
           <div class="value neg">${money(c.cost)}</div></div>
         <div class="card"><div class="label">Payout</div>
           <div class="value pos">${money(c.funded_payout)}</div></div>
@@ -394,35 +427,35 @@ async function openChallenge(id, journal, firms) {
           <div class="value ${signClass(c.lost_hedging)}">${money(c.lost_hedging)}</div></div>
       </div>
 
-      <div class="panel"><h2>Fases</h2><div class="scroll"><table>
-        <thead><tr><th>Fase</th><th>Conta</th><th>Plataforma</th><th>Período</th><th>Resultado</th></tr></thead>
-        <tbody>${phaseRows || `<tr><td colspan="5">${empty("Nenhuma fase cadastrada")}</td></tr>`}</tbody>
+      <div class="panel"><h2>Phases</h2><div class="scroll"><table>
+        <thead><tr><th>Phase</th><th>Account</th><th>Platform</th><th>Period</th><th>Outcome</th></tr></thead>
+        <tbody>${phaseRows || `<tr><td colspan="5">${empty("no phases set")}</td></tr>`}</tbody>
       </table></div></div>
 
-      <div class="panel"><h2>Custos e payouts</h2><div class="scroll"><table>
-        <thead><tr><th>Data</th><th>Tipo</th><th class="num">Valor</th><th>Origem</th><th></th></tr></thead>
-        <tbody>${cashRows || `<tr><td colspan="5">${empty("Nada lançado")}</td></tr>`}</tbody>
+      <div class="panel"><h2>Costs &amp; payouts</h2><div class="scroll"><table>
+        <thead><tr><th>Date</th><th>Kind</th><th class="num">Amount</th><th>Source</th><th></th></tr></thead>
+        <tbody>${cashRows || `<tr><td colspan="5">${empty("nothing recorded")}</td></tr>`}</tbody>
       </table></div>
       <div class="panel-body row">
-        <div class="field"><label>Tipo</label><select id="cash-kind">
-          <option value="cost">Custo</option><option value="payout">Payout</option>
-          <option value="refund">Reembolso</option></select></div>
-        <div class="field"><label>Valor</label><input id="cash-amount" type="number" step="0.01" placeholder="-99.00"></div>
-        <div class="field"><label>Data</label><input id="cash-date" type="date" value="${new Date().toISOString().slice(0, 10)}"></div>
-        <div class="field auto"><label>&nbsp;</label><button class="btn" id="add-cash">Lançar</button></div>
+        <div class="field"><label>Kind</label><select id="cash-kind">
+          <option value="cost">Cost</option><option value="payout">Payout</option>
+          <option value="refund">Refund</option></select></div>
+        <div class="field"><label>Amount</label><input id="cash-amount" type="number" step="0.01" placeholder="-99.00"></div>
+        <div class="field"><label>Date</label><input id="cash-date" type="date" value="${new Date().toISOString().slice(0, 10)}"></div>
+        <div class="field auto"><label>&nbsp;</label><button class="btn" id="add-cash">Add</button></div>
       </div></div>
 
-      <div class="panel"><h2>Trades pareadas (prop × live)</h2><div class="scroll"><table>
+      <div class="panel"><h2>Paired trades (prop × live)</h2><div class="scroll"><table>
         <thead><tr>
-          <th>Entrada</th><th>Prop</th><th class="num">PnL prop</th>
-          <th>Live</th><th class="num">PnL live</th><th class="num">Net</th>
-          <th class="num">Mult.</th><th>Vínculo</th>
+          <th>Entry</th><th>Prop</th><th class="num">Prop P&amp;L</th>
+          <th>Live</th><th class="num">Live P&amp;L</th><th class="num">Net</th>
+          <th class="num">Mult.</th><th>Link</th>
         </tr></thead>
-        <tbody>${pairRows || `<tr><td colspan="8">${empty("Nenhum par ainda")}</td></tr>`}</tbody>
+        <tbody>${pairRows || `<tr><td colspan="8">${empty("no pairs yet")}</td></tr>`}</tbody>
       </table></div></div>
 
-      ${soloRows ? `<div class="panel"><h2>Trades sem par</h2><div class="scroll"><table>
-        <thead><tr><th>Entrada</th><th>Ponta</th><th>Ativo</th><th class="num">PnL</th></tr></thead>
+      ${soloRows ? `<div class="panel"><h2>Unpaired trades</h2><div class="scroll"><table>
+        <thead><tr><th>Entry</th><th>Leg</th><th>Symbol</th><th class="num">P&amp;L</th></tr></thead>
         <tbody>${soloRows}</tbody></table></div></div>` : ""}
     </div>`;
 
@@ -434,20 +467,20 @@ async function openChallenge(id, journal, firms) {
   };
   modal.querySelector("#add-cash").onclick = async () => {
     const amount = Number(modal.querySelector("#cash-amount").value);
-    if (!amount) return toast("Informe um valor");
+    if (!amount) return toast("Enter an amount");
     await guard(() => save.createCashEvent({
       challenge_id: id,
       kind: modal.querySelector("#cash-kind").value,
       amount,
       occurred_on: modal.querySelector("#cash-date").value,
       source: "manual",
-    }), "Lançamento salvo");
+    }), "Entry saved");
     modal.close();
     renderChallenges();
   };
   modal.querySelectorAll("[data-del-cash]").forEach((b) => {
     b.onclick = async () => {
-      await guard(() => save.deleteCashEvent(Number(b.dataset.delCash)), "Removido");
+      await guard(() => save.deleteCashEvent(Number(b.dataset.delCash)), "Removed");
       modal.close();
       renderChallenges();
     };
@@ -463,55 +496,81 @@ async function openChallengeEditor(c, firms) {
 
   const firmOptions = firms.map((f) =>
     `<option value="${f.id}" ${c && c.firm === f.name ? "selected" : ""}>${esc(f.name)}</option>`).join("");
-  const statusOptions = Object.entries(STATUS_LABEL).map(([v, l]) =>
-    `<option value="${v}" ${c?.status === v ? "selected" : ""}>${esc(l)}</option>`).join("");
+
+  // Status e fases sao regra da MESA: uma mesa de etapa unica nao pode oferecer
+  // "Phase 2", nem no seletor de status nem na lista de contas por fase.
+  const firmById = new Map(firms.map((f) => [String(f.id), f]));
+  const currentFirm = () => firmById.get(modal.querySelector("#c-firm")?.value ?? "");
+  const evalPhasesOf = (firm) => Number(firm?.eval_phases ?? c?.eval_phases ?? 2);
+
+  const statusSelect = (evalPhases, selected) =>
+    statusOptions(evalPhases).map((o) =>
+      `<option value="${o.value}" ${o.value === selected ? "selected" : ""}>${esc(o.label)}</option>`).join("");
+
   const accountOptions = (selected) =>
-    `<option value="">— nenhuma —</option>` + props.map((a) =>
+    `<option value="">— none —</option>` + props.map((a) =>
       `<option value="${a.id}" ${a.id === selected ? "selected" : ""}>${esc(a.login_or_name)} (${esc(a.platform)})</option>`).join("");
 
   const phases = c ? await load.phases(c.id) : [];
   const phaseOf = (p) => phases.find((x) => x.phase === p);
 
   modal.innerHTML = `
-    <header><h1>${isNew ? "Novo challenge" : "Editar challenge"}</h1>
+    <header><h1>${isNew ? "New challenge" : "Edit challenge"}</h1>
       <span class="spacer"></span>
-      <button class="btn ghost" id="close-modal">Cancelar</button></header>
+      <button class="btn ghost" id="close-modal">Cancel</button></header>
     <div style="padding:16px;max-height:74vh;overflow:auto">
       <div class="row">
-        <div class="field"><label>Mesa</label><select id="c-firm">
-          <option value="">— escolher —</option>${firmOptions}</select></div>
-        <div class="field"><label>Data de abertura</label>
+        <div class="field"><label>Firm</label><select id="c-firm">
+          <option value="">— pick one —</option>${firmOptions}</select></div>
+        <div class="field"><label>Opened</label>
           <input id="c-date" type="date" value="${esc(c?.date_open || new Date().toISOString().slice(0, 10))}"></div>
-        <div class="field"><label>Status</label><select id="c-status">${statusOptions}</select></div>
+        <div class="field"><label>Status</label><select id="c-status">${
+          statusSelect(evalPhasesOf(firms.find((f) => f.name === c?.firm)), c?.status)
+        }</select></div>
       </div>
       <div class="row" style="margin-top:12px">
-        <div class="field"><label>Meta de lucro</label>
+        <div class="field"><label>Profit target</label>
           <input id="c-target" type="number" step="0.01" value="${esc(c?.target ?? "")}"></div>
-        <div class="field"><label>Split do trader (%)</label>
+        <div class="field"><label>Trader split (%)</label>
           <input id="c-split" type="number" step="0.01" value="${esc(c?.split_pct ?? "")}"></div>
       </div>
-      <div class="field" style="margin-top:12px"><label>Comentários</label>
+      <div class="field" style="margin-top:12px"><label>Notes</label>
         <textarea id="c-comments" rows="2">${esc(c?.comments || "")}</textarea></div>
 
-      <div class="panel" style="margin-top:16px"><h2>Contas por fase</h2><div class="panel-body">
+      <div class="panel" style="margin-top:16px"><h2>Accounts per phase</h2><div class="panel-body">
         <p class="muted" style="margin-top:0">
-          É esta ligação que faz o resultado da conta live cair no challenge certo.
+          This link is what makes the live result land on the right challenge.
         </p>
-        ${["P1", "P2", "FUNDED"].map((p) => `
-          <div class="field" style="margin-bottom:10px">
-            <label>${esc(PHASE_LABEL[p])}</label>
-            <select data-phase="${p}">${accountOptions(phaseOf(p)?.account_id)}</select>
-          </div>`).join("")}
+        <div id="phase-fields"></div>
       </div></div>
 
       <div class="row" style="margin-top:8px">
-        <button class="btn" id="save-challenge">Salvar</button>
-        ${isNew ? "" : `<button class="btn danger" id="delete-challenge">Excluir</button>`}
+        <button class="btn" id="save-challenge">Save</button>
+        ${isNew ? "" : `<button class="btn danger" id="delete-challenge">Delete</button>`}
       </div>
     </div>`;
 
+  const renderPhaseFields = () => {
+    const evalPhases = evalPhasesOf(currentFirm());
+    modal.querySelector("#phase-fields").innerHTML = phasesFor(evalPhases).map((p) => `
+      <div class="field" style="margin-bottom:10px">
+        <label>${esc(phaseLabel(p, evalPhases))}</label>
+        <select data-phase="${p}">${accountOptions(phaseOf(p)?.account_id)}</select>
+      </div>`).join("");
+  };
+
   modal.showModal();
+  renderPhaseFields();
   modal.querySelector("#close-modal").onclick = () => modal.close();
+
+  // Trocar de mesa muda quantas fases existem, entao status e campos seguem.
+  modal.querySelector("#c-firm").onchange = () => {
+    const evalPhases = evalPhasesOf(currentFirm());
+    const statusEl = modal.querySelector("#c-status");
+    const keep = statusEl.value;
+    statusEl.innerHTML = statusSelect(evalPhases, keep);
+    renderPhaseFields();
+  };
 
   modal.querySelector("#save-challenge").onclick = async () => {
     const firmId = modal.querySelector("#c-firm").value;
@@ -543,7 +602,7 @@ async function openChallengeEditor(c, firms) {
           await save.deletePhase(existing.id);
         }
       }
-    }, "Challenge salvo");
+    }, "Challenge saved");
 
     modal.close();
     renderChallenges();
@@ -551,8 +610,8 @@ async function openChallengeEditor(c, firms) {
 
   const del = modal.querySelector("#delete-challenge");
   if (del) del.onclick = async () => {
-    if (!confirm("Excluir este challenge e seus lançamentos?")) return;
-    await guard(() => save.deleteChallenge(c.id), "Excluído");
+    if (!confirm("Delete this challenge and its entries?")) return;
+    await guard(() => save.deleteChallenge(c.id), "Deleted");
     modal.close();
     renderChallenges();
   };
@@ -579,7 +638,7 @@ async function renderUnassigned() {
       <td class="muted">${esc(t.magic ?? "—")}</td>
       <td>
         <select data-trade="${t.id}">
-          <option value="">— escolher fase —</option>
+          <option value="">— pick a phase —</option>
           ${options.map((o) => `<option value="${o.id}">${esc(o.label)}</option>`).join("")}
         </select>
       </td>
@@ -587,17 +646,17 @@ async function renderUnassigned() {
 
   render(`
     <div class="panel">
-      <h2>${trades.length} trades da conta live sem challenge</h2>
+      <h2>${trades.length} live trades with no challenge</h2>
       <div class="panel-body" style="padding-bottom:0">
         <p class="muted" style="margin-top:0">
-          O coletor só atribui pelo magic do Copyator. O que cai aqui é operação
-          manual, conta antiga ou conta ainda não cadastrada — nada é chutado.
+          The collector only attributes by the Copyator magic. What lands here is a
+          manual trade, an old account, or one not registered yet — nothing is guessed.
         </p>
       </div>
       <div class="scroll"><table>
-        <thead><tr><th>Saída</th><th>Ativo</th><th class="num">PnL</th>
-          <th>Comentário</th><th>Magic</th><th style="min-width:230px">Atribuir a</th></tr></thead>
-        <tbody>${rows || `<tr><td colspan="6">${empty("Nada pendente — tudo atribuído")}</td></tr>`}</tbody>
+        <thead><tr><th>Exit</th><th>Symbol</th><th class="num">P&amp;L</th>
+          <th>Comment</th><th>Magic</th><th style="min-width:230px">Assign to</th></tr></thead>
+        <tbody>${rows || `<tr><td colspan="6">${empty("nothing pending — all attributed")}</td></tr>`}</tbody>
       </table></div>
     </div>`);
 
@@ -605,7 +664,7 @@ async function renderUnassigned() {
     select.onchange = async () => {
       if (!select.value) return;
       await guard(() => save.assignTrade(Number(select.dataset.trade), Number(select.value)),
-        "Trade atribuída");
+        "Trade assigned");
       renderUnassigned();
     };
   });
@@ -627,7 +686,7 @@ async function renderConfig() {
       <td class="muted">${esc(a.label || a.terminal_path || "—")}</td>
       <td class="num muted">${a.magic_source_part ?? "—"}</td>
       <td><button class="btn ghost" data-toggle="${a.id}" data-kind="${a.kind}">
-        Marcar como ${a.kind === "live" ? "prop" : "live"}</button></td>
+        Set as ${a.kind === "live" ? "prop" : "live"}</button></td>
     </tr>`).join("");
 
   const discoveredRows = discovered.map((d) => {
@@ -637,10 +696,10 @@ async function renderConfig() {
       <td>${esc(d.label)}</td>
       <td class="muted">${esc(d.login_or_name)}</td>
       <td>${claimed.has(key)
-        ? `<span class="muted">já cadastrada</span>`
+        ? `<span class="muted">registered</span>`
         : `<div class="row">
              ${d.platform === "MT5"
-               ? `<input data-login="${d.id}" placeholder="login MT5" style="width:130px">`
+               ? `<input data-login="${d.id}" placeholder="MT5 login" style="width:130px">`
                : ""}
              <button class="btn ghost" data-claim="${d.id}" data-kind="prop">+ prop</button>
              <button class="btn ghost" data-claim="${d.id}" data-kind="live">+ live</button>
@@ -650,43 +709,49 @@ async function renderConfig() {
 
   render(`
     <div class="panel">
-      <h2>Contas cadastradas</h2>
+      <h2>Registered accounts</h2>
       <div class="scroll"><table>
-        <thead><tr><th>Tipo</th><th>Plataforma</th><th>Conta</th>
+        <thead><tr><th>Kind</th><th>Platform</th><th>Account</th>
           <th>Terminal</th><th class="num">magic_source_part</th><th></th></tr></thead>
-        <tbody>${accountRows || `<tr><td colspan="6">${empty("Nenhuma conta ainda — cadastre abaixo")}</td></tr>`}</tbody>
+        <tbody>${accountRows || `<tr><td colspan="6">${empty("no accounts yet — register one below")}</td></tr>`}</tbody>
       </table></div>
     </div>
 
     <div class="panel">
-      <h2>Encontradas neste PC</h2>
+      <h2>Found on this PC</h2>
       <div class="panel-body" style="padding-bottom:0">
         <p class="muted" style="margin-top:0">
-          O coletor publica o que achou; quem decide o que é live e o que é prop é você.
-          Para MT5 informe o login, porque o número da conta só aparece com o terminal aberto.
+          The collector publishes what it found; you decide which is live and which is prop.
+          For MT5 enter the login — the account number only shows with the terminal open.
         </p>
       </div>
       <div class="scroll"><table>
-        <thead><tr><th>Plataforma</th><th>Terminal</th><th>Identificador</th><th>Classificar</th></tr></thead>
-        <tbody>${discoveredRows || `<tr><td colspan="4">${empty("Rode: python -m collector.discovery --push")}</td></tr>`}</tbody>
+        <thead><tr><th>Platform</th><th>Terminal</th><th>Identifier</th><th>Classify</th></tr></thead>
+        <tbody>${discoveredRows || `<tr><td colspan="4">${empty("run: python -m collector.discovery --push")}</td></tr>`}</tbody>
       </table></div>
     </div>
 
     <div class="panel">
-      <h2>Mesas proprietárias</h2>
+      <h2>Prop firms</h2>
       <div class="panel-body">
         <div class="row">
-          ${firms.map((f) => badge("closed", `${f.name} · ${f.platform}`)).join(" ") || `<span class="muted">Nenhuma</span>`}
+          ${firms.map((f) => badge("closed",
+            `${f.name} · ${f.platform} · ${Number(f.eval_phases) === 1 ? "1 phase" : "2 phases"}`)
+          ).join(" ") || `<span class="muted">none</span>`}
         </div>
         <div class="row" style="margin-top:12px">
-          <div class="field"><label>Nome</label><input id="firm-name" placeholder="Tradeify"></div>
-          <div class="field"><label>Plataforma</label><select id="firm-platform">
+          <div class="field"><label>Name</label><input id="firm-name" placeholder="Tradeify"></div>
+          <div class="field"><label>Platform</label><select id="firm-platform">
             <option>NT8</option><option>MT5</option><option>Tradovate</option><option>Other</option>
           </select></div>
-          <div class="field"><label>Split padrão (%)</label>
+          <div class="field"><label>Eval phases</label><select id="firm-phases">
+            <option value="2">2 — phase 1 + phase 2</option>
+            <option value="1">1 — straight to funded</option>
+          </select></div>
+          <div class="field"><label>Default split (%)</label>
             <input id="firm-split" type="number" step="0.01" placeholder="90"></div>
           <div class="field auto"><label>&nbsp;</label>
-            <button class="btn" id="add-firm">Adicionar</button></div>
+            <button class="btn" id="add-firm">Add</button></div>
         </div>
       </div>
     </div>`);
@@ -694,7 +759,7 @@ async function renderConfig() {
   view.querySelectorAll("[data-toggle]").forEach((b) => {
     b.onclick = async () => {
       await guard(() => save.account(Number(b.dataset.toggle),
-        { kind: b.dataset.kind === "live" ? "prop" : "live" }), "Conta atualizada");
+        { kind: b.dataset.kind === "live" ? "prop" : "live" }), "Account updated");
       renderConfig();
     };
   });
@@ -704,7 +769,7 @@ async function renderConfig() {
       const d = discovered.find((x) => x.id === Number(b.dataset.claim));
       const loginInput = view.querySelector(`[data-login="${d.id}"]`);
       const login = d.platform === "MT5" ? (loginInput?.value || "").trim() : d.login_or_name;
-      if (d.platform === "MT5" && !login) return toast("Informe o login do MT5");
+      if (d.platform === "MT5" && !login) return toast("Enter the MT5 login");
 
       await guard(() => save.createAccount({
         kind: b.dataset.kind,
@@ -715,19 +780,20 @@ async function renderConfig() {
         terminal_path: d.terminal_path,
         broker_server: d.broker_server,
         magic_source_part: magicSourcePart(d.platform, login),
-      }), "Conta cadastrada");
+      }), "Account registered");
       renderConfig();
     };
   });
 
   document.getElementById("add-firm").onclick = async () => {
     const name = document.getElementById("firm-name").value.trim();
-    if (!name) return toast("Informe o nome");
+    if (!name) return toast("Enter a name");
     await guard(() => save.createFirm({
       name,
       platform: document.getElementById("firm-platform").value,
+      eval_phases: Number(document.getElementById("firm-phases").value),
       default_split: Number(document.getElementById("firm-split").value) || null,
-    }), "Mesa adicionada");
+    }), "Firm added");
     renderConfig();
   };
 }
@@ -737,29 +803,29 @@ async function renderConfig() {
 function renderCalc() {
   render(`
     <div class="panel" style="max-width:560px">
-      <h2>Economia do hedge</h2>
+      <h2>Hedge economics</h2>
       <div class="panel-body">
         <p class="muted" style="margin-top:0">
-          O bloco <em>Target × Multiplier</em> da planilha: quanto do payout o hedge consome.
+          The <em>Target × Multiplier</em> block from the spreadsheet: how much of the payout the hedge eats.
         </p>
         <div class="row">
-          <div class="field"><label>Meta (target)</label>
+          <div class="field"><label>Target</label>
             <input id="k-target" type="number" value="3000" step="100"></div>
-          <div class="field"><label>Multiplicador</label>
+          <div class="field"><label>Multiplier</label>
             <input id="k-mult" type="number" value="0.1" step="0.01"></div>
-          <div class="field"><label>Split do trader (%)</label>
+          <div class="field"><label>Trader split (%)</label>
             <input id="k-split" type="number" value="90" step="1"></div>
         </div>
         <div class="cards" style="margin-top:16px">
-          <div class="card"><div class="label">Custo do hedge</div>
+          <div class="card"><div class="label">Hedge cost</div>
             <div class="value neg" id="k-cost">—</div>
-            <div class="sub">meta × multiplicador</div></div>
-          <div class="card"><div class="label">Após o split</div>
+            <div class="sub">target × multiplier</div></div>
+          <div class="card"><div class="label">After split</div>
             <div class="value" id="k-after">—</div>
-            <div class="sub">meta × split</div></div>
-          <div class="card"><div class="label">Lucro líquido</div>
+            <div class="sub">target × split</div></div>
+          <div class="card"><div class="label">Net profit</div>
             <div class="value" id="k-net">—</div>
-            <div class="sub">após split − custo do hedge</div></div>
+            <div class="sub">after split − hedge cost</div></div>
         </div>
       </div>
     </div>`);
@@ -808,11 +874,11 @@ async function go(page) {
   state.page = page;
   location.hash = page;
   renderNav();
-  render(`<div class="empty">carregando</div>`);
+  render(`<div class="empty">loading</div>`);
   try {
     await RENDERERS[page]();
   } catch (err) {
-    render(`<div class="panel"><h2>Falha</h2><div class="panel-body">
+    render(`<div class="panel"><h2>Failed</h2><div class="panel-body">
       <p class="muted" style="margin:0">${esc(err.message)}</p>
     </div></div>`);
   }
