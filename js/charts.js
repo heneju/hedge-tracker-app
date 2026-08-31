@@ -5,7 +5,7 @@
 // `vector-effect="non-scaling-stroke"` mantém a espessura da linha constante
 // mesmo com a escala distorcida, que é o que quebra SVG esticado.
 
-import { money, money0, monthLabel, signClass, esc } from "./util.js?v=e34e89fab7";
+import { money, money0, monthLabel, signClass, esc } from "./util.js?v=458f4f7301";
 
 const UP = "#00cc00";
 const DOWN = "#cc0000";
@@ -265,7 +265,9 @@ export function accountProgress(rows) {
           </div>
           <div style="display:flex;gap:18px;flex-wrap:wrap;font-size:10px">
             <span class="dim">multiplier
-              <b style="color:#fff;font-size:12px">${Number(a.rec_multiplier).toFixed(3)}</b></span>
+              <b style="color:#fff;font-size:12px">${Number(a.rec_multiplier).toFixed(3)}</b>
+              ${a.raw_multiplier_shown ? "" : `<span style="color:#3a3a3a">
+                (${Number(a.spent / a.drawdown_room).toFixed(3)} + buffer)</span>`}</span>
             <span class="dim">target
               <b style="color:#fff">${money0(a.rec_today_target)}</b></span>
             <span class="dim">hedge cost
