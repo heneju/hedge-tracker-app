@@ -5,7 +5,7 @@
 // fica so no coletor, no PC.
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { CONFIG } from "./config.js?v=219dc6d2f4";
+import { CONFIG } from "./config.js?v=4605ca5433";
 
 export const supabase = createClient(CONFIG.url, CONFIG.anonKey);
 
@@ -105,6 +105,23 @@ export const load = {
           .order("entry_ts", { ascending: false })
           .then(unwrap),
 
+  // Reportes de problema. O admin recebe tambem os dos outros usuarios -- e a
+  // politica no banco que decide isso, nao um filtro aqui.
+  issues: () =>
+    supabase.from("issues")
+      .select("*")
+      .order("status")
+      .order("created_at", { ascending: false })
+      .then(unwrap),
+
+  // Só a contagem: o menu precisa do número, não das linhas.
+  openIssueCount: () =>
+    supabase.from("issues").select("id", { count: "exact", head: true }).eq("status", "open")
+      .then(({ count, error }) => (error ? 0 : count ?? 0)),
+
+  isAdmin: () =>
+    supabase.rpc("is_admin").then(({ data, error }) => (error ? false : Boolean(data))),
+
   linksForTrades: (tradeIds) =>
     tradeIds.length === 0
       ? Promise.resolve([])
@@ -171,6 +188,17 @@ export const save = {
       occurred_on: new Date().toISOString().slice(0, 10), source: "manual",
     }).then(unwrap);
   },
+
+  createIssue: (row) =>
+    supabase.from("issues").insert(row).select().single().then(unwrap),
+
+  setIssueStatus: (id, status) =>
+    supabase.from("issues")
+      .update({ status, resolved_at: status === "resolved" ? new Date().toISOString() : null })
+      .eq("id", id).then(unwrap),
+
+  deleteIssue: (id) =>
+    supabase.from("issues").delete().eq("id", id).then(unwrap),
 
   // Classificacao manual de um trade live que o coletor nao atribuiu.
   assignTrade: (tradeId, phaseId) =>

@@ -94,7 +94,14 @@ nav button{
   transition:color .15s;
 }
 nav button:hover{color:var(--dim)}
-nav button[aria-current="page"]{color:var(--bright);border-bottom-color:var(--bright);background:#151515}
+/* Contador de reportes abertos, no menu. */
+    .pill {
+      display: inline-block; margin-left: 5px; padding: 0 5px;
+      border-radius: 7px; background: var(--accent); color: #000;
+      font-size: 9px; font-weight: 700; line-height: 14px;
+    }
+
+    nav button[aria-current="page"]{color:var(--bright);border-bottom-color:var(--bright);background:#151515}
 
 main{padding:14px;padding-bottom:calc(40px + env(safe-area-inset-bottom));max-width:1700px;margin:0 auto}
 
@@ -156,7 +163,7 @@ input,select,textarea{
   transition:border-color .15s;
 }
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--dim)}
-input::placeholder{color:var(--ghostest)}
+input::placeholder,textarea::placeholder{color:var(--ghostest)}
 td input,td select{padding:3px 5px;border-color:transparent;background:transparent}
 td input:hover,td select:hover{border-color:var(--line)}
 td input.num{text-align:right}
@@ -261,6 +268,6 @@ dialog th{background:#0b0b0b}
 
 <dialog id="modal"></dialog>
 
-<script type="module" src="./js/app.js?v=219dc6d2f4"></script>
+<script type="module" src="./js/app.js?v=4605ca5433"></script>
 </body>
 </html>

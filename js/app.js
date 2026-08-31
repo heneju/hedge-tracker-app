@@ -10,16 +10,16 @@
 import {
   load, save, supabase, currentUser, signInWithPassword, signInWithEmail,
   changePassword, signOut,
-} from "./db.js?v=219dc6d2f4";
+} from "./db.js?v=4605ca5433";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor, magicSourcePart,
   accountShort,
-} from "./util.js?v=219dc6d2f4";
+} from "./util.js?v=4605ca5433";
 import {
   equityCurve, equityFinal, gauges, monthlyBars, firmBreakdown, accountProgress,
-} from "./charts.js?v=219dc6d2f4";
-import { cell, locked, wireEditables } from "./editable.js?v=219dc6d2f4";
+} from "./charts.js?v=4605ca5433";
+import { cell, locked, wireEditables } from "./editable.js?v=4605ca5433";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -30,6 +30,7 @@ const PAGES = [
   { id: "unassigned", label: "Unassigned" },
   { id: "config",     label: "Setup" },
   { id: "calc",       label: "Calculator" },
+  { id: "issues",     label: "Report" },
 ];
 
 const state = {
@@ -39,6 +40,11 @@ const state = {
   // precisar de uma consulta so dela.
   totals: { pnl: null, challenges: null },
   email: "",
+  // Quantos reportes estao abertos. Fica no menu para o problema nao ficar
+  // esquecido num canto: quem reportou ve que ainda esta la, e quem mantem ve
+  // que tem coisa para olhar.
+  openIssues: 0,
+  isAdmin: false,
 };
 
 // ------------------------------------------------------------------- helpers
@@ -533,6 +539,7 @@ async function openChallenge(id, journal, firms) {
       <span class="spacer"></span>
       ${badge(c.status, STATUS_LABEL[c.status] || c.status)}
       <button class="btn ghost" id="edit-challenge">Edit</button>
+      <button class="btn ghost" id="report-challenge">Report</button>
       <button class="btn ghost" id="close-modal">Close</button>
     </header>
     <div style="padding:16px;max-height:74vh;overflow:auto">
@@ -584,6 +591,17 @@ async function openChallenge(id, journal, firms) {
   modal.querySelector("#edit-challenge").onclick = () => {
     modal.close();
     openChallengeEditor(c, firms);
+  };
+  // O reporte sai daqui já sabendo qual linha é. Ao fechar, este drill-down
+  // volta -- quem reportou não perde o lugar onde estava olhando.
+  modal.querySelector("#report-challenge").onclick = () => {
+    modal.close();
+    openIssueForm({
+      area: "challenges",
+      targetTable: "challenges",
+      targetId: c.id,
+      targetLabel: `${c.account_ids || "?"} · ${c.firm || "?"} · ${day(c.date_open)}`,
+    }, () => openChallenge(id, journal, firms));
   };
   modal.querySelector("#add-cash").onclick = async () => {
     const amount = Number(modal.querySelector("#cash-amount").value);
@@ -956,8 +974,11 @@ async function renderConfig() {
         : `<span class="dim">—</span>`}</td>
       <td class="muted">${esc(a.label || a.terminal_path || "—")}</td>
       <td class="num muted">${a.magic_source_part ?? "—"}</td>
-      <td><button class="btn ghost" data-toggle="${a.id}" data-kind="${a.kind}">
-        Set as ${a.kind === "live" ? "prop" : "live"}</button></td>
+      <td class="row" style="gap:6px">
+        <button class="btn ghost" data-toggle="${a.id}" data-kind="${a.kind}">
+          Set as ${a.kind === "live" ? "prop" : "live"}</button>
+        <button class="btn ghost" data-report-account="${a.id}">Report</button>
+      </td>
     </tr>`;
   }).join("");
 
@@ -1058,6 +1079,18 @@ async function renderConfig() {
     };
   });
 
+  view.querySelectorAll("[data-report-account]").forEach((b) => {
+    b.onclick = () => {
+      const a = accounts.find((x) => x.id === Number(b.dataset.reportAccount));
+      openIssueForm({
+        area: "setup",
+        targetTable: "accounts",
+        targetId: a.id,
+        targetLabel: `${accountShort(a.login_or_name)} · ${a.platform} · ${a.login_or_name}`,
+      }, () => renderConfig());
+    };
+  });
+
   view.querySelectorAll("[data-toggle]").forEach((b) => {
     b.onclick = async () => {
       await guard(() => save.account(Number(b.dataset.toggle),
@@ -1105,6 +1138,217 @@ async function renderConfig() {
     }), "Firm added");
     renderConfig();
   };
+}
+
+// ------------------------------------------------------- reporte de problema
+//
+// O que se ganha aqui é a LOCALIZAÇÃO. "O número está errado" sozinho custa uma
+// conversa inteira para descobrir qual número; por isso o formulário já chega
+// sabendo a tela, a linha e -- quando o usuário aponta -- o campo. Quem for
+// consertar abre o reporte e vai direto ao lugar.
+
+// Os campos que fazem sentido reportar em cada tipo de linha. Uma lista curta e
+// específica vale mais que uma caixa de texto pedindo "descreva onde": o
+// usuário reconhece o nome da coluna que está vendo na tela.
+const REPORT_FIELDS = {
+  challenges: [
+    ["", "the row as a whole"],
+    ["cost", "Cost"],
+    ["p1_live", "Phase 1 live"],
+    ["p2_live", "Phase 2 live"],
+    ["funded_live", "Funded live"],
+    ["funded_payout", "Payout"],
+    ["total_pnl", "Total"],
+    ["multipliers", "Multiplier"],
+    ["status", "Status"],
+    ["date_open", "Opened"],
+    ["firm", "Firm"],
+    ["trades", "Trades / pairing"],
+  ],
+  accounts: [
+    ["", "the account as a whole"],
+    ["cash_value", "Balance"],
+    ["plan_id", "Plan / size"],
+    ["net_pnl", "P&L"],
+    ["kind", "Prop or live"],
+    ["login_or_name", "Account number"],
+    ["progress", "Target / drawdown"],
+  ],
+};
+
+const AREAS = [
+  ["challenges", "Challenges"],
+  ["overview", "Overview"],
+  ["unassigned", "Unassigned"],
+  ["setup", "Setup"],
+  ["calculator", "Calculator"],
+  ["collector", "Collector on the PC"],
+  ["other", "Something else"],
+];
+
+async function refreshIssueCount() {
+  try {
+    state.openIssues = await load.openIssueCount();
+  } catch {
+    state.openIssues = 0; // a contagem é enfeite: não pode quebrar a navegação
+  }
+  renderNav();
+}
+
+/**
+ * Abre o formulário de reporte já apontando para um lugar do sistema.
+ *
+ * `context` vem de quem chamou: a linha do challenge, a conta, ou nada quando é
+ * a tela toda. `afterClose` existe porque o botão costuma ficar dentro de outro
+ * modal -- ao fechar este, quem estava atrás precisa voltar.
+ */
+function openIssueForm(context = {}, afterClose) {
+  const { area = "other", targetTable = null, targetId = null,
+          targetLabel = null, field = "" } = context;
+  const fields = REPORT_FIELDS[targetTable] || null;
+
+  modal.innerHTML = `
+    <header>
+      <h1>Report a problem</h1>
+      <span class="spacer"></span>
+      <button class="btn ghost" id="close-modal">Cancel</button>
+    </header>
+    <div style="padding:16px;max-width:640px">
+      ${targetLabel ? `<div class="panel"><div class="panel-body">
+        <div class="dim" style="font-size:9px;letter-spacing:.12em;text-transform:uppercase">Where</div>
+        <div class="bright" style="margin-top:4px">${esc(targetLabel)}</div>
+      </div></div>` : ""}
+
+      <div class="panel"><div class="panel-body">
+        <div class="row">
+          <div class="field"><label>Screen</label>
+            <select id="i-area">${AREAS.map(([v, l]) =>
+              `<option value="${v}" ${v === area ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>
+          </div>
+          ${fields ? `<div class="field"><label>Which part</label>
+            <select id="i-field">${fields.map(([v, l]) =>
+              `<option value="${esc(v)}" ${v === field ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>
+          </div>` : ""}
+        </div>
+        <div class="field" style="margin-top:12px;width:100%">
+          <label>What is wrong</label>
+          <textarea id="i-note" rows="5" style="width:100%;resize:vertical"
+                    placeholder="What you see, and what it should be."></textarea>
+        </div>
+        <div class="row" style="margin-top:12px">
+          <button class="btn" id="i-send">Send</button>
+        </div>
+      </div></div>
+    </div>`;
+
+  modal.showModal();
+  const done = () => { modal.close(); if (afterClose) afterClose(); };
+  modal.querySelector("#close-modal").onclick = done;
+
+  modal.querySelector("#i-send").onclick = async () => {
+    const note = modal.querySelector("#i-note").value.trim();
+    if (!note) return toast("Say what is wrong");
+
+    await guard(() => save.createIssue({
+      area: modal.querySelector("#i-area").value,
+      target_table: targetTable,
+      target_id: targetId,
+      target_label: targetLabel,
+      field: (modal.querySelector("#i-field")?.value || null) || null,
+      note,
+    }), "Reported");
+    await refreshIssueCount();
+    done();
+  };
+  modal.querySelector("#i-note").focus();
+}
+
+async function renderIssues() {
+  const [issues, isAdmin] = await Promise.all([load.issues(), load.isAdmin()]);
+  state.isAdmin = isAdmin;
+  const open = issues.filter((i) => i.status === "open");
+  const closed = issues.filter((i) => i.status !== "open");
+
+  const areaLabel = (v) => (AREAS.find(([id]) => id === v) || [null, v])[1];
+  const fieldLabel = (i) => {
+    const list = REPORT_FIELDS[i.target_table] || [];
+    return (list.find(([v]) => v === i.field) || [null, i.field])[1];
+  };
+
+  const row = (i) => `
+    <tr>
+      <td class="muted">${stamp(i.created_at)}</td>
+      ${isAdmin ? `<td class="muted">${esc((i.reporter || "").split("@")[0])}</td>` : ""}
+      <td>${badge(i.status === "open" ? "phase1" : "closed", areaLabel(i.area))}</td>
+      <td>
+        ${i.target_label ? `<span class="bright">${esc(i.target_label)}</span>`
+                         : `<span class="dim">&mdash;</span>`}
+        ${i.field ? `<span class="muted"> &middot; ${esc(fieldLabel(i))}</span>` : ""}
+      </td>
+      <td style="white-space:pre-wrap;min-width:260px">${esc(i.note)}</td>
+      <td>
+        <button class="btn ghost" data-issue-status="${i.id}"
+                data-next="${i.status === "open" ? "resolved" : "open"}">${
+          i.status === "open" ? "Resolve" : "Reopen"}</button>
+        ${i.reporter === state.email
+          ? `<button class="btn ghost" data-issue-del="${i.id}">Delete</button>` : ""}
+      </td>
+    </tr>`;
+
+  const head = `<tr><th>When</th>${isAdmin ? "<th>Who</th>" : ""}<th>Screen</th>
+    <th>Where</th><th>What is wrong</th><th></th></tr>`;
+  const cols = isAdmin ? 6 : 5;
+
+  render(`
+    <div class="panel">
+      <h2>Report a problem</h2>
+      <div class="panel-body">
+        <p class="muted" style="margin-top:0">
+          A number showing wrong, or a field you cannot fix? Report it here.
+          To point at one exact row, open it and use the
+          <b class="bright">Report</b> button inside &mdash; the report then
+          carries that row and field with it.
+        </p>
+        <button class="btn" id="new-issue">New report</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>${open.length} open</h2>
+      <div class="scroll"><table>
+        <thead>${head}</thead>
+        <tbody>${open.map(row).join("") ||
+          `<tr><td colspan="${cols}">${empty("nothing reported")}</td></tr>`}</tbody>
+      </table></div>
+    </div>
+
+    ${closed.length ? `<div class="panel">
+      <h2>${closed.length} resolved</h2>
+      <div class="scroll"><table>
+        <thead>${head}</thead>
+        <tbody>${closed.map(row).join("")}</tbody>
+      </table></div>
+    </div>` : ""}`);
+
+  document.getElementById("new-issue").onclick = () =>
+    openIssueForm({ area: "other" }, () => go("issues"));
+
+  view.querySelectorAll("[data-issue-status]").forEach((b) => {
+    b.onclick = async () => {
+      await guard(() => save.setIssueStatus(Number(b.dataset.issueStatus), b.dataset.next),
+        b.dataset.next === "resolved" ? "Resolved" : "Reopened");
+      await refreshIssueCount();
+      renderIssues();
+    };
+  });
+
+  view.querySelectorAll("[data-issue-del]").forEach((b) => {
+    b.onclick = async () => {
+      await guard(() => save.deleteIssue(Number(b.dataset.issueDel)), "Deleted");
+      await refreshIssueCount();
+      renderIssues();
+    };
+  });
 }
 
 // -------------------------------------------------------------- calculadora
@@ -1166,12 +1410,17 @@ const RENDERERS = {
   unassigned: renderUnassigned,
   config: renderConfig,
   calc: renderCalc,
+  issues: renderIssues,
 };
 
 function renderNav() {
-  document.getElementById("nav").innerHTML = PAGES.map((p) =>
-    `<button data-page="${p.id}" ${p.id === state.page ? 'aria-current="page"' : ""}>${esc(p.label)}</button>`
-  ).join("");
+  document.getElementById("nav").innerHTML = PAGES.map((p) => {
+    const label = p.id === "issues" && state.openIssues
+      ? `${p.label} <span class="pill">${state.openIssues}</span>`
+      : esc(p.label);
+    return `<button data-page="${p.id}" ${
+      p.id === state.page ? 'aria-current="page"' : ""}>${label}</button>`;
+  }).join("");
   document.querySelectorAll("[data-page]").forEach((b) => {
     b.onclick = () => go(b.dataset.page);
   });
@@ -1236,6 +1485,7 @@ async function boot() {
     // acabou de sair, na tela de login.
     state.email = "";
     state.totals = { pnl: null, challenges: null };
+    state.openIssues = 0;
     document.getElementById("nav").innerHTML = "";
     document.getElementById("status").innerHTML = "";
     document.getElementById("section").textContent = "auth";
@@ -1244,6 +1494,7 @@ async function boot() {
   state.email = user.email ?? "";
   renderStatus();
   renderNav();
+  refreshIssueCount();
   const initial = location.hash.slice(1);
   await go(RENDERERS[initial] ? initial : "overview");
 }
