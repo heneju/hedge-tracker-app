@@ -7,15 +7,15 @@
 // status, comentario, classificacao de conta). Execucoes, trades e vinculos sao
 // do coletor, e aparecem aqui somente como leitura.
 
-import { load, save, supabase, currentUser, signInWithEmail, signOut } from "./db.js?v=a98ecb56a3";
+import { load, save, supabase, currentUser, signInWithEmail, signOut } from "./db.js?v=353bbaf7ad";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor, magicSourcePart,
   accountShort,
-} from "./util.js?v=a98ecb56a3";
+} from "./util.js?v=353bbaf7ad";
 import {
   equityCurve, equityFinal, gauges, monthlyBars, firmBreakdown, accountProgress,
-} from "./charts.js?v=a98ecb56a3";
+} from "./charts.js?v=353bbaf7ad";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -293,7 +293,8 @@ async function renderChallenges() {
 
   const body = rows.map((c) => `
     <tr class="clickable" data-id="${c.id}">
-      <td><strong class="bright">${esc(c.account_ids || "—")}</strong></td>
+      <td><strong class="${c.status === "failed" ? "blown" : "bright"}">${
+        esc(c.account_ids || "—")}</strong></td>
       <td>${esc(c.firm || "—")}</td>
       <td class="muted">${esc(c.platform || "—")}</td>
       <td>${day(c.date_open)}</td>
@@ -710,11 +711,15 @@ async function renderUnassigned() {
 // ------------------------------------------------------------- configuração
 
 async function renderConfig() {
-  const [accounts, stats, discovered, firms, plans] = await Promise.all([
-    load.accounts(), load.accountStats(), load.discovered(), load.firms(), load.plans()]);
+  const [accounts, stats, discovered, firms, plans, progress] = await Promise.all([
+    load.accounts(), load.accountStats(), load.discovered(), load.firms(),
+    load.plans(), load.progress()]);
 
   const claimed = new Set(accounts.map((a) => `${a.platform}:${a.login_or_name}`));
   const statOf = new Map(stats.map((x) => [x.account_id, x]));
+  // Conta estourada: bateu o piso do drawdown ou o challenge foi marcado como
+  // perdido. Risco no nome para não precisar ler número nenhum.
+  const blown = new Set(progress.filter((x) => x.blown).map((x) => x.account_id));
 
   // Com uma mesa só, repetir o nome dela em toda opção é ruído -- o tamanho já
   // identifica. Com duas ou mais, "50,000" seria ambíguo e o nome volta.
@@ -728,9 +733,12 @@ async function renderConfig() {
     return `
     <tr>
       <td>${badge(a.kind, a.kind)}</td>
-      <td><strong class="bright">${esc(accountShort(a.login_or_name))}</strong></td>
+      <td><strong class="${blown.has(a.id) ? "blown" : "bright"}">${
+        esc(accountShort(a.login_or_name))}</strong></td>
       <td>${esc(a.platform)}</td>
-      <td class="muted">${esc(a.login_or_name)}</td>
+      <td class="${blown.has(a.id) ? "blown" : "muted"}"
+          ${blown.has(a.id) ? 'title="blown — drawdown floor hit or challenge failed"' : ""}
+      >${esc(a.login_or_name)}</td>
       <td class="num">${st && st.trade_count ? cash(st.net_pnl) : `<span class="dim">—</span>`}</td>
       <td class="num muted">${st?.trade_count || "—"}</td>
       <td class="num">${a.cash_value != null
