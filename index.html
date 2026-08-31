@@ -123,6 +123,14 @@ dialog header{position:static;border-radius:12px 12px 0 0;padding-top:12px}
   header{padding:9px 12px}
   .card .value{font-size:19px}
   th,td{padding:7px 8px}
+  /* Titulo e acoes na primeira linha, navegacao rolando na segunda. */
+  header h1{flex:1}
+  header .spacer{display:none}
+  nav{order:1;width:100%;padding-bottom:2px}
+  /* Os valores em cima das barras se sobrepoem quando estreito, e a tabela
+     logo abaixo ja traz os numeros exatos. */
+  .bars .col > span:first-child{display:none}
+  .bars{height:120px}
 }
 </style>
 </head>
