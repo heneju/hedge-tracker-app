@@ -7,15 +7,15 @@
 // status, comentario, classificacao de conta). Execucoes, trades e vinculos sao
 // do coletor, e aparecem aqui somente como leitura.
 
-import { load, save, supabase, currentUser, signInWithEmail, signOut } from "./db.js?v=515d2bba84";
+import { load, save, supabase, currentUser, signInWithEmail, signOut } from "./db.js?v=a98ecb56a3";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor, magicSourcePart,
   accountShort,
-} from "./util.js?v=515d2bba84";
+} from "./util.js?v=a98ecb56a3";
 import {
   equityCurve, equityFinal, gauges, monthlyBars, firmBreakdown, accountProgress,
-} from "./charts.js?v=515d2bba84";
+} from "./charts.js?v=a98ecb56a3";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -716,6 +716,13 @@ async function renderConfig() {
   const claimed = new Set(accounts.map((a) => `${a.platform}:${a.login_or_name}`));
   const statOf = new Map(stats.map((x) => [x.account_id, x]));
 
+  // Com uma mesa só, repetir o nome dela em toda opção é ruído -- o tamanho já
+  // identifica. Com duas ou mais, "50,000" seria ambíguo e o nome volta.
+  const manyFirms = new Set(plans.map((pl) => pl.firm_id)).size > 1;
+  const planLabel = (pl) => manyFirms
+    ? `${pl.prop_firms?.name ?? ""} ${money0(pl.account_size)}`
+    : money0(pl.account_size);
+
   const accountRows = accounts.map((a) => {
     const st = statOf.get(a.id);
     return `
@@ -732,7 +739,7 @@ async function renderConfig() {
       <td>${a.kind === "prop" ? `<select data-plan="${a.id}">
         <option value="">— size —</option>
         ${plans.map((pl) => `<option value="${pl.id}" ${pl.id === a.plan_id ? "selected" : ""}>${
-          esc(`${pl.prop_firms?.name ?? ""} ${money0(pl.account_size)}`)}</option>`).join("")}
+          esc(planLabel(pl))}</option>`).join("")}
       </select>${a.plan_id && a.plan_source === "inferred"
         ? `<div style="font-size:9px;color:#555;margin-top:2px">from balance</div>` : ""}`
         : `<span class="dim">—</span>`}</td>
