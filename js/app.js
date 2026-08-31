@@ -10,16 +10,16 @@
 import {
   load, save, supabase, currentUser, signInWithPassword, signInWithEmail,
   changePassword, signOut,
-} from "./db.js?v=fd49434d52";
+} from "./db.js?v=219dc6d2f4";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor, magicSourcePart,
   accountShort,
-} from "./util.js?v=fd49434d52";
+} from "./util.js?v=219dc6d2f4";
 import {
   equityCurve, equityFinal, gauges, monthlyBars, firmBreakdown, accountProgress,
-} from "./charts.js?v=fd49434d52";
-import { cell, locked, wireEditables } from "./editable.js?v=fd49434d52";
+} from "./charts.js?v=219dc6d2f4";
+import { cell, locked, wireEditables } from "./editable.js?v=219dc6d2f4";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -1232,6 +1232,10 @@ setInterval(checkForUpdate, 5 * 60 * 1000);
 async function boot() {
   const user = await currentUser();
   if (!user) {
+    // Zera o estado: sem isto a barra continua mostrando o nome e o PnL de quem
+    // acabou de sair, na tela de login.
+    state.email = "";
+    state.totals = { pnl: null, challenges: null };
     document.getElementById("nav").innerHTML = "";
     document.getElementById("status").innerHTML = "";
     document.getElementById("section").textContent = "auth";
