@@ -126,6 +126,13 @@ th{
 td{padding:6px 9px;border-bottom:1px solid var(--line-faint);white-space:nowrap;color:#bbb}
 tbody tr:hover{background:rgba(255,255,255,.015)}
 tbody tr.clickable{cursor:pointer}
+/* Celula editavel: um tracejado discreto que so aparece no hover, para a
+   tabela nao virar um formulario cheio de caixas. */
+td.editable{cursor:text}
+td.editable:hover{background:rgba(85,153,255,.07);box-shadow:inset 0 0 0 1px rgba(85,153,255,.35)}
+td.editable input,td.editable select{width:100%;min-width:70px}
+td.locked{color:var(--dim)}
+td.locked:hover{background:rgba(255,255,255,.02)}
 tfoot td{border-top:1px solid var(--line-soft);border-bottom:none;color:var(--text);font-weight:700;background:var(--panel)}
 
 .badge{
@@ -251,6 +258,6 @@ dialog th{background:#0b0b0b}
 
 <dialog id="modal"></dialog>
 
-<script type="module" src="./js/app.js?v=458f4f7301"></script>
+<script type="module" src="./js/app.js?v=9954242a98"></script>
 </body>
 </html>

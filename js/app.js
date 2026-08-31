@@ -7,15 +7,16 @@
 // status, comentario, classificacao de conta). Execucoes, trades e vinculos sao
 // do coletor, e aparecem aqui somente como leitura.
 
-import { load, save, supabase, currentUser, signInWithEmail, signOut } from "./db.js?v=458f4f7301";
+import { load, save, supabase, currentUser, signInWithEmail, signOut } from "./db.js?v=9954242a98";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor, magicSourcePart,
   accountShort,
-} from "./util.js?v=458f4f7301";
+} from "./util.js?v=9954242a98";
 import {
   equityCurve, equityFinal, gauges, monthlyBars, firmBreakdown, accountProgress,
-} from "./charts.js?v=458f4f7301";
+} from "./charts.js?v=9954242a98";
+import { cell, locked, wireEditables } from "./editable.js?v=9954242a98";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -289,23 +290,49 @@ async function renderChallenges() {
   // vista usa duas fases, a coluna some em vez de exibir zeros para sempre.
   const showP2 = rows.some((c) => Number(c.eval_phases) === 2);
   const p2 = (html) => (showP2 ? html : "");
-  const cols = showP2 ? 13 : 12;
+  const cols = showP2 ? 15 : 14;
+
+  const firmOpts = [{ value: "", label: "—" }]
+    .concat(firms.map((f) => ({ value: f.id, label: f.name })));
+
+  // Um valor de perna live so e editavel quando NAO ha trade por tras dele.
+  // Com trades pareadas o numero e medido; sobrescreve-lo seria mentir para si
+  // mesmo. As linhas importadas da planilha nao tem trade, entao continuam
+  // abertas para correcao.
+  const liveCell = (c, field, value, trades) => trades > 0
+    ? locked(cash(value), `${trades} trade(s) pareada(s) — valor medido, não editável`)
+    : cell(value, { id: c.id, field, type: "number", align: true,
+                    format: () => cash(value), title: "importado — clique para corrigir" });
+
+  const cashCell = (c, field, value, entries) => entries > 1
+    ? locked(cash(value), `${entries} lançamentos — abra a linha para editar`)
+    : cell(value, { id: c.id, field, type: "number", align: true,
+                    format: () => cash(value) });
 
   const body = rows.map((c) => `
     <tr class="clickable" data-id="${c.id}">
       <td><strong class="${c.status === "failed" ? "blown" : "bright"}">${
         esc(c.account_ids || "—")}</strong></td>
-      <td>${esc(c.firm || "—")}</td>
+      ${cell(c.firm_id, { id: c.id, field: "firm_id", type: "select", options: firmOpts,
+                          format: () => esc(c.firm || "—") })}
       <td class="muted">${esc(c.platform || "—")}</td>
-      <td>${day(c.date_open)}</td>
-      <td>${badge(c.status, statusLabel(c.status, c.eval_phases))}</td>
-      <td class="num">${cash(c.cost)}</td>
-      <td class="num">${cash(c.p1_live)}</td>
-      ${p2(`<td class="num">${cash(c.p2_live)}</td>`)}
-      <td class="num">${cash(c.funded_live)}</td>
-      <td class="num">${cash(c.funded_payout)}</td>
+      ${cell(c.date_open, { id: c.id, field: "date_open", type: "date",
+                            format: () => day(c.date_open) })}
+      ${cell(c.status, { id: c.id, field: "status", type: "select",
+                         options: statusOptions(c.eval_phases),
+                         format: () => badge(c.status, statusLabel(c.status, c.eval_phases)) })}
+      ${cell(c.multipliers, { id: c.id, field: "multipliers", type: "text", align: true,
+                              format: () => `<span class="muted">${esc(c.multipliers || "—")}</span>`,
+                              title: "multiplicador por fase, separado por /" })}
+      ${cashCell(c, "cost", c.cost, c.cost_entries)}
+      ${liveCell(c, "import_p1_live", c.p1_live, c.p1_trades)}
+      ${p2(liveCell(c, "import_p2_live", c.p2_live, c.p2_trades))}
+      ${liveCell(c, "import_funded_live", c.funded_live, c.funded_trades)}
+      ${cashCell(c, "payout", c.funded_payout, c.payout_entries)}
       <td class="num">${cash(c.lost_hedging)}</td>
       <td class="num"><strong>${cash(c.total_pnl)}</strong></td>
+      ${cell(c.comments, { id: c.id, field: "comments", type: "text",
+                           format: () => `<span class="muted">${esc(c.comments || "—")}</span>` })}
       <td class="num muted">${c.trade_count || (c.import_source ? "imp." : "0")}</td>
     </tr>`).join("");
 
@@ -334,14 +361,15 @@ async function renderChallenges() {
         <table>
           <thead><tr>
             <th>Acct</th><th>Firm</th><th>Platform</th><th>Opened</th><th>Status</th>
+            <th class="num">Mult.</th>
             <th class="num">Cost</th><th class="num">Phase 1 live</th>
             ${p2(`<th class="num">Phase 2 live</th>`)}<th class="num">Funded live</th>
             <th class="num">Payout</th><th class="num">Hedge</th>
-            <th class="num">Total</th><th class="num">Trades</th>
+            <th class="num">Total</th><th>Notes</th><th class="num">Trades</th>
           </tr></thead>
           <tbody>${body || `<tr><td colspan="${cols}">${empty("no challenges match these filters")}</td></tr>`}</tbody>
           <tfoot><tr style="font-weight:640">
-            <td colspan="5">Total</td>
+            <td colspan="6">Total</td>
             <td class="num">${cash(totals.cost)}</td>
             <td class="num">${cash(totals.p1_live)}</td>
             ${p2(`<td class="num">${cash(totals.p2_live)}</td>`)}
@@ -349,11 +377,13 @@ async function renderChallenges() {
             <td class="num">${cash(totals.funded_payout)}</td>
             <td class="num">${cash(totals.lost_hedging)}</td>
             <td class="num">${cash(totals.total_pnl)}</td>
-            <td></td>
+            <td></td><td></td>
           </tr></tfoot>
         </table>
       </div>
     </div>`);
+
+  wireEditables(view, saveChallengeField);
 
   for (const [id, key] of [["f-status", "status"], ["f-firm", "firm"], ["f-month", "month"]]) {
     document.getElementById(id).onchange = (e) => {
@@ -365,6 +395,52 @@ async function renderChallenges() {
   view.querySelectorAll("tr.clickable").forEach((tr) => {
     tr.onclick = () => openChallenge(Number(tr.dataset.id), journal, firms);
   });
+}
+
+/**
+ * Grava uma célula editada da tabela.
+ *
+ * Cada campo mora num lugar diferente do banco -- custo e payout são
+ * lançamentos, o multiplicador é por fase, o resto é do challenge -- então a
+ * escrita é despachada por campo em vez de um update genérico.
+ */
+async function saveChallengeField(field, id, raw) {
+  const challengeId = Number(id);
+  const number = () => (raw === "" ? null : Number(raw));
+
+  await guard(async () => {
+    if (field === "cost" || field === "payout") {
+      const kind = field === "cost" ? "cost" : "payout";
+      let amount = number() ?? 0;
+      // Custo é dinheiro que sai: guardado negativo, como na planilha. Aceita
+      // digitar 99 ou -99 e normaliza, para não depender de lembrar o sinal.
+      if (kind === "cost" && amount > 0) amount = -amount;
+      const existing = await load.cashEventId(challengeId, kind);
+      return save.setCashTotal(challengeId, kind, amount, existing);
+    }
+
+    if (field === "multipliers") {
+      // "0.05 / 0.1 / 0.2" na ordem das fases, como a planilha escreve.
+      const parts = String(raw).split("/").map((x) => x.trim()).filter(Boolean);
+      const phases = ["P1", "P2", "FUNDED"];
+      for (let i = 0; i < phases.length; i += 1) {
+        const value = parts[i] === undefined ? null : Number(parts[i]);
+        if (parts[i] !== undefined && Number.isNaN(value)) continue;
+        await save.phaseByChallenge(challengeId, phases[i], { multiplier: value });
+      }
+      return null;
+    }
+
+    const patch = {};
+    if (field === "firm_id") patch.firm_id = raw ? Number(raw) : null;
+    else if (field === "date_open") patch.date_open = raw || null;
+    else if (field === "comments") patch.comments = raw || null;
+    else if (field.startsWith("import_")) patch[field] = number();
+    else patch[field] = raw;
+    return save.challenge(challengeId, patch);
+  }, "Saved");
+
+  renderChallenges();
 }
 
 // ------------------------------------------------- detalhe de um challenge

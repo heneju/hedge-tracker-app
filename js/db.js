@@ -5,7 +5,7 @@
 // fica so no coletor, no PC.
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { CONFIG } from "./config.js?v=458f4f7301";
+import { CONFIG } from "./config.js?v=9954242a98";
 
 export const supabase = createClient(CONFIG.url, CONFIG.anonKey);
 
@@ -74,6 +74,11 @@ export const load = {
       .select("*, accounts(login_or_name, label, platform)")
       .eq("challenge_id", challengeId).order("phase").then(unwrap),
 
+  cashEventId: (challengeId, kind) =>
+    supabase.from("cash_events").select("id")
+      .eq("challenge_id", challengeId).eq("kind", kind).limit(1)
+      .then(unwrap).then((rows) => rows[0]?.id ?? null),
+
   cashEvents: (challengeId) =>
     supabase.from("cash_events")
       .select("*").eq("challenge_id", challengeId).order("occurred_on").then(unwrap),
@@ -135,6 +140,25 @@ export const save = {
 
   createFirm: (row) =>
     supabase.from("prop_firms").insert(row).select().single().then(unwrap),
+
+  phaseByChallenge: (challengeId, phase, patch) =>
+    supabase.from("challenge_phases").update(patch)
+      .eq("challenge_id", challengeId).eq("phase", phase).then(unwrap),
+
+  // O total de custo/payout da linha vira UM lancamento -- e assim que a
+  // planilha trata: uma celula, um numero. O detalhe por parcela continua no
+  // drill-down, e por isso a celula so aceita edicao quando ha no maximo um
+  // lancamento; com varios ela fica travada para nao apagar o historico.
+  setCashTotal: async (challengeId, kind, amount, existingId) => {
+    if (existingId) {
+      return supabase.from("cash_events").update({ amount })
+        .eq("id", existingId).then(unwrap);
+    }
+    return supabase.from("cash_events").insert({
+      challenge_id: challengeId, kind, amount,
+      occurred_on: new Date().toISOString().slice(0, 10), source: "manual",
+    }).then(unwrap);
+  },
 
   // Classificacao manual de um trade live que o coletor nao atribuiu.
   assignTrade: (tradeId, phaseId) =>
