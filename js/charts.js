@@ -5,7 +5,7 @@
 // `vector-effect="non-scaling-stroke"` mantém a espessura da linha constante
 // mesmo com a escala distorcida, que é o que quebra SVG esticado.
 
-import { money, money0, monthLabel, signClass, esc } from "./util.js?v=90a602f587";
+import { money, money0, monthLabel, signClass, esc } from "./util.js?v=b0ee757df1";
 
 const UP = "#00cc00";
 const DOWN = "#cc0000";
@@ -163,6 +163,112 @@ export function firmBreakdown(journal) {
         <div style="height:5px;background:${GRID}">
           <div style="height:100%;width:${w.toFixed(1)}%;background:${up ? UP : DOWN};
                       opacity:.8;box-shadow:0 0 8px ${up ? UP : DOWN}66"></div>
+        </div>
+      </div>`;
+    }).join("")}
+  </div>`;
+}
+
+/** Barra de progresso fina, com marca de limite. `pct` já vem 0..100. */
+function meter(pct, color, { warnAt = null } = {}) {
+  const w = Math.max(0, Math.min(100, pct));
+  return `<div style="height:5px;background:${GRID};position:relative;overflow:hidden">
+    <div style="height:100%;width:${w.toFixed(1)}%;background:${color};opacity:.85;
+                box-shadow:0 0 7px ${color}66"></div>
+    ${warnAt != null ? `<div style="position:absolute;top:0;bottom:0;left:${
+      Math.min(100, warnAt)}%;width:1px;background:#666"></div>` : ""}
+  </div>`;
+}
+
+/**
+ * Onde cada conta prop está contra as regras da mesa.
+ *
+ * O saldo não vem da plataforma: é `tamanho da conta + P&L acumulado`, que é a
+ * mesma base que a mesa usa. Conta sem plano escolhido aparece sem as barras,
+ * porque sem alvo e drawdown não há o que medir.
+ */
+export function accountProgress(rows) {
+  if (!rows.length) return "";
+
+  return `<div style="display:flex;flex-direction:column;gap:12px">
+    ${rows.map((a) => {
+      const pnl = Number(a.pnl) || 0;
+      const hasPlan = a.profit_target != null;
+
+      if (!hasPlan) {
+        return `<div style="display:flex;justify-content:space-between;align-items:center;
+                            font-size:10px;padding-bottom:10px;border-bottom:1px solid ${GRID}">
+          <span><strong style="color:#fff;font-size:12px">${esc(a.short_id)}</strong>
+            <span class="dim" style="margin-left:8px">no plan set</span></span>
+          <span class="${signClass(pnl)}">${money0(pnl)}</span>
+        </div>`;
+      }
+
+      const targetPct = Number(a.target_pct) || 0;
+      const room = Number(a.drawdown_room) || 0;
+      const dd = Number(a.max_drawdown) || 1;
+      // Folga em relação ao drawdown cheio: 100% = intocado, 0% = estourou.
+      const roomPct = (room / dd) * 100;
+      const roomColor = roomPct <= 25 ? DOWN : roomPct <= 50 ? "#ccaa00" : UP;
+      const bestPct = a.best_day_pct == null ? null : Number(a.best_day_pct);
+      const limit = a.consistency_pct == null ? null : Number(a.consistency_pct);
+      const daysLeft = a.days_left == null ? null : Number(a.days_left);
+
+      // A consistência só pode ser julgada depois dos dias mínimos: com um dia
+      // operado esse dia é 100% do lucro por definição, e apontar "quebrada"
+      // aí seria alarme falso todo começo de conta.
+      const settled = !daysLeft;
+      const breaks = settled && bestPct != null && limit != null && bestPct > limit;
+      const overLimit = bestPct != null && limit != null && bestPct > limit;
+
+      return `<div style="padding-bottom:12px;border-bottom:1px solid ${GRID}">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
+          <span>
+            <strong style="color:#fff;font-size:13px">${esc(a.short_id)}</strong>
+            <span class="dim" style="margin-left:8px">${money0(a.account_size)}</span>
+          </span>
+          <span class="${signClass(pnl)}" style="font-size:12px;font-weight:700">${money(pnl)}</span>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div>
+            <div style="display:flex;justify-content:space-between;font-size:9px;margin-bottom:3px">
+              <span class="dim">target ${money0(a.profit_target)}</span>
+              <span class="${targetPct >= 100 ? "pos" : ""}">${targetPct.toFixed(0)}%</span>
+            </div>
+            ${meter(targetPct, targetPct >= 100 ? UP : "#5599ff")}
+            <div style="font-size:9px;color:#555;margin-top:3px">
+              ${Number(a.target_left) <= 0
+                ? "target reached"
+                : `${money0(a.target_left)} to go`}
+            </div>
+          </div>
+
+          <div>
+            <div style="display:flex;justify-content:space-between;font-size:9px;margin-bottom:3px">
+              <span class="dim">dd room</span>
+              <span class="${roomPct <= 25 ? "neg" : ""}">${money0(room)}</span>
+            </div>
+            ${meter(roomPct, roomColor)}
+            <div style="font-size:9px;color:#555;margin-top:3px">
+              floor ${money0(a.drawdown_floor)} · ${esc(a.drawdown_type)}
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:16px;font-size:9px;margin-top:8px">
+          <span class="dim">days
+            <b style="color:${daysLeft ? "#ccaa00" : UP}">${a.days_traded}</b>${
+              a.min_trading_days ? `<span class="dim">/${a.min_trading_days}</span>` : ""}</span>
+          ${limit != null ? `<span class="dim">best day
+            <b style="color:${breaks ? DOWN : overLimit ? "#ccaa00" : bestPct == null ? "#555" : UP}">${
+              bestPct == null ? "—" : bestPct.toFixed(0) + "%"}</b>
+            <span class="dim">/ ${limit.toFixed(0)}% max</span></span>` : ""}
+          ${breaks
+            ? `<span class="neg">consistency broken</span>`
+            : overLimit
+              ? `<span style="color:#ccaa00">needs more days to spread</span>`
+              : ""}
         </div>
       </div>`;
     }).join("")}

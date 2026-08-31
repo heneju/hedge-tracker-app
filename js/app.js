@@ -7,12 +7,15 @@
 // status, comentario, classificacao de conta). Execucoes, trades e vinculos sao
 // do coletor, e aparecem aqui somente como leitura.
 
-import { load, save, supabase, currentUser, signInWithEmail, signOut } from "./db.js?v=90a602f587";
+import { load, save, supabase, currentUser, signInWithEmail, signOut } from "./db.js?v=b0ee757df1";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor, magicSourcePart,
-} from "./util.js?v=90a602f587";
-import { equityCurve, equityFinal, gauges, monthlyBars, firmBreakdown } from "./charts.js?v=90a602f587";
+  accountShort,
+} from "./util.js?v=b0ee757df1";
+import {
+  equityCurve, equityFinal, gauges, monthlyBars, firmBreakdown, accountProgress,
+} from "./charts.js?v=b0ee757df1";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -148,8 +151,13 @@ function renderLogin() {
 // ----------------------------------------------------------------- overview
 
 async function renderOverview() {
-  const [journal, monthly] = await Promise.all([load.journal(), load.monthly()]);
+  const [journal, monthly, progress] = await Promise.all([
+    load.journal(), load.monthly(), load.progress()]);
   setTotals(journal);
+
+  // Só contas que ainda estão valendo: conta encerrada não tem alvo a perseguir.
+  const running = progress.filter((a) =>
+    a.challenge_status == null || ["phase1", "phase2", "funded"].includes(a.challenge_status));
 
   const sum = (f) => journal.reduce((a, c) => a + Number(c[f] || 0), 0);
   const total = sum("total_pnl");
@@ -203,6 +211,11 @@ async function renderOverview() {
 
   render(`
     <div class="cards">${cards}</div>
+
+    ${running.length ? `<div class="panel">
+      <h2>Live accounts<span class="dim">target · drawdown · rules</span></h2>
+      <div class="panel-body">${accountProgress(running)}</div>
+    </div>` : ""}
 
     <div class="grid-2">
       <div class="panel">
@@ -276,10 +289,11 @@ async function renderChallenges() {
   // vista usa duas fases, a coluna some em vez de exibir zeros para sempre.
   const showP2 = rows.some((c) => Number(c.eval_phases) === 2);
   const p2 = (html) => (showP2 ? html : "");
-  const cols = showP2 ? 12 : 11;
+  const cols = showP2 ? 13 : 12;
 
   const body = rows.map((c) => `
     <tr class="clickable" data-id="${c.id}">
+      <td><strong class="bright">${esc(c.account_ids || "—")}</strong></td>
       <td>${esc(c.firm || "—")}</td>
       <td class="muted">${esc(c.platform || "—")}</td>
       <td>${day(c.date_open)}</td>
@@ -318,7 +332,7 @@ async function renderChallenges() {
       <div class="scroll">
         <table>
           <thead><tr>
-            <th>Firm</th><th>Platform</th><th>Opened</th><th>Status</th>
+            <th>Acct</th><th>Firm</th><th>Platform</th><th>Opened</th><th>Status</th>
             <th class="num">Cost</th><th class="num">Phase 1 live</th>
             ${p2(`<th class="num">Phase 2 live</th>`)}<th class="num">Funded live</th>
             <th class="num">Payout</th><th class="num">Hedge</th>
@@ -326,7 +340,7 @@ async function renderChallenges() {
           </tr></thead>
           <tbody>${body || `<tr><td colspan="${cols}">${empty("no challenges match these filters")}</td></tr>`}</tbody>
           <tfoot><tr style="font-weight:640">
-            <td colspan="4">Total</td>
+            <td colspan="5">Total</td>
             <td class="num">${cash(totals.cost)}</td>
             <td class="num">${cash(totals.p1_live)}</td>
             ${p2(`<td class="num">${cash(totals.p2_live)}</td>`)}
@@ -392,7 +406,8 @@ async function openChallenge(id, journal, firms) {
   const phaseRows = phases.map((p) => `
     <tr>
       <td>${esc(phaseLabel(p.phase, c.eval_phases))}</td>
-      <td>${esc(p.accounts?.login_or_name || p.account_ref || "—")}</td>
+      <td><strong>${esc(accountShort(p.accounts?.login_or_name || p.account_ref))}</strong>
+          <span class="dim">${esc(p.accounts?.login_or_name || p.account_ref || "—")}</span></td>
       <td class="muted">${esc(p.accounts?.platform || "—")}</td>
       <td>${p.started_at ? day(p.started_at) : "—"} → ${p.ended_at ? day(p.ended_at) : "aberta"}</td>
       <td>${p.outcome ? badge("closed", p.outcome) : "—"}</td>
@@ -409,7 +424,7 @@ async function openChallenge(id, journal, firms) {
 
   modal.innerHTML = `
     <header>
-      <h1>${esc(c.firm || "Challenge")} · ${day(c.date_open)}</h1>
+      <h1>${esc(c.account_ids || "—")} · ${esc(c.firm || "Challenge")} · ${day(c.date_open)}</h1>
       <span class="spacer"></span>
       ${badge(c.status, STATUS_LABEL[c.status] || c.status)}
       <button class="btn ghost" id="edit-challenge">Edit</button>
@@ -490,8 +505,7 @@ async function openChallenge(id, journal, firms) {
 // ------------------------------------------------- editor de um challenge
 
 async function openChallengeEditor(c, firms) {
-  const accounts = await load.accounts();
-  const props = accounts.filter((a) => a.kind === "prop");
+  const stats = await load.accountStats();
   const isNew = !c;
 
   const firmOptions = firms.map((f) =>
@@ -507,12 +521,30 @@ async function openChallengeEditor(c, firms) {
     statusOptions(evalPhases).map((o) =>
       `<option value="${o.value}" ${o.value === selected ? "selected" : ""}>${esc(o.label)}</option>`).join("");
 
-  const accountOptions = (selected) =>
-    `<option value="">— none —</option>` + props.map((a) =>
-      `<option value="${a.id}" ${a.id === selected ? "selected" : ""}>${esc(a.login_or_name)} (${esc(a.platform)})</option>`).join("");
-
   const phases = c ? await load.phases(c.id) : [];
   const phaseOf = (p) => phases.find((x) => x.phase === p);
+  const mine = new Set(phases.map((x) => x.account_id));
+
+  // Só contas prop livres. Uma conta já presa a uma fase -- inclusive a de um
+  // challenge estourado -- não pode ser reaproveitada: o resultado dela iria
+  // para dois challenges ao mesmo tempo. As deste challenge continuam na lista
+  // para não sumirem ao editar.
+  const available = stats.filter((a) =>
+    a.kind === "prop" && a.is_active && (!a.in_use || mine.has(a.account_id)));
+
+  // O número inteiro é quase igual entre contas da mesma mesa; o que
+  // diferencia são os 4 últimos dígitos e o resultado acumulado.
+  const describe = (a) => {
+    const bits = [a.short_id, a.platform];
+    if (a.trade_count) bits.push(`${money0(a.net_pnl)} · ${a.trade_count}t`);
+    else bits.push("no trades");
+    return `${bits.join("  ·  ")}   ${a.login_or_name}`;
+  };
+
+  const accountOptions = (selected) =>
+    `<option value="">— none —</option>` + available.map((a) =>
+      `<option value="${a.account_id}" ${a.account_id === selected ? "selected" : ""}>${
+        esc(describe(a))}</option>`).join("");
 
   modal.innerHTML = `
     <header><h1>${isNew ? "New challenge" : "Edit challenge"}</h1>
@@ -540,7 +572,12 @@ async function openChallengeEditor(c, firms) {
       <div class="panel" style="margin-top:16px"><h2>Accounts per phase</h2><div class="panel-body">
         <p class="muted" style="margin-top:0">
           This link is what makes the live result land on the right challenge.
+          Accounts already tied to another challenge are not listed.
         </p>
+        ${available.length ? "" : `<p class="neg" style="margin:0 0 12px;font-size:10px">
+          Every prop account on this PC is already tied to a challenge. Register a
+          new one under Setup, or free one up by editing the challenge that holds it.
+        </p>`}
         <div id="phase-fields"></div>
       </div></div>
 
@@ -673,21 +710,33 @@ async function renderUnassigned() {
 // ------------------------------------------------------------- configuração
 
 async function renderConfig() {
-  const [accounts, discovered, firms] = await Promise.all([
-    load.accounts(), load.discovered(), load.firms()]);
+  const [accounts, stats, discovered, firms, plans] = await Promise.all([
+    load.accounts(), load.accountStats(), load.discovered(), load.firms(), load.plans()]);
 
   const claimed = new Set(accounts.map((a) => `${a.platform}:${a.login_or_name}`));
+  const statOf = new Map(stats.map((x) => [x.account_id, x]));
 
-  const accountRows = accounts.map((a) => `
+  const accountRows = accounts.map((a) => {
+    const st = statOf.get(a.id);
+    return `
     <tr>
       <td>${badge(a.kind, a.kind)}</td>
+      <td><strong class="bright">${esc(accountShort(a.login_or_name))}</strong></td>
       <td>${esc(a.platform)}</td>
-      <td>${esc(a.login_or_name)}</td>
+      <td class="muted">${esc(a.login_or_name)}</td>
+      <td class="num">${st && st.trade_count ? cash(st.net_pnl) : `<span class="dim">—</span>`}</td>
+      <td class="num muted">${st?.trade_count || "—"}</td>
+      <td>${a.kind === "prop" ? `<select data-plan="${a.id}">
+        <option value="">— size —</option>
+        ${plans.map((pl) => `<option value="${pl.id}" ${pl.id === a.plan_id ? "selected" : ""}>${
+          esc(`${pl.prop_firms?.name ?? ""} ${money0(pl.account_size)}`)}</option>`).join("")}
+      </select>` : `<span class="dim">—</span>`}</td>
       <td class="muted">${esc(a.label || a.terminal_path || "—")}</td>
       <td class="num muted">${a.magic_source_part ?? "—"}</td>
       <td><button class="btn ghost" data-toggle="${a.id}" data-kind="${a.kind}">
         Set as ${a.kind === "live" ? "prop" : "live"}</button></td>
-    </tr>`).join("");
+    </tr>`;
+  }).join("");
 
   const discoveredRows = discovered.map((d) => {
     const key = `${d.platform}:${d.login_or_name}`;
@@ -711,9 +760,10 @@ async function renderConfig() {
     <div class="panel">
       <h2>Registered accounts</h2>
       <div class="scroll"><table>
-        <thead><tr><th>Kind</th><th>Platform</th><th>Account</th>
+        <thead><tr><th>Kind</th><th>ID</th><th>Platform</th><th>Account</th>
+          <th class="num">P&amp;L</th><th class="num">Trades</th><th>Plan</th>
           <th>Terminal</th><th class="num">magic_source_part</th><th></th></tr></thead>
-        <tbody>${accountRows || `<tr><td colspan="6">${empty("no accounts yet — register one below")}</td></tr>`}</tbody>
+        <tbody>${accountRows || `<tr><td colspan="10">${empty("no accounts yet — register one below")}</td></tr>`}</tbody>
       </table></div>
     </div>
 
@@ -755,6 +805,15 @@ async function renderConfig() {
         </div>
       </div>
     </div>`);
+
+  // O plano define alvo, drawdown e regras -- sem ele o painel não tem o que medir.
+  view.querySelectorAll("[data-plan]").forEach((sel) => {
+    sel.onchange = async () => {
+      await guard(() => save.account(Number(sel.dataset.plan),
+        { plan_id: sel.value ? Number(sel.value) : null }), "Plan set");
+      renderConfig();
+    };
+  });
 
   view.querySelectorAll("[data-toggle]").forEach((b) => {
     b.onclick = async () => {

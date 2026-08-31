@@ -5,7 +5,7 @@
 // fica so no coletor, no PC.
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { CONFIG } from "./config.js?v=90a602f587";
+import { CONFIG } from "./config.js?v=b0ee757df1";
 
 export const supabase = createClient(CONFIG.url, CONFIG.anonKey);
 
@@ -47,6 +47,20 @@ export const load = {
 
   accounts: () =>
     supabase.from("accounts").select("*").order("kind").order("login_or_name").then(unwrap),
+
+  // Regras da mesa por tamanho de conta.
+  plans: () =>
+    supabase.from("firm_plans")
+      .select("*, prop_firms(name)").order("firm_id").order("account_size").then(unwrap),
+
+  // Progresso de cada conta prop contra as regras da mesa.
+  progress: () =>
+    supabase.from("account_progress").select("*").order("short_id").then(unwrap),
+
+  // Contas com resultado e uso: é o que o seletor de fase precisa para o
+  // usuário distinguir três contas da mesma mesa.
+  accountStats: () =>
+    supabase.from("account_stats").select("*").order("kind").order("short_id").then(unwrap),
 
   discovered: () =>
     supabase.from("discovered_sources").select("*").order("platform").order("label").then(unwrap),

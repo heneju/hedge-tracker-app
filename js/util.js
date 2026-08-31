@@ -55,6 +55,12 @@ export const esc = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+// Os 4 últimos dígitos: é assim que o NinjaTrader identifica a conta na própria
+// interface, e é o que distingue contas da mesma mesa, cujos números só diferem
+// no fim.
+export const accountShort = (loginOrName) =>
+  String(loginOrName ?? "").slice(-4) || "—";
+
 export const STATUS_LABEL = {
   phase1: "Phase 1", phase2: "Phase 2", funded: "Funded",
   failed: "Failed", closed: "Closed",
