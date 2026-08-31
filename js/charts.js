@@ -5,7 +5,7 @@
 // `vector-effect="non-scaling-stroke"` mantém a espessura da linha constante
 // mesmo com a escala distorcida, que é o que quebra SVG esticado.
 
-import { money, money0, monthLabel, signClass, esc } from "./util.js?v=353bbaf7ad";
+import { money, money0, monthLabel, signClass, esc } from "./util.js?v=e34e89fab7";
 
 const UP = "#00cc00";
 const DOWN = "#cc0000";
@@ -255,6 +255,29 @@ export function accountProgress(rows) {
             </div>
           </div>
         </div>
+
+        ${a.rec_multiplier != null ? `
+        <div style="margin-top:10px;padding:8px 10px;background:#0b0b0b;border:1px solid ${GRID}">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;
+                      font-size:9px;margin-bottom:6px">
+            <span style="color:#5599ff;letter-spacing:.15em;font-weight:700">TODAY</span>
+            <span class="dim">spent ${money0(a.spent)} / dd left ${money0(a.drawdown_room)}</span>
+          </div>
+          <div style="display:flex;gap:18px;flex-wrap:wrap;font-size:10px">
+            <span class="dim">multiplier
+              <b style="color:#fff;font-size:12px">${Number(a.rec_multiplier).toFixed(3)}</b></span>
+            <span class="dim">target
+              <b style="color:#fff">${money0(a.rec_today_target)}</b></span>
+            <span class="dim">hedge cost
+              <b style="color:${DOWN}">${money0(a.rec_hedge_cost)}</b></span>
+          </div>
+          ${Array.isArray(a.rec_schedule) && a.rec_schedule.length > 1 ? `
+          <div style="font-size:9px;color:#555;margin-top:6px">
+            plan: ${a.rec_schedule.map((d) =>
+              `${money0(d.target)} <span style="color:#3a3a3a">(${d.share_pct}%)</span>`
+            ).join(" · ")}
+          </div>` : ""}
+        </div>` : ""}
 
         <div style="display:flex;gap:16px;font-size:9px;margin-top:8px">
           <span class="dim">days
