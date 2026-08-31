@@ -7,16 +7,16 @@
 // status, comentario, classificacao de conta). Execucoes, trades e vinculos sao
 // do coletor, e aparecem aqui somente como leitura.
 
-import { load, save, supabase, currentUser, signInWithEmail, signOut } from "./db.js?v=9954242a98";
+import { load, save, supabase, currentUser, signInWithEmail, signOut } from "./db.js?v=fdbcfef59b";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor, magicSourcePart,
   accountShort,
-} from "./util.js?v=9954242a98";
+} from "./util.js?v=fdbcfef59b";
 import {
   equityCurve, equityFinal, gauges, monthlyBars, firmBreakdown, accountProgress,
-} from "./charts.js?v=9954242a98";
-import { cell, locked, wireEditables } from "./editable.js?v=9954242a98";
+} from "./charts.js?v=fdbcfef59b";
+import { cell, locked, wireEditables } from "./editable.js?v=fdbcfef59b";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -582,7 +582,7 @@ async function openChallenge(id, journal, firms) {
 // ------------------------------------------------- editor de um challenge
 
 async function openChallengeEditor(c, firms) {
-  const stats = await load.accountStats();
+  const [stats, plans] = await Promise.all([load.accountStats(), load.plans()]);
   const isNew = !c;
 
   const firmOptions = firms.map((f) =>
@@ -593,6 +593,32 @@ async function openChallengeEditor(c, firms) {
   const firmById = new Map(firms.map((f) => [String(f.id), f]));
   const currentFirm = () => firmById.get(modal.querySelector("#c-firm")?.value ?? "");
   const evalPhasesOf = (firm) => Number(firm?.eval_phases ?? c?.eval_phases ?? 2);
+
+  // Tamanho da conta: escolhido aqui, na compra. Alvo, drawdown, dias mínimos e
+  // consistência vêm junto — são regra da mesa, não campo para digitar.
+  const plansOf = (firm) => plans.filter((pl) => pl.firm_id === Number(firm?.id));
+
+  const planSelect = (firm, selected) => {
+    const list = plansOf(firm);
+    if (!list.length) return "";
+    return `<option value="">— size —</option>` + list.map((pl) =>
+      `<option value="${pl.id}" ${pl.id === selected ? "selected" : ""}>${
+        esc(money0(pl.account_size))}</option>`).join("");
+  };
+
+  const planSummary = (planId) => {
+    const pl = plans.find((x) => x.id === Number(planId));
+    if (!pl) return `<span class="dim">pick a size to load the firm rules</span>`;
+    const bits = [
+      `target <b class="bright">${money0(pl.profit_target)}</b>`,
+      `drawdown <b class="bright">${money0(pl.max_drawdown)}</b> <span class="dim">${esc(pl.drawdown_type)}</span>`,
+    ];
+    if (pl.min_trading_days) bits.push(`min days <b class="bright">${pl.min_trading_days}</b>`);
+    if (pl.consistency_pct) bits.push(`consistency <b class="bright">${pl.consistency_pct}%</b>`);
+    if (Number(pl.buffer_multiplier)) bits.push(`buffer <b class="bright">+${pl.buffer_multiplier}</b>`);
+    if (Number(pl.buffer_cash)) bits.push(`buffer <b class="bright">+${money0(pl.buffer_cash)}</b>`);
+    return bits.join(" <span style='color:#2a2a2a'>·</span> ");
+  };
 
   const statusSelect = (evalPhases, selected) =>
     statusOptions(evalPhases).map((o) =>
@@ -638,10 +664,18 @@ async function openChallengeEditor(c, firms) {
         }</select></div>
       </div>
       <div class="row" style="margin-top:12px">
-        <div class="field"><label>Profit target</label>
-          <input id="c-target" type="number" step="0.01" value="${esc(c?.target ?? "")}"></div>
+        <div class="field"><label>Account size</label>
+          <select id="c-plan">${
+            planSelect(firms.find((f) => f.name === c?.firm), c?.plan_id)}</select></div>
         <div class="field"><label>Trader split (%)</label>
           <input id="c-split" type="number" step="0.01" value="${esc(c?.split_pct ?? "")}"></div>
+        <div class="field wide"><label>Profit target</label>
+          <input id="c-target" type="number" step="0.01" value="${esc(c?.target ?? "")}"
+                 placeholder="from the plan"></div>
+      </div>
+      <div id="plan-summary" style="font-size:10px;color:#888;margin-top:8px;
+           padding:7px 10px;background:#0b0b0b;border:1px solid var(--line-soft)">
+        ${planSummary(c?.plan_id)}
       </div>
       <div class="field" style="margin-top:12px"><label>Notes</label>
         <textarea id="c-comments" rows="2">${esc(c?.comments || "")}</textarea></div>
@@ -677,19 +711,30 @@ async function openChallengeEditor(c, firms) {
   renderPhaseFields();
   modal.querySelector("#close-modal").onclick = () => modal.close();
 
-  // Trocar de mesa muda quantas fases existem, entao status e campos seguem.
+  const refreshPlanSummary = () => {
+    modal.querySelector("#plan-summary").innerHTML =
+      planSummary(modal.querySelector("#c-plan").value);
+  };
+  modal.querySelector("#c-plan").onchange = refreshPlanSummary;
+
+  // Trocar de mesa muda as fases E os tamanhos disponiveis: cada mesa tem os
+  // seus. Deixar a lista antiga ofereceria um plano de outra mesa.
   modal.querySelector("#c-firm").onchange = () => {
-    const evalPhases = evalPhasesOf(currentFirm());
+    const firm = currentFirm();
+    const evalPhases = evalPhasesOf(firm);
     const statusEl = modal.querySelector("#c-status");
-    const keep = statusEl.value;
-    statusEl.innerHTML = statusSelect(evalPhases, keep);
+    statusEl.innerHTML = statusSelect(evalPhases, statusEl.value);
+    modal.querySelector("#c-plan").innerHTML = planSelect(firm, null);
+    refreshPlanSummary();
     renderPhaseFields();
   };
 
   modal.querySelector("#save-challenge").onclick = async () => {
     const firmId = modal.querySelector("#c-firm").value;
+    const planId = modal.querySelector("#c-plan").value;
     const patch = {
       firm_id: firmId ? Number(firmId) : null,
+      plan_id: planId ? Number(planId) : null,
       date_open: modal.querySelector("#c-date").value || null,
       status: modal.querySelector("#c-status").value,
       target: Number(modal.querySelector("#c-target").value) || null,
