@@ -36,6 +36,9 @@
   --gold:#ffd700;
 }
 *{box-sizing:border-box}
+/* Regra de autor vence a do navegador: sem isto, `.field{display:flex}`
+   sobrepoe o [hidden] padrao e o campo escondido continua na tela. */
+[hidden]{display:none !important}
 html{-webkit-text-size-adjust:100%}
 body{
   margin:0; background:var(--bg); color:var(--text);
@@ -258,6 +261,6 @@ dialog th{background:#0b0b0b}
 
 <dialog id="modal"></dialog>
 
-<script type="module" src="./js/app.js?v=fdbcfef59b"></script>
+<script type="module" src="./js/app.js?v=cf2f7a771a"></script>
 </body>
 </html>
