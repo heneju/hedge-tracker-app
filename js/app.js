@@ -7,16 +7,16 @@
 // status, comentario, classificacao de conta). Execucoes, trades e vinculos sao
 // do coletor, e aparecem aqui somente como leitura.
 
-import { load, save, supabase, currentUser, signInWithEmail, signOut } from "./db.js?v=cf2f7a771a";
+import { load, save, supabase, currentUser, signInWithEmail, signOut } from "./db.js?v=ddbbfac6b4";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor, magicSourcePart,
   accountShort,
-} from "./util.js?v=cf2f7a771a";
+} from "./util.js?v=ddbbfac6b4";
 import {
   equityCurve, equityFinal, gauges, monthlyBars, firmBreakdown, accountProgress,
-} from "./charts.js?v=cf2f7a771a";
-import { cell, locked, wireEditables } from "./editable.js?v=cf2f7a771a";
+} from "./charts.js?v=ddbbfac6b4";
+import { cell, locked, wireEditables } from "./editable.js?v=ddbbfac6b4";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -602,23 +602,37 @@ async function openChallengeEditor(c, firms) {
   const planSelect = (firm, selected) => {
     const list = plansOf(firm);
     if (!list.length) return "";
+    // Sem o nome do modelo a escolha seria cega: a FundingPips tem
+    // "2 Step Standard $50k" e "2 Step Pro $50k" com regras bem diferentes.
+    const named = new Set(list.map((pl) => pl.name)).size > 1;
     return `<option value="">— size —</option>` + list.map((pl) =>
       `<option value="${pl.id}" ${pl.id === selected ? "selected" : ""}>${
-        esc(money0(pl.account_size))}</option>`).join("");
+        esc(named ? `${pl.name} · ${money0(pl.account_size)}`
+                  : money0(pl.account_size))}</option>`).join("");
   };
 
   const planSummary = (planId) => {
     const pl = plans.find((x) => x.id === Number(planId));
     if (!pl) return `<span class="dim">pick a size to load the firm rules</span>`;
-    const bits = [
-      `target <b class="bright">${money0(pl.profit_target)}</b>`,
-      `drawdown <b class="bright">${money0(pl.max_drawdown)}</b> <span class="dim">${esc(pl.drawdown_type)}</span>`,
-    ];
+    const bits = [];
+    if (pl.profit_target) {
+      bits.push(`target <b class="bright">${money0(pl.profit_target)}</b>${
+        pl.profit_target_p2 ? ` <span class="dim">then</span> <b class="bright">${
+          money0(pl.profit_target_p2)}</b>` : ""}`);
+    } else {
+      bits.push(`<span class="dim">no profit target</span>`);
+    }
+    bits.push(`drawdown <b class="bright">${money0(pl.max_drawdown)}</b> <span class="dim">${esc(pl.drawdown_type)}</span>`);
+    if (pl.daily_loss_limit) bits.push(`daily <b class="bright">${money0(pl.daily_loss_limit)}</b>`);
+    if (pl.profit_split) bits.push(`split <b class="bright">${pl.profit_split}%</b>`);
     if (pl.min_trading_days) bits.push(`min days <b class="bright">${pl.min_trading_days}</b>`);
     if (pl.consistency_pct) bits.push(`consistency <b class="bright">${pl.consistency_pct}%</b>`);
     if (Number(pl.buffer_multiplier)) bits.push(`buffer <b class="bright">+${pl.buffer_multiplier}</b>`);
     if (Number(pl.buffer_cash)) bits.push(`buffer <b class="bright">+${money0(pl.buffer_cash)}</b>`);
-    return bits.join(" <span style='color:#2a2a2a'>·</span> ");
+    const line = bits.join(" <span style='color:#2a2a2a'>·</span> ");
+    return pl.notes
+      ? `${line}<div style="color:#555;margin-top:5px">${esc(pl.notes)}</div>`
+      : line;
   };
 
   const statusSelect = (evalPhases, selected) =>
