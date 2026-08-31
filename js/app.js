@@ -7,16 +7,19 @@
 // status, comentario, classificacao de conta). Execucoes, trades e vinculos sao
 // do coletor, e aparecem aqui somente como leitura.
 
-import { load, save, supabase, currentUser, signInWithEmail, signOut } from "./db.js?v=7cf98dc2b9";
+import {
+  load, save, supabase, currentUser, signInWithPassword, signInWithEmail,
+  changePassword, signOut,
+} from "./db.js?v=fd49434d52";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor, magicSourcePart,
   accountShort,
-} from "./util.js?v=7cf98dc2b9";
+} from "./util.js?v=fd49434d52";
 import {
   equityCurve, equityFinal, gauges, monthlyBars, firmBreakdown, accountProgress,
-} from "./charts.js?v=7cf98dc2b9";
-import { cell, locked, wireEditables } from "./editable.js?v=7cf98dc2b9";
+} from "./charts.js?v=fd49434d52";
+import { cell, locked, wireEditables } from "./editable.js?v=fd49434d52";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -120,33 +123,58 @@ function empty(message) {
 
 function renderLogin() {
   render(`
-    <div class="panel" style="max-width:340px;margin:12vh auto">
+    <div class="panel" style="max-width:340px;margin:10vh auto">
       <h2>auth<span style="color:var(--ghostest)">v1</span></h2>
       <div class="panel-body">
         <div class="field"><label>Email</label>
-          <input id="email" type="email" autocomplete="email" placeholder="voce@exemplo.com">
+          <input id="email" type="email" autocomplete="username" placeholder="voce@exemplo.com">
         </div>
-        <button class="btn" id="send" style="margin-top:14px;width:100%">Send link</button>
-        <p class="muted" style="margin:14px 0 0;font-size:9px;letter-spacing:.1em;line-height:1.7">
-          A sign-in link goes to your email.<br>Works on desktop and phone.
-        </p>
+        <div class="field" style="margin-top:10px"><label>Password</label>
+          <input id="password" type="password" autocomplete="current-password">
+        </div>
+        <button class="btn" id="signin" style="margin-top:14px;width:100%">Sign in</button>
+
+        <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line-soft)">
+          <button class="btn ghost" id="magic" style="width:100%">Email me a link instead</button>
+          <p class="muted" style="margin:10px 0 0;font-size:9px;letter-spacing:.08em;line-height:1.7">
+            The link is single use — some email providers open it before you do,
+            and then it is already spent. Password always works.
+          </p>
+        </div>
       </div>
     </div>`);
 
-  const send = document.getElementById("send");
-  send.onclick = async () => {
-    const email = document.getElementById("email").value.trim();
-    if (!email) return toast("Enter your email");
-    send.disabled = true;
+  const email = document.getElementById("email");
+  const password = document.getElementById("password");
+  const signin = document.getElementById("signin");
+
+  const submit = async () => {
+    if (!email.value.trim() || !password.value) return toast("Email and password");
+    signin.disabled = true;
     try {
-      await signInWithEmail(email);
-      toast("Link sent — check your email");
+      await signInWithPassword(email.value.trim(), password.value);
     } catch (err) {
       toast(`Error: ${err.message}`);
     } finally {
-      send.disabled = false;
+      signin.disabled = false;
     }
   };
+
+  signin.onclick = submit;
+  password.onkeydown = (e) => { if (e.key === "Enter") submit(); };
+  email.onkeydown = (e) => { if (e.key === "Enter") password.focus(); };
+
+  document.getElementById("magic").onclick = async () => {
+    if (!email.value.trim()) return toast("Enter your email");
+    try {
+      await signInWithEmail(email.value.trim());
+      toast("Link sent — check your email");
+    } catch (err) {
+      toast(`Error: ${err.message}`);
+    }
+  };
+
+  email.focus();
 }
 
 // ----------------------------------------------------------------- overview
@@ -978,6 +1006,21 @@ async function renderConfig() {
     </div>
 
     <div class="panel">
+      <h2>Account<span class="dim">${esc(state.email)}</span></h2>
+      <div class="panel-body row">
+        <div class="field"><label>New password</label>
+          <input id="new-password" type="password" autocomplete="new-password"
+                 placeholder="at least 8 characters"></div>
+        <div class="field auto"><label>&nbsp;</label>
+          <button class="btn ghost" id="change-password">Change</button></div>
+        <p class="muted" style="margin:6px 0 0;font-size:9px;width:100%">
+          The collector on this PC signs in with these credentials too — after
+          changing it here, update TRACKER_PASSWORD in the .env.
+        </p>
+      </div>
+    </div>
+
+    <div class="panel">
       <h2>Prop firms</h2>
       <div class="panel-body">
         <div class="row">
@@ -1043,6 +1086,13 @@ async function renderConfig() {
       renderConfig();
     };
   });
+
+  document.getElementById("change-password").onclick = async () => {
+    const value = document.getElementById("new-password").value;
+    if (value.length < 8) return toast("At least 8 characters");
+    await guard(() => changePassword(value), "Password changed");
+    document.getElementById("new-password").value = "";
+  };
 
   document.getElementById("add-firm").onclick = async () => {
     const name = document.getElementById("firm-name").value.trim();

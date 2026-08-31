@@ -5,7 +5,7 @@
 // fica so no coletor, no PC.
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { CONFIG } from "./config.js?v=7cf98dc2b9";
+import { CONFIG } from "./config.js?v=fd49434d52";
 
 export const supabase = createClient(CONFIG.url, CONFIG.anonKey);
 
@@ -14,11 +14,23 @@ export async function currentUser() {
   return data?.user ?? null;
 }
 
+export async function signInWithPassword(email, password) {
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) throw error;
+}
+
 export async function signInWithEmail(email) {
+  // O link volta para a raiz, sem o hash da secao. Mandar `location.href` levaria
+  // junto um `#challenges`, e o token viria para uma URL que ja tem fragmento.
   const { error } = await supabase.auth.signInWithOtp({
     email,
-    options: { emailRedirectTo: window.location.href },
+    options: { emailRedirectTo: location.origin + location.pathname },
   });
+  if (error) throw error;
+}
+
+export async function changePassword(password) {
+  const { error } = await supabase.auth.updateUser({ password });
   if (error) throw error;
 }
 
