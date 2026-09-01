@@ -10,16 +10,16 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=93e2bc41d2";
+} from "./db.js?v=87019441bc";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=93e2bc41d2";
+} from "./util.js?v=87019441bc";
 import {
   equityCurve, equityFinal, gauges, monthlyBars, firmBreakdown, accountProgress,
-} from "./charts.js?v=93e2bc41d2";
-import { cell, locked, wireEditables } from "./editable.js?v=93e2bc41d2";
+} from "./charts.js?v=87019441bc";
+import { cell, locked, wireEditables } from "./editable.js?v=87019441bc";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -46,6 +46,10 @@ const state = {
   // que tem coisa para olhar.
   openIssues: 0,
   isAdmin: false,
+  // Quantas informações o coletor não tem como descobrir e continuam em branco.
+  // Fica no menu pelo mesmo motivo dos reportes: buraco esquecido vira número
+  // errado que ninguém questiona.
+  pendingSetup: 0,
 };
 
 // ------------------------------------------------------------------- helpers
@@ -2262,6 +2266,256 @@ async function renderHedge() {
   });
 }
 
+// ------------------------------------------------------ o que falta cadastrar
+//
+// Há coisas que o coletor não tem como descobrir sozinho: quanto o challenge
+// custou (está no email da mesa, não na plataforma) e qual modelo a conta é
+// quando dois têm o mesmo tamanho. Sem elas o painel calcula em cima de um
+// buraco -- o multiplicador sai menor do que devia, o total ignora um custo que
+// existiu -- e nada na tela denuncia isso.
+//
+// Por isso o aviso é ativo: aparece ao entrar, com o campo ali para preencher
+// na hora. Some quando não há mais pendência, e não reaparece depois de
+// dispensado -- só volta se surgir uma pendência NOVA, comparando a assinatura
+// do que está pendente com a do que já foi visto.
+
+const PENDING_SEEN = "tracking:pending-seen";
+
+// NinjaTrader e Tradovate são a mesma conta por dois caminhos; a Tradeify
+// cadastra a mesa como NT8 e o app aceita as duas grafias.
+const FUTURES = new Set(["NT8", "Tradovate"]);
+
+/**
+ * Levanta o que só o usuário pode responder.
+ *
+ * Cada item traz o porquê junto: "falta o custo" não diz nada, "falta o custo,
+ * e sem ele o multiplicador do hedge sai menor do que devia" diz.
+ */
+async function loadPending() {
+  const [journal, progress, accounts, plans] = await Promise.all([
+    load.journal(), load.progress(), load.accounts(), load.plans()]);
+
+  const items = [];
+  const accountById = new Map(accounts.map((a) => [a.id, a]));
+
+  // Custo: linha importada da planilha já traz o número, então fica de fora --
+  // o aviso é para o que o coletor criou e ninguém preencheu.
+  for (const c of journal) {
+    if (c.import_source || Number(c.cost_entries) > 0) continue;
+    items.push({
+      key: `cost:${c.id}`,
+      kind: "cost",
+      id: c.id,
+      title: `${c.account_ids || "?"} · ${c.firm || "?"}`,
+      ask: "What did this challenge cost?",
+      why: "It is the starting point of the hedge multiplier — without it the"
+        + " panel recommends a smaller hedge than it should.",
+      date: c.date_open,
+    });
+  }
+
+  for (const a of progress) {
+    const account = accountById.get(a.account_id) || {};
+    if (!a.plan_id || a.plan_source === "inferred") {
+      items.push({
+        key: `plan:${a.account_id}`,
+        kind: "plan",
+        id: a.account_id,
+        platform: account.platform,
+        title: `${accountShort(a.login_or_name)} · ${a.login_or_name}`,
+        ask: a.plan_id
+          ? `Is this really ${a.plan_name || "?"} ${money0(a.account_size)}?`
+          : "Which model is this account?",
+        why: a.plan_id
+          ? "Guessed from the balance. Two models can share a size with"
+            + ` different drawdowns (${money0(a.max_drawdown)} here), and the`
+            + " drawdown is what sets the multiplier."
+          : "Without the plan there is no target and no drawdown to measure"
+            + " against, so this account gets no multiplier at all.",
+      });
+      continue;
+    }
+    if (a.phase == null && Number(a.days_traded) > 0) {
+      items.push({
+        key: `challenge:${a.account_id}`,
+        kind: "challenge",
+        id: a.account_id,
+        title: `${accountShort(a.login_or_name)} · ${a.login_or_name}`,
+        ask: "This account has trades but no challenge.",
+        why: `${a.days_traded} day(s) traded and ${cash(a.pnl)} of result are`
+          + " sitting outside every total until it belongs to one.",
+      });
+    }
+  }
+
+  return { items, plans, accounts };
+}
+
+/** Roda depois da primeira tela: o aviso não pode atrasar o que já ia carregar. */
+async function checkPending() {
+  // Offline não é motivo para atrapalhar quem já está com a tela aberta.
+  const { items, plans, accounts } = await loadPending()
+    .catch(() => ({ items: [], plans: [], accounts: [] }));
+  state.pendingSetup = items.length;
+  renderNav();
+  if (!items.length) return;
+
+  const signature = items.map((i) => i.key).sort().join(",");
+  let seen = "";
+  try {
+    seen = localStorage.getItem(PENDING_SEEN) || "";
+  } catch {
+    seen = "";   // Janela anônima: mostra sempre, que é o lado seguro.
+  }
+  if (seen === signature) return;
+  openPendingForm(items, plans, accounts, signature);
+}
+
+function openPendingForm(items, plans, accounts, signature) {
+  const accountById = new Map(accounts.map((a) => [a.id, a]));
+
+  // Plano só faz sentido dentro da mesma plataforma: um plano CFD não descreve
+  // uma conta de futuros, por mais que os dois tamanhos sejam 50k.
+  const plansFor = (platform) => plans.filter((pl) => {
+    const firm = pl.prop_firms?.platform;
+    if (!firm || !platform) return true;   // cadastro pela metade não esconde nada
+    return FUTURES.has(platform) ? FUTURES.has(firm) : firm === platform;
+  });
+
+  const field = (item) => {
+    if (item.kind === "cost") {
+      return `<div class="row" style="margin-top:8px">
+        <div class="field"><label>Cost paid</label>
+          <input type="number" min="0" step="0.01" data-pending-cost="${item.id}"
+                 placeholder="99.00" inputmode="decimal"></div>
+        <div class="field auto"><label>&nbsp;</label>
+          <button class="btn" data-save-cost="${item.id}"
+                  data-date="${esc(item.date || "")}">Save</button></div>
+      </div>`;
+    }
+    if (item.kind === "plan") {
+      const account = accountById.get(item.id) || {};
+      const options = plansFor(item.platform);
+      return `<div class="row" style="margin-top:8px">
+        <div class="field wide"><label>Model</label>
+          <select data-pending-plan="${item.id}">
+            <option value="">— pick the model —</option>
+            ${options.map((pl) => `<option value="${pl.id}" ${
+              pl.id === account.plan_id ? "selected" : ""}>${esc(
+              `${pl.prop_firms?.name || "?"} · ${pl.name || "?"} · ${
+                money0(pl.account_size)} · ${money0(pl.max_drawdown)} dd`)}</option>`).join("")}
+          </select></div>
+        <div class="field auto"><label>&nbsp;</label>
+          <button class="btn" data-save-plan="${item.id}">Confirm</button></div>
+      </div>`;
+    }
+    return `<div class="row" style="margin-top:8px">
+      <div class="field auto"><button class="btn ghost" data-go-setup="1">
+        Open Setup to register it</button></div>
+    </div>`;
+  };
+
+  modal.innerHTML = `
+    <header><h1>${items.length} thing${items.length === 1 ? "" : "s"} only you can fill in</h1>
+      <span class="spacer"></span>
+      <button class="btn ghost" id="pending-later">Later</button></header>
+    <div style="padding:16px;max-height:74vh;overflow:auto">
+      <p class="muted" style="margin-top:0;line-height:1.8">
+        The collector reads the platforms, so it knows every trade, every balance
+        and every result on its own. <strong class="bright">These it cannot
+        know</strong> — the purchase cost lives in the firm's email, and when two
+        models share an account size the balance cannot tell them apart. Until
+        they are filled the panel is doing the maths over a hole: the hedge
+        multiplier comes out smaller than it should, and a cost that was really
+        paid never reaches the total.
+      </p>
+      ${items.map((item) => `
+        <div class="pending-item">
+          <div class="pending-head">
+            <strong class="bright">${esc(item.title)}</strong>
+            <span class="muted">${esc(item.ask)}</span>
+          </div>
+          <p class="pending-why">${esc(item.why)}</p>
+          ${field(item)}
+        </div>`).join("")}
+      <p class="muted" style="font-size:9px;margin-bottom:0">
+        Closing this is fine — it comes back only if something new shows up, and
+        the Setup tab keeps the count.
+      </p>
+    </div>`;
+
+  const remember = () => {
+    try {
+      localStorage.setItem(PENDING_SEEN, signature);
+    } catch {
+      // Sem armazenamento o aviso volta na próxima entrada. Chato, não errado.
+    }
+  };
+
+  modal.querySelector("#pending-later").onclick = () => {
+    remember();
+    modal.close();
+  };
+
+  modal.querySelectorAll("[data-save-cost]").forEach((b) => {
+    b.onclick = async () => {
+      const id = Number(b.dataset.saveCost);
+      const input = modal.querySelector(`[data-pending-cost="${id}"]`);
+      const amount = Number(input.value);
+      if (!amount) return toast("Enter the cost");
+      // Custo é dinheiro que sai: guardado negativo, como na planilha, mesmo
+      // que a pessoa digite positivo.
+      await guard(() => save.createCashEvent({
+        challenge_id: id,
+        kind: "cost",
+        amount: -Math.abs(amount),
+        occurred_on: b.dataset.date || new Date().toISOString().slice(0, 10),
+        source: "manual",
+      }), "Cost saved");
+      finishPending();
+    };
+  });
+
+  modal.querySelectorAll("[data-save-plan]").forEach((b) => {
+    b.onclick = async () => {
+      const id = Number(b.dataset.savePlan);
+      const select = modal.querySelector(`[data-pending-plan="${id}"]`);
+      if (!select.value) return toast("Pick the model");
+      // `manual` trava a escolha: o coletor não a sobrepõe mais, e é isso que
+      // faz o aviso sumir de vez para esta conta.
+      await guard(() => save.account(id, {
+        plan_id: Number(select.value),
+        plan_source: "manual",
+      }), "Model confirmed");
+      finishPending();
+    };
+  });
+
+  modal.querySelectorAll("[data-go-setup]").forEach((b) => {
+    b.onclick = () => {
+      remember();
+      modal.close();
+      go("config");
+    };
+  });
+
+  // Depois de gravar, refaz a lista: sobrou pendência, o aviso continua com o
+  // que sobrou; acabou, fecha e o contador zera.
+  async function finishPending() {
+    const fresh = await loadPending();
+    state.pendingSetup = fresh.items.length;
+    renderNav();
+    if (!fresh.items.length) {
+      modal.close();
+      return go(state.page);
+    }
+    openPendingForm(fresh.items, fresh.plans, fresh.accounts,
+                    fresh.items.map((i) => i.key).sort().join(","));
+  }
+
+  modal.showModal();
+}
+
 // -------------------------------------------------------------- calculadora
 
 function renderCalc() {
@@ -2327,8 +2581,10 @@ const RENDERERS = {
 
 function renderNav() {
   document.getElementById("nav").innerHTML = PAGES.map((p) => {
-    const label = p.id === "issues" && state.openIssues
-      ? `${p.label} <span class="pill">${state.openIssues}</span>`
+    const count = p.id === "issues" ? state.openIssues
+      : p.id === "config" ? state.pendingSetup : 0;
+    const label = count
+      ? `${p.label} <span class="pill">${count}</span>`
       : esc(p.label);
     return `<button data-page="${p.id}" ${
       p.id === state.page ? 'aria-current="page"' : ""}>${label}</button>`;
@@ -2409,6 +2665,9 @@ async function boot() {
   refreshIssueCount();
   const initial = location.hash.slice(1);
   await go(RENDERERS[initial] ? initial : "overview");
+  // Depois da primeira tela, de propósito: o aviso do que falta cadastrar não
+  // pode atrasar o que a pessoa entrou para ver.
+  checkPending();
 }
 
 supabase.auth.onAuthStateChange(() => boot());

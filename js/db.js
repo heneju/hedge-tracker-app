@@ -5,7 +5,7 @@
 // fica so no coletor, no PC.
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { CONFIG } from "./config.js?v=93e2bc41d2";
+import { CONFIG } from "./config.js?v=87019441bc";
 
 export const supabase = createClient(CONFIG.url, CONFIG.anonKey);
 
@@ -63,7 +63,10 @@ export const load = {
   // Regras da mesa por tamanho de conta.
   plans: () =>
     supabase.from("firm_plans")
-      .select("*, prop_firms(name)").order("firm_id").order("account_size").then(unwrap),
+      // A plataforma da mesa vem junto: e ela que diz se um plano pode
+      // descrever uma conta -- CFD nao descreve conta de futuros.
+      .select("*, prop_firms(name, platform)")
+      .order("firm_id").order("account_size").then(unwrap),
 
   // Progresso de cada conta prop contra as regras da mesa.
   progress: () =>

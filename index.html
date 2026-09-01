@@ -297,6 +297,15 @@ dialog th{background:#0b0b0b}
 }
 .mult-actions{margin-top:12px}
 
+/* Aviso do que falta cadastrar. Um bloco por pendência, com o porquê acima do
+   campo: sem o motivo o aviso vira burocracia e a pessoa fecha sem preencher. */
+.pending-item{
+  border:1px solid var(--line);border-left:2px solid var(--accent);
+  padding:10px 12px;margin-bottom:10px;background:#0b0b0b;
+}
+.pending-head{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;font-size:10px}
+.pending-why{margin:6px 0 0;font-size:9px;line-height:1.7;color:var(--dim)}
+
 @media (max-width:640px){
   main{padding:10px}
   header{padding:0 10px}
@@ -335,6 +344,6 @@ dialog th{background:#0b0b0b}
 
 <dialog id="modal"></dialog>
 
-<script type="module" src="./js/app.js?v=93e2bc41d2"></script>
+<script type="module" src="./js/app.js?v=87019441bc"></script>
 </body>
 </html>
