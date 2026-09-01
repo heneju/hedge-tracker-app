@@ -10,16 +10,16 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=3e03bcc5c5";
+} from "./db.js?v=ea3263d4fe";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor, magicSourcePart,
   accountShort,
-} from "./util.js?v=3e03bcc5c5";
+} from "./util.js?v=ea3263d4fe";
 import {
   equityCurve, equityFinal, gauges, monthlyBars, firmBreakdown, accountProgress,
-} from "./charts.js?v=3e03bcc5c5";
-import { cell, locked, wireEditables } from "./editable.js?v=3e03bcc5c5";
+} from "./charts.js?v=ea3263d4fe";
+import { cell, locked, wireEditables } from "./editable.js?v=ea3263d4fe";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -516,6 +516,27 @@ async function openChallenge(id, journal, firms) {
   const links = await load.linksForTrades(trades.map((t) => t.id));
 
   const byId = new Map(trades.map((t) => [t.id, t]));
+
+  // Para onde um trade pode ser movido dentro deste challenge. "solto" tira da
+  // fase: ele reaparece em Unassigned, e de la vai para qualquer challenge --
+  // e por isso que remover aqui nao perde nada.
+  const phaseOptions = [{ value: "", label: "— loose —" }].concat(
+    phases.map((p) => ({ value: p.id, label: phaseLabel(p.phase, c.eval_phases) })));
+
+  // O resultado e medido pela plataforma; editar marca a coluna e o coletor
+  // para de sobrescrever aquele trade. A marca aparece como ✎ ao lado.
+  const pnlCell = (t) => cell(t.net_pnl, {
+    id: t.id, field: "trade:net_pnl", type: "number", align: true,
+    title: "medido — ao editar, o coletor para de sobrescrever este valor",
+    format: () => `${cash(t.net_pnl)}${(t.manual_cols || []).includes("net_pnl") ? " ✎" : ""}`,
+  });
+
+  const phaseCell = (t) => cell(t.phase_id, {
+    id: t.id, field: "trade:phase_id", type: "select", options: phaseOptions,
+    format: () => `<span class="muted">${esc(
+      phaseOptions.find((o) => String(o.value) === String(t.phase_id))?.label ?? "—")}</span>`,
+  });
+
   const pairRows = links.map((l) => {
     const prop = byId.get(l.prop_trade_id);
     const live = byId.get(l.live_trade_id);
@@ -524,12 +545,13 @@ async function openChallenge(id, journal, firms) {
     return `<tr>
       <td>${stamp(prop.entry_ts)}</td>
       <td>${esc(prop.symbol)} <span class="muted">${esc(prop.side)}</span> ${num(prop.qty, 0)}</td>
-      <td class="num">${cash(prop.net_pnl)}</td>
+      ${pnlCell(prop)}
       <td>${esc(live.symbol)} <span class="muted">${esc(live.side)}</span> ${num(live.qty, 2)}</td>
-      <td class="num">${cash(live.net_pnl)}</td>
+      ${pnlCell(live)}
       <td class="num"><strong>${cash(net)}</strong></td>
       <td class="num muted">${l.observed_multiplier ?? "—"}</td>
       <td>${badge("closed", l.link_method)}</td>
+      <td><button class="btn ghost danger" data-unlink="${l.id}">Unlink</button></td>
     </tr>`;
   }).join("");
 
@@ -539,7 +561,8 @@ async function openChallenge(id, journal, firms) {
       <td>${stamp(t.entry_ts)}</td>
       <td>${badge(t.accounts?.kind || "prop", t.accounts?.kind === "live" ? "live" : "prop")}</td>
       <td>${esc(t.symbol)} <span class="muted">${esc(t.side)}</span> ${num(t.qty, 2)}</td>
-      <td class="num">${cash(t.net_pnl)}</td>
+      ${pnlCell(t)}
+      ${phaseCell(t)}
     </tr>`).join("");
 
   const phaseRows = phases.map((p) => `
@@ -604,13 +627,14 @@ async function openChallenge(id, journal, firms) {
         <thead><tr>
           <th>Entry</th><th>Prop</th><th class="num">Prop P&amp;L</th>
           <th>Live</th><th class="num">Live P&amp;L</th><th class="num">Net</th>
-          <th class="num">Mult.</th><th>Link</th>
+          <th class="num">Mult.</th><th>Link</th><th></th>
         </tr></thead>
-        <tbody>${pairRows || `<tr><td colspan="8">${empty("no pairs yet")}</td></tr>`}</tbody>
+        <tbody>${pairRows || `<tr><td colspan="9">${empty("no pairs yet")}</td></tr>`}</tbody>
       </table></div></div>
 
       ${soloRows ? `<div class="panel"><h2>Unpaired trades</h2><div class="scroll"><table>
-        <thead><tr><th>Entry</th><th>Leg</th><th>Symbol</th><th class="num">P&amp;L</th></tr></thead>
+        <thead><tr><th>Entry</th><th>Leg</th><th>Symbol</th><th class="num">P&amp;L</th>
+          <th>Phase</th></tr></thead>
         <tbody>${soloRows}</tbody></table></div></div>` : ""}
     </div>`;
 
@@ -644,6 +668,30 @@ async function openChallenge(id, journal, firms) {
     modal.close();
     renderChallenges();
   };
+  wireEditables(modal, async (field, tradeId, value) => {
+    const column = field.split(":")[1];
+    const trade = byId.get(Number(tradeId)) || {};
+
+    await guard(() => save.trade(Number(tradeId), column === "phase_id"
+      // A fase e atribuicao, nao medicao: o coletor recalcula toda vez, entao
+      // sem a marca a escolha voltaria atras sozinha no ciclo seguinte.
+      ? manualPatch(trade, { phase_id: value ? Number(value) : null })
+      : manualPatch(trade, { [column]: value === "" ? null : Number(value) })), "Saved");
+
+    modal.close();
+    renderChallenges();
+  });
+
+  // Desfazer o par nao apaga trade nenhuma: as duas continuam no challenge,
+  // separadas, e podem ser religadas quando o par certo for identificado.
+  modal.querySelectorAll("[data-unlink]").forEach((b) => {
+    armDelete(b, "Unlink?", async () => {
+      await guard(() => save.deleteLink(Number(b.dataset.unlink)), "Unlinked");
+      modal.close();
+      renderChallenges();
+    });
+  });
+
   modal.querySelectorAll("[data-del-cash]").forEach((b) => {
     b.onclick = async () => {
       await guard(() => save.deleteCashEvent(Number(b.dataset.delCash)), "Removed");
@@ -919,6 +967,7 @@ async function renderUnassigned() {
   const rows = trades.map((t) => `
     <tr>
       <td>${stamp(t.exit_ts)}</td>
+      <td>${badge(t.account_kind || "prop", t.account_kind || "prop")}</td>
       <td>${esc(t.symbol)} <span class="muted">${esc(t.side)}</span> ${num(t.qty, 2)}</td>
       <td class="num">${cash(t.net_pnl)}</td>
       <td class="muted">${esc(t.comment || "—")}</td>
@@ -933,17 +982,18 @@ async function renderUnassigned() {
 
   render(`
     <div class="panel">
-      <h2>${trades.length} live trades with no challenge</h2>
+      <h2>${trades.length} trades with no challenge</h2>
       <div class="panel-body" style="padding-bottom:0">
         <p class="muted" style="margin-top:0">
           The collector only attributes by the Copyator magic. What lands here is a
-          manual trade, an old account, or one not registered yet — nothing is guessed.
+          manual trade, an old account, one not registered yet, or one you took off
+          a challenge — nothing is guessed.
         </p>
       </div>
       <div class="scroll"><table>
-        <thead><tr><th>Exit</th><th>Symbol</th><th class="num">P&amp;L</th>
+        <thead><tr><th>Exit</th><th>Leg</th><th>Symbol</th><th class="num">P&amp;L</th>
           <th>Comment</th><th>Magic</th><th style="min-width:230px">Assign to</th></tr></thead>
-        <tbody>${rows || `<tr><td colspan="6">${empty("nothing pending — all attributed")}</td></tr>`}</tbody>
+        <tbody>${rows || `<tr><td colspan="7">${empty("nothing pending — all attributed")}</td></tr>`}</tbody>
       </table></div>
     </div>`);
 

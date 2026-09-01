@@ -5,7 +5,7 @@
 // fica so no coletor, no PC.
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { CONFIG } from "./config.js?v=3e03bcc5c5";
+import { CONFIG } from "./config.js?v=ea3263d4fe";
 
 export const supabase = createClient(CONFIG.url, CONFIG.anonKey);
 
@@ -78,7 +78,7 @@ export const load = {
     supabase.from("discovered_sources").select("*").order("platform").order("label").then(unwrap),
 
   unassigned: () =>
-    supabase.from("unassigned_live_trades")
+    supabase.from("unassigned_trades")
       .select("*").order("exit_ts", { ascending: false }).limit(300).then(unwrap),
 
   phases: (challengeId) =>
