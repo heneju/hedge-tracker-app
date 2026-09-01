@@ -10,16 +10,16 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=5dd4d7c927";
+} from "./db.js?v=3e03bcc5c5";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor, magicSourcePart,
   accountShort,
-} from "./util.js?v=5dd4d7c927";
+} from "./util.js?v=3e03bcc5c5";
 import {
   equityCurve, equityFinal, gauges, monthlyBars, firmBreakdown, accountProgress,
-} from "./charts.js?v=5dd4d7c927";
-import { cell, locked, wireEditables } from "./editable.js?v=5dd4d7c927";
+} from "./charts.js?v=3e03bcc5c5";
+import { cell, locked, wireEditables } from "./editable.js?v=3e03bcc5c5";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -1142,27 +1142,19 @@ async function renderConfig() {
       <h2>Register prop account <span class="dim">one step</span></h2>
       <div class="panel-body">
         <p class="muted" style="margin-top:0">
-          Creates or reuses the firm and plan, then opens one challenge per
-          selected account and links all of them to the current phase.
+          Select one or more accounts. Every selected account will use the same
+          prop firm, model, size, phases, rules, current stage and cost configured
+          below. The app creates a separate challenge for each account.
         </p>
         <div class="row">
           <div class="field wide"><label>Accounts *</label>
-            <div id="onboard-accounts" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
-                 gap:6px;max-height:190px;overflow:auto;border:1px solid var(--line);padding:8px">
-              ${onboardingOptions.length ? onboardingOptions.map((o) => `
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;
-                       color:var(--text);font-size:10px;letter-spacing:0;text-transform:none">
-                  <input type="checkbox" data-onboard-account value="${esc(o.value)}"
-                         style="width:auto;flex:0 0 auto">
-                  <span>${esc(o.label)}</span>
-                </label>`).join("") : `<span class="muted">no free accounts</span>`}
-            </div>
-            <div class="row" style="margin-top:6px;gap:6px">
-              <button class="btn ghost" id="onboard-select-nt8" type="button"
-                      ${onboardingOptions.some((o) => o.platform === "NT8") ? "" : "disabled"}>
-                Select all NT8</button>
-              <button class="btn ghost" id="onboard-clear" type="button"
-                      ${onboardingOptions.length ? "" : "disabled"}>Clear</button>
+            <button class="btn ghost" id="onboard-open-accounts" type="button"
+                    style="width:100%;text-align:left"
+                    ${onboardingOptions.length ? "" : "disabled"}>
+              ${onboardingOptions.length ? "Select accounts" : "No free accounts"}
+            </button>
+            <div class="account-picker-summary" id="onboard-account-summary">
+              No accounts selected. Open the selector to choose one or more accounts.
             </div>
           </div>
           <div class="field wide" id="onboard-mt5-fields" hidden></div>
@@ -1324,10 +1316,12 @@ async function renderConfig() {
 
   const onboardPhases = document.getElementById("onboard-phases");
   const onboardStatus = document.getElementById("onboard-status");
-  const onboardAccounts = document.getElementById("onboard-accounts");
+  const onboardAccountSummary = document.getElementById("onboard-account-summary");
+  const onboardOpenAccounts = document.getElementById("onboard-open-accounts");
   const onboardMt5Fields = document.getElementById("onboard-mt5-fields");
   const onboardFirm = document.getElementById("onboard-firm");
   const onboardButton = document.getElementById("register-prop");
+  const selectedOnboardingValues = new Set();
 
   const resolveOnboardingAccount = (value) => {
     const [kind, rawId] = (value || "").split(":");
@@ -1337,9 +1331,8 @@ async function renderConfig() {
     return { value, kind: null, row: null };
   };
 
-  const selectedOnboardingAccounts = () => [...onboardAccounts.querySelectorAll(
-    "[data-onboard-account]:checked")]
-    .map((input) => resolveOnboardingAccount(input.value))
+  const selectedOnboardingAccounts = () => [...selectedOnboardingValues]
+    .map((value) => resolveOnboardingAccount(value))
     .filter((selected) => selected.row);
 
   const mt5LoginFor = (selected) => [...onboardMt5Fields.querySelectorAll("[data-mt5-login]")]
@@ -1350,6 +1343,16 @@ async function renderConfig() {
       .map((input) => [input.dataset.mt5Login, input.value]));
     const mt5Sources = selectedOnboardingAccounts().filter((selected) =>
       selected.kind === "source" && selected.row.platform === "MT5");
+    const selected = selectedOnboardingAccounts();
+    const shown = selected.slice(0, 6).map((item) =>
+      `${item.row.platform} ${accountShort(item.row.login_or_name)}`);
+    const extra = selected.length > shown.length ? ` · +${selected.length - shown.length} more` : "";
+    onboardAccountSummary.innerHTML = selected.length
+      ? `<strong class="bright">${selected.length} account${selected.length === 1 ? "" : "s"} selected</strong><br>
+         ${esc(shown.join(" · "))}${esc(extra)}`
+      : "No accounts selected. Open the selector to choose one or more accounts.";
+    onboardOpenAccounts.textContent = selected.length
+      ? `Change accounts (${selected.length})` : "Select accounts";
     onboardMt5Fields.hidden = mt5Sources.length === 0;
     onboardMt5Fields.innerHTML = mt5Sources.map((selected) => `
       <div class="field" style="margin-bottom:6px">
@@ -1357,6 +1360,68 @@ async function renderConfig() {
         <input data-mt5-login="${esc(selected.value)}" inputmode="numeric"
                value="${esc(previous.get(selected.value) || "")}" placeholder="12345678">
       </div>`).join("");
+  };
+
+  const openAccountPicker = () => {
+    const draft = new Set(selectedOnboardingValues);
+    modal.innerHTML = `
+      <header><h1>Select accounts</h1><span class="spacer"></span>
+        <span class="muted" id="picker-count"></span>
+        <button class="btn ghost" id="picker-cancel">Cancel</button></header>
+      <div style="padding:16px">
+        <p class="muted" style="margin-top:0;line-height:1.7">
+          Every account selected here will receive the <strong class="bright">same prop firm,
+          model, account size, phase rules, current stage and purchase cost</strong> configured
+          on the Setup screen. The app creates one separate challenge per account.
+        </p>
+        <p class="warn" style="font-size:10px;line-height:1.6">
+          Do not mix accounts from different firms, models or sizes. Finish this group,
+          then repeat the registration for the next configuration.
+        </p>
+        <div class="account-picker-list">
+          ${onboardingOptions.map((o) => `
+            <label class="account-picker-option">
+              <input type="checkbox" data-picker-account value="${esc(o.value)}"
+                     ${draft.has(o.value) ? "checked" : ""}>
+              <span>${esc(o.label)}</span>
+            </label>`).join("")}
+        </div>
+        <div class="row" style="margin-top:12px">
+          <button class="btn ghost" id="picker-all-nt8" type="button"
+                  ${onboardingOptions.some((o) => o.platform === "NT8") ? "" : "disabled"}>
+            Select all NT8</button>
+          <button class="btn ghost" id="picker-clear" type="button">Clear</button>
+          <span style="flex:1"></span>
+          <button class="btn" id="picker-apply" type="button">Use selected accounts</button>
+        </div>
+      </div>`;
+
+    const inputs = [...modal.querySelectorAll("[data-picker-account]")];
+    const refreshCount = () => {
+      const count = inputs.filter((input) => input.checked).length;
+      modal.querySelector("#picker-count").textContent = `${count} selected`;
+    };
+    inputs.forEach((input) => { input.onchange = refreshCount; });
+    modal.querySelector("#picker-cancel").onclick = () => modal.close();
+    modal.querySelector("#picker-all-nt8").onclick = () => {
+      const nt8 = new Set(onboardingOptions.filter((o) => o.platform === "NT8")
+        .map((o) => o.value));
+      inputs.forEach((input) => { input.checked = nt8.has(input.value); });
+      refreshCount();
+    };
+    modal.querySelector("#picker-clear").onclick = () => {
+      inputs.forEach((input) => { input.checked = false; });
+      refreshCount();
+    };
+    modal.querySelector("#picker-apply").onclick = () => {
+      selectedOnboardingValues.clear();
+      inputs.filter((input) => input.checked)
+        .forEach((input) => selectedOnboardingValues.add(input.value));
+      modal.close();
+      refreshOnboardingAccounts();
+    };
+    refreshCount();
+    modal.showModal();
   };
 
   const refreshOnboardingStages = () => {
@@ -1375,21 +1440,7 @@ async function renderConfig() {
     return firms.find((f) => f.name.trim().toLocaleLowerCase() === wanted);
   };
 
-  onboardAccounts.onchange = refreshOnboardingAccounts;
-  document.getElementById("onboard-select-nt8").onclick = () => {
-    const nt8 = new Set(onboardingOptions.filter((o) => o.platform === "NT8")
-      .map((o) => o.value));
-    onboardAccounts.querySelectorAll("[data-onboard-account]").forEach((input) => {
-      input.checked = nt8.has(input.value);
-    });
-    refreshOnboardingAccounts();
-  };
-  document.getElementById("onboard-clear").onclick = () => {
-    onboardAccounts.querySelectorAll("[data-onboard-account]").forEach((input) => {
-      input.checked = false;
-    });
-    refreshOnboardingAccounts();
-  };
+  onboardOpenAccounts.onclick = openAccountPicker;
   onboardPhases.onchange = refreshOnboardingStages;
   onboardFirm.onchange = () => {
     const firm = existingOnboardingFirm();

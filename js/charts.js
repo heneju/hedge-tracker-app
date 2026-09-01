@@ -5,7 +5,7 @@
 // `vector-effect="non-scaling-stroke"` mantém a espessura da linha constante
 // mesmo com a escala distorcida, que é o que quebra SVG esticado.
 
-import { money, money0, monthLabel, signClass, esc } from "./util.js?v=5dd4d7c927";
+import { money, money0, monthLabel, signClass, esc } from "./util.js?v=3e03bcc5c5";
 
 const UP = "#00cc00";
 const DOWN = "#cc0000";

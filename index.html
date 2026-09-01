@@ -222,6 +222,31 @@ dialog{
   padding:0;max-width:min(1000px,95vw);width:100%;
 }
 dialog::backdrop{background:rgba(0,0,0,.72)}
+dialog[open]{animation:dialog-in .2s cubic-bezier(.2,.8,.2,1)}
+dialog[open]::backdrop{animation:backdrop-in .2s ease-out}
+@keyframes dialog-in{
+  from{opacity:0;transform:translateY(12px) scale(.985)}
+  to{opacity:1;transform:translateY(0) scale(1)}
+}
+@keyframes backdrop-in{from{background:rgba(0,0,0,0)}to{background:rgba(0,0,0,.72)}}
+.account-picker-summary{
+  min-height:34px;padding:8px 10px;border:1px solid var(--line-soft);background:#0b0b0b;
+  color:var(--dim);font-size:10px;line-height:1.5;
+}
+.account-picker-list{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:6px;
+  max-height:46vh;overflow:auto;border:1px solid var(--line);padding:8px;
+}
+.account-picker-option{
+  display:flex;align-items:center;gap:8px;padding:7px 8px;cursor:pointer;
+  color:var(--text);font-size:10px;letter-spacing:0;text-transform:none;
+  border:1px solid transparent;
+}
+.account-picker-option:hover{border-color:var(--line);background:rgba(255,255,255,.02)}
+.account-picker-option input{width:auto;flex:0 0 auto}
+@media (prefers-reduced-motion:reduce){
+  dialog[open],dialog[open]::backdrop{animation:none}
+}
 /* O cabecalho da pagina so vira flex dentro de .topline; o do modal precisa do
    seu proprio, senao titulo, badge e botoes empilham. */
 dialog header{
@@ -271,6 +296,6 @@ dialog th{background:#0b0b0b}
 
 <dialog id="modal"></dialog>
 
-<script type="module" src="./js/app.js?v=5dd4d7c927"></script>
+<script type="module" src="./js/app.js?v=3e03bcc5c5"></script>
 </body>
 </html>
