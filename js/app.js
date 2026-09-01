@@ -10,16 +10,16 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=87019441bc";
+} from "./db.js?v=2d55f91b2e";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=87019441bc";
+} from "./util.js?v=2d55f91b2e";
 import {
   equityCurve, equityFinal, gauges, monthlyBars, firmBreakdown, accountProgress,
-} from "./charts.js?v=87019441bc";
-import { cell, locked, wireEditables } from "./editable.js?v=87019441bc";
+} from "./charts.js?v=2d55f91b2e";
+import { cell, locked, wireEditables } from "./editable.js?v=2d55f91b2e";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -401,16 +401,25 @@ async function renderChallenges() {
 
   const body = rows.map((c) => `
     <tr class="clickable" data-id="${c.id}">
-      <td><strong class="${c.status === "failed" ? "blown" : "bright"}">${
-        esc(c.account_ids || "—")}</strong></td>
+      <td><strong class="${c.status === "failed" || c.drawdown_blown
+        ? "blown" : "bright"}">${esc(c.account_ids || "—")}</strong></td>
       ${cell(c.firm_id, { id: c.id, field: "firm_id", type: "select", options: firmOpts,
                           format: () => esc(c.firm || "—") })}
       <td class="muted">${esc(c.platform || "—")}</td>
       ${cell(c.date_open, { id: c.id, field: "date_open", type: "date",
                             format: () => day(c.date_open) })}
       ${cell(c.status, { id: c.id, field: "status", type: "select",
-                         options: statusOptions(c.eval_phases),
-                         format: () => badge(c.status, statusLabel(c.status, c.eval_phases)) })}
+        options: statusOptions(c.eval_phases),
+        // Conta que bateu o chão do drawdown com o status dizendo outra coisa:
+        // mostra os dois. Trocar o status por conta própria seria decidir no
+        // lugar da pessoa -- a mesa às vezes reseta -- e esconder o estouro
+        // seria pior ainda.
+        title: c.drawdown_blown && c.status !== "failed"
+          ? "a conta bateu o chão do drawdown, mas o status ainda diz o contrário"
+          : "",
+        format: () => `${badge(c.status, statusLabel(c.status, c.eval_phases))}${
+          c.drawdown_blown && c.status !== "failed"
+            ? ` <span class="badge failed">blown</span>` : ""}` })}
       ${cell(c.multipliers, { id: c.id, field: "multipliers", type: "text", align: true,
                               format: () => `<span class="muted">${esc(c.multipliers || "—")}</span>`,
                               title: "multiplicador por fase, separado por /" })}
@@ -630,6 +639,8 @@ async function openChallenge(id, journal, firms) {
       <h1>${esc(c.account_ids || "—")} · ${esc(c.firm || "Challenge")} · ${day(c.date_open)}</h1>
       <span class="spacer"></span>
       ${badge(c.status, STATUS_LABEL[c.status] || c.status)}
+      ${c.drawdown_blown && c.status !== "failed"
+        ? `<span class="badge failed" title="bateu o chão do drawdown">blown</span>` : ""}
       <button class="btn ghost" id="edit-challenge">Edit</button>
       <button class="btn ghost" id="report-challenge">Report</button>
       <button class="btn ghost" id="close-modal">Close</button>
@@ -2298,9 +2309,26 @@ async function loadPending() {
   const items = [];
   const accountById = new Map(accounts.map((a) => [a.id, a]));
 
-  // Custo: linha importada da planilha já traz o número, então fica de fora --
-  // o aviso é para o que o coletor criou e ninguém preencheu.
   for (const c of journal) {
+    // Conta que bateu o chão do drawdown e continua marcada como viva. O painel
+    // não muda o status sozinho: a mesa às vezes reseta a conta, e só quem
+    // recebe o email da mesa sabe. Mas ficar quieto seria pior.
+    if (c.drawdown_blown && c.status !== "failed") {
+      items.push({
+        key: `failed:${c.id}`,
+        kind: "failed",
+        id: c.id,
+        title: `${c.account_ids || "?"} · ${c.firm || "?"}`,
+        ask: "This account hit the drawdown floor.",
+        why: `It is still marked as ${statusLabel(c.status, c.eval_phases)}.`
+          + " While it says that, the panel keeps giving it a target and a"
+          + " multiplier as if it were alive. If the firm reset it, leave it —"
+          + " otherwise mark it failed.",
+      });
+    }
+
+    // Custo: linha importada da planilha já traz o número, então fica de fora --
+    // o aviso é para o que o coletor criou e ninguém preencheu.
     if (c.import_source || Number(c.cost_entries) > 0) continue;
     items.push({
       key: `cost:${c.id}`,
@@ -2409,6 +2437,12 @@ function openPendingForm(items, plans, accounts, signature) {
           <button class="btn" data-save-plan="${item.id}">Confirm</button></div>
       </div>`;
     }
+    if (item.kind === "failed") {
+      return `<div class="row" style="margin-top:8px">
+        <div class="field auto"><button class="btn ghost danger"
+          data-save-failed="${item.id}">Mark as failed</button></div>
+      </div>`;
+    }
     return `<div class="row" style="margin-top:8px">
       <div class="field auto"><button class="btn ghost" data-go-setup="1">
         Open Setup to register it</button></div>
@@ -2487,6 +2521,14 @@ function openPendingForm(items, plans, accounts, signature) {
         plan_id: Number(select.value),
         plan_source: "manual",
       }), "Model confirmed");
+      finishPending();
+    };
+  });
+
+  modal.querySelectorAll("[data-save-failed]").forEach((b) => {
+    b.onclick = async () => {
+      await guard(() => save.challenge(Number(b.dataset.saveFailed),
+        { status: "failed" }), "Marked as failed");
       finishPending();
     };
   });
