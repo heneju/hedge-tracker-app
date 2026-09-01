@@ -10,16 +10,16 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=2d55f91b2e";
+} from "./db.js?v=bc804f6d3c";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=2d55f91b2e";
+} from "./util.js?v=bc804f6d3c";
 import {
   equityCurve, equityFinal, gauges, monthlyBars, firmBreakdown, accountProgress,
-} from "./charts.js?v=2d55f91b2e";
-import { cell, locked, wireEditables } from "./editable.js?v=2d55f91b2e";
+} from "./charts.js?v=bc804f6d3c";
+import { cell, locked, wireEditables } from "./editable.js?v=bc804f6d3c";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -410,10 +410,8 @@ async function renderChallenges() {
                             format: () => day(c.date_open) })}
       ${cell(c.status, { id: c.id, field: "status", type: "select",
         options: statusOptions(c.eval_phases),
-        // Conta que bateu o chão do drawdown com o status dizendo outra coisa:
-        // mostra os dois. Trocar o status por conta própria seria decidir no
-        // lugar da pessoa -- a mesa às vezes reseta -- e esconder o estouro
-        // seria pior ainda.
+        // Janela entre o estouro e o ciclo do coletor que marca: mostra os
+        // dois em vez de escolher um. Fora dessa janela os dois concordam.
         title: c.drawdown_blown && c.status !== "failed"
           ? "a conta bateu o chão do drawdown, mas o status ainda diz o contrário"
           : "",
@@ -2310,9 +2308,9 @@ async function loadPending() {
   const accountById = new Map(accounts.map((a) => [a.id, a]));
 
   for (const c of journal) {
-    // Conta que bateu o chão do drawdown e continua marcada como viva. O painel
-    // não muda o status sozinho: a mesa às vezes reseta a conta, e só quem
-    // recebe o email da mesa sabe. Mas ficar quieto seria pior.
+    // Rede de segurança. Quem marca conta estourada é o coletor, no ciclo
+    // seguinte ao estouro -- isto só aparece se ele estiver parado, e aí o
+    // clique resolve na mão.
     if (c.drawdown_blown && c.status !== "failed") {
       items.push({
         key: `failed:${c.id}`,
@@ -2320,10 +2318,10 @@ async function loadPending() {
         id: c.id,
         title: `${c.account_ids || "?"} · ${c.firm || "?"}`,
         ask: "This account hit the drawdown floor.",
-        why: `It is still marked as ${statusLabel(c.status, c.eval_phases)}.`
-          + " While it says that, the panel keeps giving it a target and a"
-          + " multiplier as if it were alive. If the firm reset it, leave it —"
-          + " otherwise mark it failed.",
+        why: `It is still marked as ${statusLabel(c.status, c.eval_phases)}, so`
+          + " the panel keeps giving it a target and a multiplier as if it were"
+          + " alive. The collector marks this on its own — seeing it here means"
+          + " it is not running.",
       });
     }
 
