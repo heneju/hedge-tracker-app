@@ -10,16 +10,16 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=bccf038d52";
+} from "./db.js?v=5dd4d7c927";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor, magicSourcePart,
   accountShort,
-} from "./util.js?v=bccf038d52";
+} from "./util.js?v=5dd4d7c927";
 import {
   equityCurve, equityFinal, gauges, monthlyBars, firmBreakdown, accountProgress,
-} from "./charts.js?v=bccf038d52";
-import { cell, locked, wireEditables } from "./editable.js?v=bccf038d52";
+} from "./charts.js?v=5dd4d7c927";
+import { cell, locked, wireEditables } from "./editable.js?v=5dd4d7c927";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -996,10 +996,12 @@ async function renderConfig() {
   const onboardingOptions = [
     ...freeDiscovered.map((d) => ({
       value: `source:${d.id}`,
+      platform: d.platform,
       label: `${d.platform} · ${accountShort(d.login_or_name)} · ${d.label} · found`,
     })),
     ...freeRegistered.map((a) => ({
       value: `account:${a.id}`,
+      platform: a.platform,
       label: `${a.platform} · ${accountShort(a.login_or_name)} · ${a.label || a.login_or_name} · registered`,
     })),
   ];
@@ -1140,19 +1142,30 @@ async function renderConfig() {
       <h2>Register prop account <span class="dim">one step</span></h2>
       <div class="panel-body">
         <p class="muted" style="margin-top:0">
-          Creates or reuses the firm and plan, registers the account, opens the
-          challenge and links its current phase.
+          Creates or reuses the firm and plan, then opens one challenge per
+          selected account and links all of them to the current phase.
         </p>
         <div class="row">
-          <div class="field wide"><label>Account *</label><select id="onboard-account"
-              ${onboardingOptions.length ? "" : "disabled"}>
-            <option value="">${onboardingOptions.length
-              ? "— choose an account —" : "— no free accounts —"}</option>
-            ${onboardingOptions.map((o) =>
-              `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join("")}
-          </select></div>
-          <div class="field" id="onboard-mt5-field" hidden><label>MT5 login *</label>
-            <input id="onboard-mt5-login" inputmode="numeric" placeholder="12345678"></div>
+          <div class="field wide"><label>Accounts *</label>
+            <div id="onboard-accounts" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
+                 gap:6px;max-height:190px;overflow:auto;border:1px solid var(--line);padding:8px">
+              ${onboardingOptions.length ? onboardingOptions.map((o) => `
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;
+                       color:var(--text);font-size:10px;letter-spacing:0;text-transform:none">
+                  <input type="checkbox" data-onboard-account value="${esc(o.value)}"
+                         style="width:auto;flex:0 0 auto">
+                  <span>${esc(o.label)}</span>
+                </label>`).join("") : `<span class="muted">no free accounts</span>`}
+            </div>
+            <div class="row" style="margin-top:6px;gap:6px">
+              <button class="btn ghost" id="onboard-select-nt8" type="button"
+                      ${onboardingOptions.some((o) => o.platform === "NT8") ? "" : "disabled"}>
+                Select all NT8</button>
+              <button class="btn ghost" id="onboard-clear" type="button"
+                      ${onboardingOptions.length ? "" : "disabled"}>Clear</button>
+            </div>
+          </div>
+          <div class="field wide" id="onboard-mt5-fields" hidden></div>
           <div class="field"><label>Prop firm *</label>
             <input id="onboard-firm" list="onboard-firms" placeholder="Tradeify">
             <datalist id="onboard-firms">${firms.map((f) =>
@@ -1181,7 +1194,7 @@ async function renderConfig() {
             <option value="intraday">Intraday trailing</option>
             <option value="static">Static</option>
           </select></div>
-          <div class="field"><label>Purchase cost</label>
+          <div class="field"><label>Purchase cost / account</label>
             <input id="onboard-cost" type="number" min="0" step="0.01" placeholder="99"></div>
           <div class="field"><label>Opened</label>
             <input id="onboard-date" type="date" value="${new Date().toISOString().slice(0, 10)}"></div>
@@ -1311,22 +1324,39 @@ async function renderConfig() {
 
   const onboardPhases = document.getElementById("onboard-phases");
   const onboardStatus = document.getElementById("onboard-status");
-  const onboardAccount = document.getElementById("onboard-account");
+  const onboardAccounts = document.getElementById("onboard-accounts");
+  const onboardMt5Fields = document.getElementById("onboard-mt5-fields");
   const onboardFirm = document.getElementById("onboard-firm");
   const onboardButton = document.getElementById("register-prop");
 
-  const selectedOnboardingAccount = () => {
-    const [kind, rawId] = (onboardAccount.value || "").split(":");
+  const resolveOnboardingAccount = (value) => {
+    const [kind, rawId] = (value || "").split(":");
     const id = Number(rawId);
-    if (kind === "source") return { kind, row: discovered.find((d) => d.id === id) };
-    if (kind === "account") return { kind, row: accounts.find((a) => a.id === id) };
-    return { kind: null, row: null };
+    if (kind === "source") return { value, kind, row: discovered.find((d) => d.id === id) };
+    if (kind === "account") return { value, kind, row: accounts.find((a) => a.id === id) };
+    return { value, kind: null, row: null };
   };
 
-  const refreshOnboardingAccount = () => {
-    const selected = selectedOnboardingAccount();
-    document.getElementById("onboard-mt5-field").hidden = selected.row?.platform !== "MT5"
-      || selected.kind !== "source";
+  const selectedOnboardingAccounts = () => [...onboardAccounts.querySelectorAll(
+    "[data-onboard-account]:checked")]
+    .map((input) => resolveOnboardingAccount(input.value))
+    .filter((selected) => selected.row);
+
+  const mt5LoginFor = (selected) => [...onboardMt5Fields.querySelectorAll("[data-mt5-login]")]
+    .find((input) => input.dataset.mt5Login === selected.value)?.value.trim() || "";
+
+  const refreshOnboardingAccounts = () => {
+    const previous = new Map([...onboardMt5Fields.querySelectorAll("[data-mt5-login]")]
+      .map((input) => [input.dataset.mt5Login, input.value]));
+    const mt5Sources = selectedOnboardingAccounts().filter((selected) =>
+      selected.kind === "source" && selected.row.platform === "MT5");
+    onboardMt5Fields.hidden = mt5Sources.length === 0;
+    onboardMt5Fields.innerHTML = mt5Sources.map((selected) => `
+      <div class="field" style="margin-bottom:6px">
+        <label>MT5 login · ${esc(selected.row.label)} *</label>
+        <input data-mt5-login="${esc(selected.value)}" inputmode="numeric"
+               value="${esc(previous.get(selected.value) || "")}" placeholder="12345678">
+      </div>`).join("");
   };
 
   const refreshOnboardingStages = () => {
@@ -1345,7 +1375,21 @@ async function renderConfig() {
     return firms.find((f) => f.name.trim().toLocaleLowerCase() === wanted);
   };
 
-  onboardAccount.onchange = refreshOnboardingAccount;
+  onboardAccounts.onchange = refreshOnboardingAccounts;
+  document.getElementById("onboard-select-nt8").onclick = () => {
+    const nt8 = new Set(onboardingOptions.filter((o) => o.platform === "NT8")
+      .map((o) => o.value));
+    onboardAccounts.querySelectorAll("[data-onboard-account]").forEach((input) => {
+      input.checked = nt8.has(input.value);
+    });
+    refreshOnboardingAccounts();
+  };
+  document.getElementById("onboard-clear").onclick = () => {
+    onboardAccounts.querySelectorAll("[data-onboard-account]").forEach((input) => {
+      input.checked = false;
+    });
+    refreshOnboardingAccounts();
+  };
   onboardPhases.onchange = refreshOnboardingStages;
   onboardFirm.onchange = () => {
     const firm = existingOnboardingFirm();
@@ -1356,11 +1400,11 @@ async function renderConfig() {
     }
     refreshOnboardingStages();
   };
-  refreshOnboardingAccount();
+  refreshOnboardingAccounts();
   refreshOnboardingStages();
 
   onboardButton.onclick = async () => {
-    const selected = selectedOnboardingAccount();
+    const selected = selectedOnboardingAccounts();
     const firmName = onboardFirm.value.trim();
     const size = Number(document.getElementById("onboard-size").value);
     const drawdown = Number(document.getElementById("onboard-drawdown").value);
@@ -1371,15 +1415,23 @@ async function renderConfig() {
       return raw === "" ? null : Number(raw);
     };
 
-    if (!selected.row) return toast("Choose an account");
+    if (!selected.length) return toast("Choose at least one account");
     if (!firmName) return toast("Enter the prop firm name");
     if (!(size > 0)) return toast("Enter the account size");
     if (!(drawdown > 0)) return toast("Enter the max drawdown");
 
-    const platform = selected.row.platform;
-    const mt5Login = document.getElementById("onboard-mt5-login").value.trim();
-    if (selected.kind === "source" && platform === "MT5" && !/^\d+$/.test(mt5Login)) {
-      return toast("Enter the numeric MT5 login");
+    const platforms = new Set(selected.map((item) => item.row.platform));
+    if (platforms.size !== 1) {
+      return toast("Select accounts from only one platform");
+    }
+    const platform = selected[0].row.platform;
+    const mt5Logins = new Map();
+    for (const item of selected) {
+      if (item.kind !== "source" || item.row.platform !== "MT5") continue;
+      const login = mt5LoginFor(item);
+      if (!/^\d+$/.test(login)) return toast(`Enter the MT5 login for ${item.row.label}`);
+      if ([...mt5Logins.values()].includes(login)) return toast(`MT5 login ${login} is duplicated`);
+      mt5Logins.set(item.value, login);
     }
 
     const modelInput = document.getElementById("onboard-model").value.trim();
@@ -1412,9 +1464,9 @@ async function renderConfig() {
       return toast("Payout split must be between 0 and 100");
     }
 
-    const created = { firmId: null, planId: null, accountId: null, challengeId: null };
-    let accountId = null;
-    let originalAccountPlan = null;
+    const created = { firmId: null, planId: null, accountIds: [], challengeIds: [] };
+    const originalAccountPlans = new Map();
+    const linkedAccountIds = [];
 
     onboardButton.disabled = true;
     try {
@@ -1465,62 +1517,68 @@ async function renderConfig() {
           created.planId = plan.id;
         }
 
-        if (selected.kind === "source") {
-          const source = selected.row;
-          const login = platform === "MT5" ? mt5Login : source.login_or_name;
-          const account = await save.createAccount({
-            kind: "prop",
-            platform,
-            login_or_name: login,
-            label: source.label,
-            terminal_hash: source.terminal_hash,
-            terminal_path: source.terminal_path,
-            broker_server: source.broker_server,
-            magic_source_part: magicSourcePart(platform, login),
-            plan_id: plan.id,
-            plan_source: "manual",
-          });
-          accountId = account.id;
-          created.accountId = account.id;
-        } else {
-          accountId = selected.row.id;
-          originalAccountPlan = {
-            plan_id: selected.row.plan_id ?? null,
-            plan_source: selected.row.plan_source ?? null,
-          };
-          await save.account(accountId, { plan_id: plan.id, plan_source: "manual" });
+        for (const item of selected) {
+          if (item.kind === "source") {
+            const source = item.row;
+            const login = platform === "MT5"
+              ? mt5Logins.get(item.value) : source.login_or_name;
+            const account = await save.createAccount({
+              kind: "prop",
+              platform,
+              login_or_name: login,
+              label: source.label,
+              terminal_hash: source.terminal_hash,
+              terminal_path: source.terminal_path,
+              broker_server: source.broker_server,
+              magic_source_part: magicSourcePart(platform, login),
+              plan_id: plan.id,
+              plan_source: "manual",
+            });
+            linkedAccountIds.push(account.id);
+            created.accountIds.push(account.id);
+          } else {
+            const accountId = item.row.id;
+            originalAccountPlans.set(accountId, {
+              plan_id: item.row.plan_id ?? null,
+              plan_source: item.row.plan_source ?? null,
+            });
+            await save.account(accountId, { plan_id: plan.id, plan_source: "manual" });
+            linkedAccountIds.push(accountId);
+          }
         }
-
-        const challenge = await save.createChallenge({
-          firm_id: firm.id,
-          plan_id: plan.id,
-          date_open: opened,
-          status,
-          target: targetP1,
-          split_pct: split,
-          comments: notes,
-        });
-        created.challengeId = challenge.id;
 
         const phase = { phase1: "P1", phase2: "P2", funded: "FUNDED" }[status];
-        await save.createPhase({
-          challenge_id: challenge.id,
-          phase,
-          account_id: accountId,
-          started_at: new Date().toISOString(),
-          outcome: "active",
-        });
-
-        if (cost != null && cost !== 0) {
-          await save.createCashEvent({
-            challenge_id: challenge.id,
-            kind: "cost",
-            amount: -Math.abs(cost),
-            occurred_on: opened || new Date().toISOString().slice(0, 10),
-            source: "manual",
+        for (const accountId of linkedAccountIds) {
+          const challenge = await save.createChallenge({
+            firm_id: firm.id,
+            plan_id: plan.id,
+            date_open: opened,
+            status,
+            target: targetP1,
+            split_pct: split,
+            comments: notes,
           });
+          created.challengeIds.push(challenge.id);
+
+          await save.createPhase({
+            challenge_id: challenge.id,
+            phase,
+            account_id: accountId,
+            started_at: new Date().toISOString(),
+            outcome: "active",
+          });
+
+          if (cost != null && cost !== 0) {
+            await save.createCashEvent({
+              challenge_id: challenge.id,
+              kind: "cost",
+              amount: -Math.abs(cost),
+              occurred_on: opened || new Date().toISOString().slice(0, 10),
+              source: "manual",
+            });
+          }
         }
-      }, "Prop account registered");
+      }, `${selected.length} prop account${selected.length === 1 ? "" : "s"} registered`);
       renderConfig();
     } catch (error) {
       const rollbackErrors = [];
@@ -1531,13 +1589,14 @@ async function renderConfig() {
           rollbackErrors.push(`${label}: ${rollbackError.message}`);
         }
       };
-      if (created.challengeId) {
-        await rollback("challenge", () => save.deleteChallenge(created.challengeId));
+      for (const challengeId of [...created.challengeIds].reverse()) {
+        await rollback(`challenge ${challengeId}`, () => save.deleteChallenge(challengeId));
       }
-      if (created.accountId) {
-        await rollback("account", () => save.deleteAccount(created.accountId));
-      } else if (accountId && originalAccountPlan) {
-        await rollback("account plan", () => save.account(accountId, originalAccountPlan));
+      for (const accountId of [...created.accountIds].reverse()) {
+        await rollback(`account ${accountId}`, () => save.deleteAccount(accountId));
+      }
+      for (const [accountId, originalPlan] of originalAccountPlans) {
+        await rollback(`account plan ${accountId}`, () => save.account(accountId, originalPlan));
       }
       if (created.planId) await rollback("plan", () => save.deletePlan(created.planId));
       if (created.firmId) await rollback("firm", () => save.deleteFirm(created.firmId));
