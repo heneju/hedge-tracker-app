@@ -10,16 +10,16 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=4d4f0eb14c";
+} from "./db.js?v=bccf038d52";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor, magicSourcePart,
   accountShort,
-} from "./util.js?v=4d4f0eb14c";
+} from "./util.js?v=bccf038d52";
 import {
   equityCurve, equityFinal, gauges, monthlyBars, firmBreakdown, accountProgress,
-} from "./charts.js?v=4d4f0eb14c";
-import { cell, locked, wireEditables } from "./editable.js?v=4d4f0eb14c";
+} from "./charts.js?v=bccf038d52";
+import { cell, locked, wireEditables } from "./editable.js?v=bccf038d52";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -356,30 +356,6 @@ async function renderChallenges() {
 
   const firmOpts = [{ value: "", label: "—" }]
     .concat(firms.map((f) => ({ value: f.id, label: f.name })));
-
-  // O onboarding aceita tanto uma conta ja classificada e ainda livre quanto
-  // uma fonte que acabou de ser descoberta. Para MT5 o identificador da fonte
-  // e o terminal, nao o login digitado depois; por isso a deduplicacao usa o
-  // hash do terminal nesse caso.
-  const isDiscoveredClaimed = (d) => claimed.has(`${d.platform}:${d.login_or_name}`)
-    || (d.platform === "MT5" && accounts.some((a) =>
-      a.platform === "MT5" && a.terminal_hash && a.terminal_hash === d.terminal_hash
-      && (!d.broker_server || a.broker_server === d.broker_server)));
-  const freeRegistered = accounts.filter((a) => {
-    const st = statOf.get(a.id);
-    return a.kind === "prop" && a.is_active !== false && !st?.in_use;
-  });
-  const freeDiscovered = discovered.filter((d) => !isDiscoveredClaimed(d));
-  const onboardingOptions = [
-    ...freeDiscovered.map((d) => ({
-      value: `source:${d.id}`,
-      label: `${d.platform} · ${accountShort(d.login_or_name)} · ${d.label} · found`,
-    })),
-    ...freeRegistered.map((a) => ({
-      value: `account:${a.id}`,
-      label: `${a.platform} · ${accountShort(a.login_or_name)} · ${a.label || a.login_or_name} · registered`,
-    })),
-  ];
 
   // Um valor de perna live so e editavel quando NAO ha trade por tras dele.
   // Com trades pareadas o numero e medido; sobrescreve-lo seria mentir para si
@@ -1003,6 +979,30 @@ async function renderConfig() {
 
   const firmOpts = [{ value: "", label: "—" }]
     .concat(firms.map((f) => ({ value: f.id, label: f.name })));
+
+  // O onboarding aceita tanto uma conta ja classificada e ainda livre quanto
+  // uma fonte que acabou de ser descoberta. Para MT5 o identificador da fonte
+  // e o terminal, nao o login digitado depois; por isso a deduplicacao usa o
+  // hash do terminal nesse caso.
+  const isDiscoveredClaimed = (d) => claimed.has(`${d.platform}:${d.login_or_name}`)
+    || (d.platform === "MT5" && accounts.some((a) =>
+      a.platform === "MT5" && a.terminal_hash && a.terminal_hash === d.terminal_hash
+      && (!d.broker_server || a.broker_server === d.broker_server)));
+  const freeRegistered = accounts.filter((a) => {
+    const st = statOf.get(a.id);
+    return a.kind === "prop" && a.is_active !== false && !st?.in_use;
+  });
+  const freeDiscovered = discovered.filter((d) => !isDiscoveredClaimed(d));
+  const onboardingOptions = [
+    ...freeDiscovered.map((d) => ({
+      value: `source:${d.id}`,
+      label: `${d.platform} · ${accountShort(d.login_or_name)} · ${d.label} · found`,
+    })),
+    ...freeRegistered.map((a) => ({
+      value: `account:${a.id}`,
+      label: `${a.platform} · ${accountShort(a.login_or_name)} · ${a.label || a.login_or_name} · registered`,
+    })),
+  ];
 
   const accountRows = accounts.map((a) => {
     const st = statOf.get(a.id);
