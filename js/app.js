@@ -10,16 +10,16 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=f572ef4796";
+} from "./db.js?v=c1640bcc0b";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=f572ef4796";
+} from "./util.js?v=c1640bcc0b";
 import {
   equityCurve, equityFinal, gauges, monthlyBars, firmBreakdown, accountProgress,
-} from "./charts.js?v=f572ef4796";
-import { cell, locked, wireEditables } from "./editable.js?v=f572ef4796";
+} from "./charts.js?v=c1640bcc0b";
+import { cell, locked, wireEditables } from "./editable.js?v=c1640bcc0b";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -2119,6 +2119,13 @@ async function renderHedge() {
     if (a.phase === "FUNDED") {
       notes.push("funded: no target left to chase — the multiplier here is what "
         + "protects the payout");
+    }
+    // O plano deduzido pelo saldo é a maior fonte de número errado aqui: dois
+    // modelos de 50k com drawdown diferente dão 0,17 e 0,04 para o mesmo gasto.
+    if (a.plan_source === "inferred") {
+      notes.push(`plan guessed from the balance (${a.plan_name || "?"}, `
+        + `${money0(a.max_drawdown)} drawdown) — confirm it in Setup, it is the `
+        + "drawdown that sets this number");
     }
 
     const value = a.blown
