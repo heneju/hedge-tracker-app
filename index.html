@@ -259,6 +259,44 @@ dialog .panel{background:#0b0b0b}
 dialog .panel > h2{background:#0b0b0b}
 dialog th{background:#0b0b0b}
 
+/* Tela Hedge: um cartao por conta, com o multiplicador em tamanho de leitura
+   rapida. O numero e o motivo da tela existir, entao ele domina o cartao --
+   tudo em volta esta ali so para justificar de onde ele saiu. */
+.mult-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
+.mult-card{background:var(--panel);border:1px solid var(--line);padding:14px 16px 12px}
+.mult-card.off{opacity:.55}
+.mult-head{display:flex;align-items:center;gap:8px;font-size:10px;margin-bottom:10px}
+.mult-head .spacer{flex:1}
+.mult-value{
+  font-size:42px;font-weight:700;line-height:1;letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums;color:var(--accent);
+}
+.mult-off{font-size:20px;color:var(--dimmest);letter-spacing:.1em}
+.mult-caption{
+  font-size:9px;letter-spacing:.15em;text-transform:uppercase;color:var(--dimmest);
+  margin-top:4px;
+}
+.mult-math{
+  margin-top:12px;padding-top:10px;border-top:1px solid var(--line-soft);
+  font-size:10px;color:var(--dim);font-variant-numeric:tabular-nums;
+}
+.mult-breakdown{width:100%;margin-top:6px;font-size:10px}
+.mult-breakdown td{padding:2px 0;border:0;color:var(--dimmest)}
+.mult-breakdown tr.total td{border-top:1px solid var(--line-soft);padding-top:4px;color:var(--text)}
+.mult-target{margin-top:10px;font-size:10px;color:var(--dim)}
+.mult-days{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.mult-days .chip{
+  border:1px solid var(--line-soft);padding:4px 7px;font-size:9px;color:var(--dim);
+  display:flex;gap:5px;align-items:baseline;
+}
+.mult-foot{margin-top:8px;font-size:9px;color:var(--ghost)}
+/* Aviso de que o numero nao da para confiar ainda, com o que fazer a respeito. */
+.mult-note{
+  margin-top:8px;padding:6px 8px;font-size:9px;line-height:1.6;
+  border-left:2px solid var(--down-soft);background:rgba(204,34,34,.06);color:var(--dim);
+}
+.mult-actions{margin-top:12px}
+
 @media (max-width:640px){
   main{padding:10px}
   header{padding:0 10px}
@@ -268,6 +306,7 @@ dialog th{background:#0b0b0b}
   .status{margin-left:0;width:100%;gap:10px 12px;font-size:9px;flex-wrap:wrap}
   .status .btn.icon{padding:4px 8px}
   .card .value{font-size:15px}
+  .mult-value{font-size:34px}
   /* Dois campos por linha: empilhados, tres filtros ocupam meia tela. */
   .row .field,.row .field.wide{flex:1 1 calc(50% - 5px);min-width:0}
   /* O botao pega a linha inteira -- meia largura corta o texto. */
@@ -296,6 +335,6 @@ dialog th{background:#0b0b0b}
 
 <dialog id="modal"></dialog>
 
-<script type="module" src="./js/app.js?v=ea3263d4fe"></script>
+<script type="module" src="./js/app.js?v=f572ef4796"></script>
 </body>
 </html>

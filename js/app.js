@@ -10,22 +10,23 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=ea3263d4fe";
+} from "./db.js?v=f572ef4796";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
-  STATUS_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor, magicSourcePart,
-  accountShort,
-} from "./util.js?v=ea3263d4fe";
+  STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
+  magicSourcePart, accountShort,
+} from "./util.js?v=f572ef4796";
 import {
   equityCurve, equityFinal, gauges, monthlyBars, firmBreakdown, accountProgress,
-} from "./charts.js?v=ea3263d4fe";
-import { cell, locked, wireEditables } from "./editable.js?v=ea3263d4fe";
+} from "./charts.js?v=f572ef4796";
+import { cell, locked, wireEditables } from "./editable.js?v=f572ef4796";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
 
 const PAGES = [
   { id: "overview",   label: "Overview" },
+  { id: "hedge",      label: "Hedge" },
   { id: "challenges", label: "Challenges" },
   { id: "unassigned", label: "Unassigned" },
   { id: "config",     label: "Setup" },
@@ -1900,6 +1901,7 @@ const AREAS = [
   ["challenges", "Challenges"],
   ["overview", "Overview"],
   ["unassigned", "Unassigned"],
+  ["hedge", "Hedge"],
   ["setup", "Setup"],
   ["calculator", "Calculator"],
   ["collector", "Collector on the PC"],
@@ -2071,6 +2073,146 @@ async function renderIssues() {
   });
 }
 
+// ------------------------------------------------------------------- hedge
+//
+// A tela operacional: que número digitar no Receiver do Copyator, conta a
+// conta. É a única pergunta que precisa de resposta antes de abrir posição.
+//
+//     multiplicador = gasto acumulado ÷ drawdown restante
+//
+// O gasto é o custo do challenge mais tudo que a perna live já afundou. Assim,
+// se a conta da mesa estourar o drawdown inteiro, a perna live devolve
+// exatamente o que foi gasto até ali: conta estourada volta no zero a zero, e
+// daí para cima é lucro. Como o gasto só cresce e o drawdown só encolhe, o
+// número sobe -- por isso a tela mostra o de agora, e não o de quando começou.
+//
+// O número sai da view, não do coletor: ele muda a cada trade da perna live, e
+// a view continua certa com o PC desligado. Só o cronograma dos dias vem do
+// coletor, porque a divisão pela regra de consistência é mais cara.
+
+async function renderHedge() {
+  const progress = await load.progress();
+
+  // Estourada por último: continua na tela porque o gasto dela ainda conta
+  // história, mas não é o que se olha antes de operar.
+  const rank = (a) => (a.blown ? 2 : a.hedge_multiplier == null ? 1 : 0);
+  const rows = [...progress].sort((a, b) =>
+    rank(a) - rank(b) || String(a.short_id).localeCompare(String(b.short_id)));
+
+  const card = (a) => {
+    const cost = Math.abs(Number(a.challenge_cost || 0));
+    const hedge = Number(a.hedge_pnl || 0);
+    const room = a.drawdown_room == null ? null : Number(a.drawdown_room);
+    const size = a.account_size ? money0(a.account_size) : "size —";
+
+    // Cada aviso é uma coisa que faz o número mentir, com o que fazer a
+    // respeito. Sem isso um 0,00 parece recomendação e não falta de cadastro.
+    const notes = [];
+    if (!a.plan_id) {
+      notes.push("no plan on this account — set the size and the drawdown in Setup, "
+        + "otherwise there is nothing to divide by");
+    }
+    if (a.plan_id && !cost) {
+      notes.push("purchase cost not recorded — until it is, the multiplier is "
+        + "lower than it should be");
+    }
+    if (a.phase === "FUNDED") {
+      notes.push("funded: no target left to chase — the multiplier here is what "
+        + "protects the payout");
+    }
+
+    const value = a.blown
+      ? `<span class="mult-off">blown</span>`
+      : a.hedge_multiplier == null
+        ? `<span class="mult-off">—</span>`
+        : num(a.hedge_multiplier, 2);
+
+    const derivation = a.hedge_multiplier == null ? "" : `
+      <div class="mult-math">
+        ${money0(a.spent)} spent ÷ ${money0(room)} drawdown =
+        <strong class="bright">${num(a.hedge_multiplier_raw, 4)}</strong>
+        → ${num(a.hedge_multiplier, 2)}
+      </div>
+      <table class="mult-breakdown"><tbody>
+        <tr><td>challenge cost</td><td class="num">${cash(cost)}</td></tr>
+        <tr><td>live leg so far</td><td class="num">${cash(hedge)}</td></tr>
+        <tr class="total"><td>to recover</td>
+            <td class="num"><strong>${cash(a.spent)}</strong></td></tr>
+      </tbody></table>`;
+
+    // O cronograma é do coletor e pode estar velho: a hora vai junto para dar
+    // para desconfiar dele sem precisar adivinhar.
+    const schedule = Array.isArray(a.rec_schedule) && a.rec_schedule.length
+      ? `<div class="mult-days">
+           ${a.rec_schedule.map((d) => `<span class="chip">day ${d.day}
+             <strong>${money0(d.target)}</strong>
+             <span class="dim">${num(d.share_pct, 1)}%</span></span>`).join("")}
+         </div>
+         <div class="mult-foot">
+           ${a.rec_hedge_cost != null
+             ? `hedge costs about ${money0(a.rec_hedge_cost)} if today's target lands · ` : ""}
+           computed ${stamp(a.rec_computed_at)}
+         </div>`
+      : "";
+
+    return `
+    <div class="mult-card ${a.blown ? "off" : ""}">
+      <div class="mult-head">
+        <strong class="${a.blown ? "blown" : "bright"}">${esc(accountShort(a.login_or_name))}</strong>
+        <span class="muted">${esc(a.plan_name || "no plan")} · ${size}</span>
+        <span class="spacer"></span>
+        ${a.phase ? badge(a.blown ? "failed" : "closed",
+          PHASE_LABEL[a.phase] || a.phase) : ""}
+      </div>
+      <div class="mult-value">${value}</div>
+      <div class="mult-caption">multiplier for the Copyator receiver</div>
+      ${derivation}
+      ${a.target_left != null && !a.blown
+        ? `<div class="mult-target">${money0(a.target_left)} left to pass${
+            a.days_left ? ` · ${a.days_left} day${a.days_left === 1 ? "" : "s"} minimum` : ""}${
+            a.consistency_pct ? ` · ${num(a.consistency_pct, 0)}% consistency` : ""}</div>`
+        : ""}
+      ${schedule}
+      ${notes.map((n) => `<div class="mult-note">${esc(n)}</div>`).join("")}
+      <div class="mult-actions">
+        <button class="btn ghost" data-report-hedge="${a.account_id}">Report</button>
+      </div>
+    </div>`;
+  };
+
+  render(`
+    <div class="panel">
+      <h2>Multiplier per account <span class="dim">${rows.length}</span></h2>
+      <div class="panel-body" style="padding-bottom:0">
+        <p class="muted" style="margin-top:0;line-height:1.8">
+          <strong class="bright">Spent ÷ drawdown left</strong>, rounded to two
+          decimals. Spent is the challenge cost plus everything the live leg has
+          already lost. Sized this way, blowing the prop account gives the money
+          back on the live side — the account dies at break-even and anything
+          above that is profit. The number climbs as you spend and as the
+          drawdown shrinks, so read it here before every session.
+        </p>
+      </div>
+    </div>
+    ${rows.length
+      ? `<div class="mult-grid">${rows.map(card).join("")}</div>`
+      : `<div class="panel"><div class="panel-body">${
+           empty("no prop account registered yet")}</div></div>`}`);
+
+  view.querySelectorAll("[data-report-hedge]").forEach((b) => {
+    b.onclick = () => {
+      const a = rows.find((x) => x.account_id === Number(b.dataset.reportHedge));
+      openIssueForm({
+        area: "setup",
+        targetTable: "accounts",
+        targetId: a.account_id,
+        targetLabel: `${accountShort(a.login_or_name)} · multiplier ${
+          a.hedge_multiplier ?? "—"}`,
+      }, () => renderHedge());
+    };
+  });
+}
+
 // -------------------------------------------------------------- calculadora
 
 function renderCalc() {
@@ -2126,6 +2268,7 @@ function renderCalc() {
 
 const RENDERERS = {
   overview: renderOverview,
+  hedge: renderHedge,
   challenges: renderChallenges,
   unassigned: renderUnassigned,
   config: renderConfig,
