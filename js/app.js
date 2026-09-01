@@ -10,16 +10,16 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=b308dc58fa";
+} from "./db.js?v=93e2bc41d2";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=b308dc58fa";
+} from "./util.js?v=93e2bc41d2";
 import {
   equityCurve, equityFinal, gauges, monthlyBars, firmBreakdown, accountProgress,
-} from "./charts.js?v=b308dc58fa";
-import { cell, locked, wireEditables } from "./editable.js?v=b308dc58fa";
+} from "./charts.js?v=93e2bc41d2";
+import { cell, locked, wireEditables } from "./editable.js?v=93e2bc41d2";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -229,9 +229,11 @@ async function renderOverview() {
   const hedge = sum("lost_hedging");
   const cost = sum("cost");
   const payouts = sum("funded_payout");
-  // Resultado das contas da mesa. Fica fora do Total de propósito -- é dinheiro
-  // simulado até virar payout -- mas é o que diz se as contas estão indo bem.
-  const propPnl = sum("prop_pnl");
+  // Avaliação é só visualização: dinheiro simulado, que não conta em lugar
+  // nenhum. Funded é diferente -- vira payout -- e o que ainda não foi sacado
+  // já entra no Total.
+  const evalProp = sum("eval_prop");
+  const pending = sum("funded_pending");
   const withProp = journal.filter((c) => Number(c.prop_trades) > 0).length;
   const open = journal.filter((c) => ["phase1", "phase2", "funded"].includes(c.status));
 
@@ -241,8 +243,9 @@ async function renderOverview() {
     ["Total P&L", money(total), signClass(total), `${journal.length} challenges`],
     ["Without hedge", money(noHedge), signClass(noHedge), "costs + payouts"],
     ["Hedge result", money(hedge), signClass(hedge), "the three live columns"],
-    ["Prop accounts", money(propPnl), signClass(propPnl),
-     `${withProp} tracked · not in Total`],
+    ["Eval accounts", money(evalProp), signClass(evalProp),
+     `${withProp} tracked · not counted`],
+    ["Funded pending", money(pending), signClass(pending), "not withdrawn · in Total"],
     ["Costs", money(cost), signClass(cost), "challenges bought"],
     ["Payouts", money(payouts), signClass(payouts), "received from firms"],
     ["Active accounts", String(open.length), open.length ? "bright" : "muted", "phase 1, 2 and funded"],
@@ -278,6 +281,7 @@ async function renderOverview() {
       <td class="num">${cash(m.hedge_pnl)}</td>
       <td class="num">${cash(m.no_hedge_pnl)}</td>
       <td class="num">${cash(m.prop_pnl)}</td>
+      <td class="num">${cash(m.funded_pending)}</td>
     </tr>`).join("");
 
   render(`
@@ -324,9 +328,9 @@ async function renderOverview() {
             <th>Month</th><th class="num">Accounts</th><th class="num">P&amp;L</th>
             <th class="num">Cost</th><th class="num">Payouts</th>
             <th class="num">Hedge</th><th class="num">No hedge</th>
-            <th class="num">Prop</th>
+            <th class="num">Prop</th><th class="num">Pending</th>
           </tr></thead>
-          <tbody>${rows || `<tr><td colspan="8">${empty("no data")}</td></tr>`}</tbody>
+          <tbody>${rows || `<tr><td colspan="9">${empty("no data")}</td></tr>`}</tbody>
         </table>
       </div>
     </div>`);
@@ -348,7 +352,8 @@ async function renderChallenges() {
     (!month || (c.date_open || "").startsWith(month)));
 
   const totals = ["cost", "funded_payout", "p1_live", "p2_live", "funded_live",
-    "lost_hedging", "total_pnl", "eval_prop", "funded_prop"].reduce((acc, f) => {
+    "lost_hedging", "total_pnl", "eval_prop", "funded_prop",
+    "funded_pending"].reduce((acc, f) => {
       acc[f] = rows.reduce((a, c) => a + Number(c[f] || 0), 0);
       return acc;
     }, {});
@@ -361,12 +366,12 @@ async function renderChallenges() {
   // vista usa duas fases, a coluna some em vez de exibir zeros para sempre.
   const showP2 = rows.some((c) => Number(c.eval_phases) === 2);
   const p2 = (html) => (showP2 ? html : "");
-  const cols = showP2 ? 17 : 16;
+  const cols = showP2 ? 18 : 17;
 
-  // Resultado da conta da mesa. Não entra no Total: lucro em conta de
-  // avaliação é dinheiro simulado até virar payout, e somar os dois contaria a
-  // mesma coisa duas vezes. Fica ao lado, que é a pergunta "a conta está indo
-  // bem?" -- diferente de "quanto isso me deu".
+  // Resultado da conta da mesa. Em avaliação é só visualização: dinheiro
+  // simulado, fora de qualquer soma. Quando a conta vira funded ele passa a
+  // valer -- mas o que entra no Total é a coluna Pending, o lucro que ainda
+  // não virou payout, para o mesmo dólar não ser contado duas vezes.
   //
   // Linha importada da planilha não tem perna prop gravada: mostra "—", porque
   // zero ali seria um número inventado.
@@ -412,6 +417,12 @@ async function renderChallenges() {
       ${p2(liveCell(c, "import_p2_live", c.p2_live, c.p2_trades))}
       ${liveCell(c, "import_funded_live", c.funded_live, c.funded_trades)}
       ${cashCell(c, "payout", c.funded_payout, c.payout_entries)}
+      <td class="num" title="${c.split_pct == null
+        ? "sem split cadastrado — contando 100% do lucro funded"
+        : `${num(c.split_pct, 0)}% do lucro funded, menos o que já foi pago`}">${
+        Number(c.funded_pending)
+          ? `${cash(c.funded_pending)}${c.split_pct == null ? " ⚠" : ""}`
+          : `<span class="dim">—</span>`}</td>
       <td class="num">${cash(c.lost_hedging)}</td>
       <td class="num"><strong>${cash(c.total_pnl)}</strong></td>
       ${cell(c.comments, { id: c.id, field: "comments", type: "text",
@@ -448,7 +459,8 @@ async function renderChallenges() {
             <th class="num">Prop eval</th><th class="num">Prop funded</th>
             <th class="num">Cost</th><th class="num">Phase 1 live</th>
             ${p2(`<th class="num">Phase 2 live</th>`)}<th class="num">Funded live</th>
-            <th class="num">Payout</th><th class="num">Hedge</th>
+            <th class="num">Payout</th><th class="num">Pending</th>
+            <th class="num">Hedge</th>
             <th class="num">Total</th><th>Notes</th><th class="num">Trades</th>
           </tr></thead>
           <tbody>${body || `<tr><td colspan="${cols}">${empty("no challenges match these filters")}</td></tr>`}</tbody>
@@ -461,6 +473,7 @@ async function renderChallenges() {
             ${p2(`<td class="num">${cash(totals.p2_live)}</td>`)}
             <td class="num">${cash(totals.funded_live)}</td>
             <td class="num">${cash(totals.funded_payout)}</td>
+            <td class="num">${cash(totals.funded_pending)}</td>
             <td class="num">${cash(totals.lost_hedging)}</td>
             <td class="num">${cash(totals.total_pnl)}</td>
             <td></td><td></td>
@@ -627,10 +640,12 @@ async function openChallenge(id, journal, firms) {
           <div class="value pos">${money(c.funded_payout)}</div></div>
         <div class="card"><div class="label">Hedge</div>
           <div class="value ${signClass(c.lost_hedging)}">${money(c.lost_hedging)}</div></div>
-        <div class="card"><div class="label">Prop</div>
+        <div class="card"><div class="label">${
+          c.status === "funded" ? "Funded acct" : "Eval acct"}</div>
           <div class="value ${c.prop_trades ? signClass(c.prop_pnl) : "muted"}">${
             c.prop_trades ? money(c.prop_pnl) : "—"}</div>
-          <div class="sub">not in Total</div></div>
+          <div class="sub">${Number(c.funded_pending)
+            ? `${money(c.funded_pending)} pending` : "not counted"}</div></div>
       </div>
 
       <div class="panel"><h2>Phases</h2><div class="scroll"><table>
