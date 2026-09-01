@@ -10,16 +10,16 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=c1640bcc0b";
+} from "./db.js?v=b308dc58fa";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=c1640bcc0b";
+} from "./util.js?v=b308dc58fa";
 import {
   equityCurve, equityFinal, gauges, monthlyBars, firmBreakdown, accountProgress,
-} from "./charts.js?v=c1640bcc0b";
-import { cell, locked, wireEditables } from "./editable.js?v=c1640bcc0b";
+} from "./charts.js?v=b308dc58fa";
+import { cell, locked, wireEditables } from "./editable.js?v=b308dc58fa";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -229,6 +229,10 @@ async function renderOverview() {
   const hedge = sum("lost_hedging");
   const cost = sum("cost");
   const payouts = sum("funded_payout");
+  // Resultado das contas da mesa. Fica fora do Total de propósito -- é dinheiro
+  // simulado até virar payout -- mas é o que diz se as contas estão indo bem.
+  const propPnl = sum("prop_pnl");
+  const withProp = journal.filter((c) => Number(c.prop_trades) > 0).length;
   const open = journal.filter((c) => ["phase1", "phase2", "funded"].includes(c.status));
 
   // signClass em tudo: zero fica neutro, senao "$0.00" apareceria colorido e
@@ -237,6 +241,8 @@ async function renderOverview() {
     ["Total P&L", money(total), signClass(total), `${journal.length} challenges`],
     ["Without hedge", money(noHedge), signClass(noHedge), "costs + payouts"],
     ["Hedge result", money(hedge), signClass(hedge), "the three live columns"],
+    ["Prop accounts", money(propPnl), signClass(propPnl),
+     `${withProp} tracked · not in Total`],
     ["Costs", money(cost), signClass(cost), "challenges bought"],
     ["Payouts", money(payouts), signClass(payouts), "received from firms"],
     ["Active accounts", String(open.length), open.length ? "bright" : "muted", "phase 1, 2 and funded"],
@@ -271,6 +277,7 @@ async function renderOverview() {
       <td class="num">${cash(m.payouts)}</td>
       <td class="num">${cash(m.hedge_pnl)}</td>
       <td class="num">${cash(m.no_hedge_pnl)}</td>
+      <td class="num">${cash(m.prop_pnl)}</td>
     </tr>`).join("");
 
   render(`
@@ -317,8 +324,9 @@ async function renderOverview() {
             <th>Month</th><th class="num">Accounts</th><th class="num">P&amp;L</th>
             <th class="num">Cost</th><th class="num">Payouts</th>
             <th class="num">Hedge</th><th class="num">No hedge</th>
+            <th class="num">Prop</th>
           </tr></thead>
-          <tbody>${rows || `<tr><td colspan="7">${empty("no data")}</td></tr>`}</tbody>
+          <tbody>${rows || `<tr><td colspan="8">${empty("no data")}</td></tr>`}</tbody>
         </table>
       </div>
     </div>`);
@@ -340,7 +348,7 @@ async function renderChallenges() {
     (!month || (c.date_open || "").startsWith(month)));
 
   const totals = ["cost", "funded_payout", "p1_live", "p2_live", "funded_live",
-    "lost_hedging", "total_pnl"].reduce((acc, f) => {
+    "lost_hedging", "total_pnl", "eval_prop", "funded_prop"].reduce((acc, f) => {
       acc[f] = rows.reduce((a, c) => a + Number(c[f] || 0), 0);
       return acc;
     }, {});
@@ -353,7 +361,17 @@ async function renderChallenges() {
   // vista usa duas fases, a coluna some em vez de exibir zeros para sempre.
   const showP2 = rows.some((c) => Number(c.eval_phases) === 2);
   const p2 = (html) => (showP2 ? html : "");
-  const cols = showP2 ? 15 : 14;
+  const cols = showP2 ? 17 : 16;
+
+  // Resultado da conta da mesa. Não entra no Total: lucro em conta de
+  // avaliação é dinheiro simulado até virar payout, e somar os dois contaria a
+  // mesma coisa duas vezes. Fica ao lado, que é a pergunta "a conta está indo
+  // bem?" -- diferente de "quanto isso me deu".
+  //
+  // Linha importada da planilha não tem perna prop gravada: mostra "—", porque
+  // zero ali seria um número inventado.
+  const propCell = (c, value) => `<td class="num">${
+    c.prop_trades ? cash(value) : `<span class="dim">—</span>`}</td>`;
 
   const firmOpts = [{ value: "", label: "—" }]
     .concat(firms.map((f) => ({ value: f.id, label: f.name })));
@@ -387,6 +405,8 @@ async function renderChallenges() {
       ${cell(c.multipliers, { id: c.id, field: "multipliers", type: "text", align: true,
                               format: () => `<span class="muted">${esc(c.multipliers || "—")}</span>`,
                               title: "multiplicador por fase, separado por /" })}
+      ${propCell(c, c.eval_prop)}
+      ${propCell(c, c.funded_prop)}
       ${cashCell(c, "cost", c.cost, c.cost_entries)}
       ${liveCell(c, "import_p1_live", c.p1_live, c.p1_trades)}
       ${p2(liveCell(c, "import_p2_live", c.p2_live, c.p2_trades))}
@@ -425,6 +445,7 @@ async function renderChallenges() {
           <thead><tr>
             <th>Acct</th><th>Firm</th><th>Platform</th><th>Opened</th><th>Status</th>
             <th class="num">Mult.</th>
+            <th class="num">Prop eval</th><th class="num">Prop funded</th>
             <th class="num">Cost</th><th class="num">Phase 1 live</th>
             ${p2(`<th class="num">Phase 2 live</th>`)}<th class="num">Funded live</th>
             <th class="num">Payout</th><th class="num">Hedge</th>
@@ -433,6 +454,8 @@ async function renderChallenges() {
           <tbody>${body || `<tr><td colspan="${cols}">${empty("no challenges match these filters")}</td></tr>`}</tbody>
           <tfoot><tr style="font-weight:640">
             <td colspan="6">Total</td>
+            <td class="num">${cash(totals.eval_prop)}</td>
+            <td class="num">${cash(totals.funded_prop)}</td>
             <td class="num">${cash(totals.cost)}</td>
             <td class="num">${cash(totals.p1_live)}</td>
             ${p2(`<td class="num">${cash(totals.p2_live)}</td>`)}
@@ -604,6 +627,10 @@ async function openChallenge(id, journal, firms) {
           <div class="value pos">${money(c.funded_payout)}</div></div>
         <div class="card"><div class="label">Hedge</div>
           <div class="value ${signClass(c.lost_hedging)}">${money(c.lost_hedging)}</div></div>
+        <div class="card"><div class="label">Prop</div>
+          <div class="value ${c.prop_trades ? signClass(c.prop_pnl) : "muted"}">${
+            c.prop_trades ? money(c.prop_pnl) : "—"}</div>
+          <div class="sub">not in Total</div></div>
       </div>
 
       <div class="panel"><h2>Phases</h2><div class="scroll"><table>
