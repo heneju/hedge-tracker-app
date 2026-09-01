@@ -8,18 +8,18 @@
 // do coletor, e aparecem aqui somente como leitura.
 
 import {
-  load, save, supabase, currentUser, signInWithPassword, signInWithEmail,
-  changePassword, signOut,
-} from "./db.js?v=4605ca5433";
+  load, save, manualPatch, supabase, currentUser, signInWithPassword,
+  signInWithEmail, changePassword, signOut,
+} from "./db.js?v=4d4f0eb14c";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor, magicSourcePart,
   accountShort,
-} from "./util.js?v=4605ca5433";
+} from "./util.js?v=4d4f0eb14c";
 import {
   equityCurve, equityFinal, gauges, monthlyBars, firmBreakdown, accountProgress,
-} from "./charts.js?v=4605ca5433";
-import { cell, locked, wireEditables } from "./editable.js?v=4605ca5433";
+} from "./charts.js?v=4d4f0eb14c";
+import { cell, locked, wireEditables } from "./editable.js?v=4d4f0eb14c";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -55,6 +55,34 @@ function toast(message) {
   el.textContent = message;
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 2600);
+}
+
+/**
+ * Transforma um botão em confirmação de dois toques.
+ *
+ * O primeiro clique troca o rótulo pelo aviso e arma; o segundo executa. Se
+ * nada acontecer em quatro segundos ele desarma sozinho -- um botão que fica
+ * armado para sempre acaba disparando sem querer no clique seguinte.
+ */
+function armDelete(button, warning, onConfirm) {
+  const original = button.textContent;
+  let armed = false;
+  let timer = null;
+
+  button.onclick = () => {
+    if (armed) {
+      clearTimeout(timer);
+      return onConfirm();
+    }
+    armed = true;
+    button.textContent = warning;
+    button.classList.add("armed");
+    timer = setTimeout(() => {
+      armed = false;
+      button.textContent = original;
+      button.classList.remove("armed");
+    }, 4000);
+  };
 }
 
 function badge(kind, label) {
@@ -328,6 +356,30 @@ async function renderChallenges() {
 
   const firmOpts = [{ value: "", label: "—" }]
     .concat(firms.map((f) => ({ value: f.id, label: f.name })));
+
+  // O onboarding aceita tanto uma conta ja classificada e ainda livre quanto
+  // uma fonte que acabou de ser descoberta. Para MT5 o identificador da fonte
+  // e o terminal, nao o login digitado depois; por isso a deduplicacao usa o
+  // hash do terminal nesse caso.
+  const isDiscoveredClaimed = (d) => claimed.has(`${d.platform}:${d.login_or_name}`)
+    || (d.platform === "MT5" && accounts.some((a) =>
+      a.platform === "MT5" && a.terminal_hash && a.terminal_hash === d.terminal_hash
+      && (!d.broker_server || a.broker_server === d.broker_server)));
+  const freeRegistered = accounts.filter((a) => {
+    const st = statOf.get(a.id);
+    return a.kind === "prop" && a.is_active !== false && !st?.in_use;
+  });
+  const freeDiscovered = discovered.filter((d) => !isDiscoveredClaimed(d));
+  const onboardingOptions = [
+    ...freeDiscovered.map((d) => ({
+      value: `source:${d.id}`,
+      label: `${d.platform} · ${accountShort(d.login_or_name)} · ${d.label} · found`,
+    })),
+    ...freeRegistered.map((a) => ({
+      value: `account:${a.id}`,
+      label: `${a.platform} · ${accountShort(a.login_or_name)} · ${a.label || a.login_or_name} · registered`,
+    })),
+  ];
 
   // Um valor de perna live so e editavel quando NAO ha trade por tras dele.
   // Com trades pareadas o numero e medido; sobrescreve-lo seria mentir para si
@@ -949,22 +1001,34 @@ async function renderConfig() {
     ? `${pl.prop_firms?.name ?? ""} ${money0(pl.account_size)}`
     : money0(pl.account_size);
 
+  const firmOpts = [{ value: "", label: "—" }]
+    .concat(firms.map((f) => ({ value: f.id, label: f.name })));
+
   const accountRows = accounts.map((a) => {
     const st = statOf.get(a.id);
+    // Saldo é medido (o AddOn do NinjaTrader publica a cada 5s). Editável
+    // mesmo assim: para a conta que o AddOn não alcança, digitar é o único
+    // caminho -- e o `manual_cols` impede o coletor de apagar o que foi
+    // digitado. O título da célula avisa que a marca fica.
+    const manual = new Set(a.manual_cols || []);
+    const mark = (f) => (manual.has(f) ? " ✎" : "");
     return `
     <tr>
       <td>${badge(a.kind, a.kind)}</td>
       <td><strong class="${blown.has(a.id) ? "blown" : "bright"}">${
         esc(accountShort(a.login_or_name))}</strong></td>
       <td>${esc(a.platform)}</td>
-      <td class="${blown.has(a.id) ? "blown" : "muted"}"
-          ${blown.has(a.id) ? 'title="blown — drawdown floor hit or challenge failed"' : ""}
-      >${esc(a.login_or_name)}</td>
+      ${cell(a.login_or_name, { id: a.id, field: "account:login_or_name", type: "text",
+        title: "número/nome da conta na plataforma — é ele que gera o magic",
+        format: () => `<span class="${blown.has(a.id) ? "blown" : "muted"}">${
+          esc(a.login_or_name)}</span>` })}
       <td class="num">${st && st.trade_count ? cash(st.net_pnl) : `<span class="dim">—</span>`}</td>
       <td class="num muted">${st?.trade_count || "—"}</td>
-      <td class="num">${a.cash_value != null
-        ? `<span class="bright">${money0(a.cash_value)}</span>`
-        : `<span class="dim">—</span>`}</td>
+      ${cell(a.cash_value, { id: a.id, field: "account:cash_value", type: "number", align: true,
+        title: "medido pelo AddOn — ao editar, o coletor para de sobrescrever",
+        format: () => (a.cash_value != null
+          ? `<span class="bright">${money0(a.cash_value)}${mark("cash_value")}</span>`
+          : `<span class="dim">—</span>`) })}
       <td>${a.kind === "prop" ? `<select data-plan="${a.id}">
         <option value="">— size —</option>
         ${plans.map((pl) => `<option value="${pl.id}" ${pl.id === a.plan_id ? "selected" : ""}>${
@@ -972,23 +1036,28 @@ async function renderConfig() {
       </select>${a.plan_id && a.plan_source === "inferred"
         ? `<div style="font-size:9px;color:#555;margin-top:2px">from balance</div>` : ""}`
         : `<span class="dim">—</span>`}</td>
-      <td class="muted">${esc(a.label || a.terminal_path || "—")}</td>
-      <td class="num muted">${a.magic_source_part ?? "—"}</td>
+      ${cell(a.label, { id: a.id, field: "account:label", type: "text",
+        format: () => `<span class="muted">${esc(a.label || a.terminal_path || "—")}</span>` })}
+      ${cell(a.magic_source_part, { id: a.id, field: "account:magic_source_part",
+        type: "number", align: true,
+        title: "chave que liga esta conta ao hedge no live — só mexa se souber",
+        format: () => `<span class="muted">${a.magic_source_part ?? "—"}</span>` })}
       <td class="row" style="gap:6px">
         <button class="btn ghost" data-toggle="${a.id}" data-kind="${a.kind}">
-          Set as ${a.kind === "live" ? "prop" : "live"}</button>
+          ${a.kind === "live" ? "prop" : "live"}</button>
         <button class="btn ghost" data-report-account="${a.id}">Report</button>
+        <button class="btn ghost danger" data-del-account="${a.id}"
+          data-trades="${st?.trade_count || 0}">Delete</button>
       </td>
     </tr>`;
   }).join("");
 
   const discoveredRows = discovered.map((d) => {
-    const key = `${d.platform}:${d.login_or_name}`;
     return `<tr>
       <td>${esc(d.platform)}</td>
       <td>${esc(d.label)}</td>
       <td class="muted">${esc(d.login_or_name)}</td>
-      <td>${claimed.has(key)
+      <td>${isDiscoveredClaimed(d)
         ? `<span class="muted">registered</span>`
         : `<div class="row">
              ${d.platform === "MT5"
@@ -1000,7 +1069,151 @@ async function renderConfig() {
     </tr>`;
   }).join("");
 
+  const firmRows = firms.map((f) => `
+    <tr>
+      ${cell(f.name, { id: f.id, field: "firm:name", type: "text",
+        format: () => `<strong class="bright">${esc(f.name)}</strong>` })}
+      ${cell(f.platform, { id: f.id, field: "firm:platform", type: "select",
+        options: ["NT8", "MT5", "Tradovate", "Other"].map((v) => ({ value: v, label: v })),
+        format: () => esc(f.platform) })}
+      ${cell(f.eval_phases, { id: f.id, field: "firm:eval_phases", type: "select",
+        options: [{ value: 1, label: "1 — straight to funded" },
+                  { value: 2, label: "2 — phase 1 + phase 2" }],
+        format: () => (Number(f.eval_phases) === 1 ? "1 phase" : "2 phases") })}
+      ${cell(f.default_split, { id: f.id, field: "firm:default_split", type: "number", align: true,
+        format: () => (f.default_split == null
+          ? `<span class="dim">—</span>` : `${num(f.default_split, 0)}%`) })}
+      ${cell(f.notes, { id: f.id, field: "firm:notes", type: "text",
+        format: () => `<span class="muted">${esc(f.notes || "—")}</span>` })}
+      <td class="num muted">${plans.filter((pl) => pl.firm_id === f.id).length}</td>
+      <td><button class="btn ghost danger" data-del-firm="${f.id}">Delete</button></td>
+    </tr>`).join("");
+
+  // O catálogo inteiro numa tabela só, em vez de uma tabela por mesa: é como a
+  // planilha mostrava, e comparar tamanhos entre mesas é justamente o que se
+  // quer olhar na hora de comprar a próxima conta.
+  const planRows = plans.map((pl) => `
+    <tr>
+      ${cell(pl.firm_id, { id: pl.id, field: "plan:firm_id", type: "select", options: firmOpts,
+        format: () => `<span class="muted">${esc(pl.prop_firms?.name || "—")}</span>` })}
+      ${cell(pl.name, { id: pl.id, field: "plan:name", type: "text",
+        format: () => esc(pl.name || "—") })}
+      ${cell(pl.account_size, { id: pl.id, field: "plan:account_size", type: "number", align: true,
+        format: () => `<strong class="bright">${money0(pl.account_size)}</strong>` })}
+      ${cell(pl.profit_target, { id: pl.id, field: "plan:profit_target", type: "number", align: true,
+        format: () => money0(pl.profit_target) })}
+      ${cell(pl.profit_target_p2, { id: pl.id, field: "plan:profit_target_p2", type: "number", align: true,
+        format: () => (pl.profit_target_p2 == null
+          ? `<span class="dim">—</span>` : money0(pl.profit_target_p2)) })}
+      ${cell(pl.max_drawdown, { id: pl.id, field: "plan:max_drawdown", type: "number", align: true,
+        format: () => money0(pl.max_drawdown) })}
+      ${cell(pl.drawdown_type, { id: pl.id, field: "plan:drawdown_type", type: "select",
+        options: [{ value: "eod", label: "eod" }, { value: "intraday", label: "intraday" },
+                  { value: "static", label: "static" }],
+        format: () => `<span class="muted">${esc(pl.drawdown_type)}</span>` })}
+      ${cell(pl.daily_loss_limit, { id: pl.id, field: "plan:daily_loss_limit", type: "number", align: true,
+        format: () => (pl.daily_loss_limit == null
+          ? `<span class="dim">—</span>` : money0(pl.daily_loss_limit)) })}
+      ${cell(pl.min_trading_days, { id: pl.id, field: "plan:min_trading_days", type: "number", align: true,
+        format: () => (pl.min_trading_days || `<span class="dim">—</span>`) })}
+      ${cell(pl.consistency_pct, { id: pl.id, field: "plan:consistency_pct", type: "number", align: true,
+        format: () => (pl.consistency_pct == null
+          ? `<span class="dim">—</span>` : `${num(pl.consistency_pct, 0)}%`) })}
+      ${cell(pl.profit_split, { id: pl.id, field: "plan:profit_split", type: "number", align: true,
+        format: () => (pl.profit_split == null
+          ? `<span class="dim">—</span>` : `${num(pl.profit_split, 0)}%`) })}
+      ${cell(pl.buffer_multiplier, { id: pl.id, field: "plan:buffer_multiplier", type: "number", align: true,
+        title: "somado ao multiplicador do hedge (futuros)",
+        format: () => (Number(pl.buffer_multiplier)
+          ? `+${pl.buffer_multiplier}` : `<span class="dim">—</span>`) })}
+      ${cell(pl.buffer_cash, { id: pl.id, field: "plan:buffer_cash", type: "number", align: true,
+        title: "somado ao gasto antes de dividir (CFD)",
+        format: () => (Number(pl.buffer_cash)
+          ? `+${money0(pl.buffer_cash)}` : `<span class="dim">—</span>`) })}
+      ${cell(pl.notes, { id: pl.id, field: "plan:notes", type: "text",
+        format: () => `<span class="muted">${esc(pl.notes || "—")}</span>` })}
+      <td><button class="btn ghost danger" data-del-plan="${pl.id}">Delete</button></td>
+    </tr>`).join("");
+
   render(`
+    <div class="panel">
+      <h2>Register prop account <span class="dim">one step</span></h2>
+      <div class="panel-body">
+        <p class="muted" style="margin-top:0">
+          Creates or reuses the firm and plan, registers the account, opens the
+          challenge and links its current phase.
+        </p>
+        <div class="row">
+          <div class="field wide"><label>Account *</label><select id="onboard-account"
+              ${onboardingOptions.length ? "" : "disabled"}>
+            <option value="">${onboardingOptions.length
+              ? "— choose an account —" : "— no free accounts —"}</option>
+            ${onboardingOptions.map((o) =>
+              `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join("")}
+          </select></div>
+          <div class="field" id="onboard-mt5-field" hidden><label>MT5 login *</label>
+            <input id="onboard-mt5-login" inputmode="numeric" placeholder="12345678"></div>
+          <div class="field"><label>Prop firm *</label>
+            <input id="onboard-firm" list="onboard-firms" placeholder="Tradeify">
+            <datalist id="onboard-firms">${firms.map((f) =>
+              `<option value="${esc(f.name)}">${esc(f.platform)}</option>`).join("")}</datalist>
+          </div>
+          <div class="field"><label>Model</label>
+            <input id="onboard-model" placeholder="2 Step Standard"></div>
+          <div class="field"><label>Account size *</label>
+            <input id="onboard-size" type="number" min="1" step="0.01" placeholder="50000"></div>
+          <div class="field"><label>Evaluation phases *</label><select id="onboard-phases">
+            <option value="2">2 — phase 1 + phase 2</option>
+            <option value="1">1 — straight to funded</option>
+          </select></div>
+          <div class="field"><label>Current stage *</label><select id="onboard-status"></select></div>
+        </div>
+
+        <div class="row" style="margin-top:12px">
+          <div class="field"><label>Phase 1 target</label>
+            <input id="onboard-target-p1" type="number" min="0" step="0.01" placeholder="3000"></div>
+          <div class="field" id="onboard-p2-field"><label>Phase 2 target</label>
+            <input id="onboard-target-p2" type="number" min="0" step="0.01" placeholder="2500"></div>
+          <div class="field"><label>Max drawdown *</label>
+            <input id="onboard-drawdown" type="number" min="0" step="0.01" placeholder="2000"></div>
+          <div class="field"><label>Drawdown type</label><select id="onboard-dd-type">
+            <option value="eod">EOD trailing</option>
+            <option value="intraday">Intraday trailing</option>
+            <option value="static">Static</option>
+          </select></div>
+          <div class="field"><label>Purchase cost</label>
+            <input id="onboard-cost" type="number" min="0" step="0.01" placeholder="99"></div>
+          <div class="field"><label>Opened</label>
+            <input id="onboard-date" type="date" value="${new Date().toISOString().slice(0, 10)}"></div>
+        </div>
+
+        <details style="margin-top:12px">
+          <summary class="muted" style="cursor:pointer;font-size:10px">More rules</summary>
+          <div class="row" style="margin-top:10px">
+            <div class="field"><label>Daily loss limit</label>
+              <input id="onboard-daily-loss" type="number" min="0" step="0.01"></div>
+            <div class="field"><label>Minimum trading days</label>
+              <input id="onboard-min-days" type="number" min="0" step="1"></div>
+            <div class="field"><label>Consistency (%)</label>
+              <input id="onboard-consistency" type="number" min="0" max="100" step="0.01"></div>
+            <div class="field"><label>Payout split (%)</label>
+              <input id="onboard-split" type="number" min="0" max="100" step="0.01"></div>
+            <div class="field"><label>Futures buffer ×</label>
+              <input id="onboard-buffer-mult" type="number" min="0" step="0.0001" placeholder="0.03"></div>
+            <div class="field"><label>CFD buffer $</label>
+              <input id="onboard-buffer-cash" type="number" min="0" step="0.01"></div>
+            <div class="field wide"><label>Notes</label>
+              <input id="onboard-notes" placeholder="optional"></div>
+          </div>
+        </details>
+
+        <div class="row" style="margin-top:12px">
+          <div class="field auto"><button class="btn" id="register-prop"
+              ${onboardingOptions.length ? "" : "disabled"}>Register and link</button></div>
+        </div>
+      </div>
+    </div>
+
     <div class="panel">
       <h2>Registered accounts</h2>
       <div class="scroll"><table>
@@ -1027,6 +1240,59 @@ async function renderConfig() {
     </div>
 
     <div class="panel">
+      <h2>Prop firms</h2>
+      <div class="scroll"><table>
+        <thead><tr><th>Name</th><th>Platform</th><th>Phases</th><th class="num">Split</th>
+          <th>Notes</th><th class="num">Plans</th><th></th></tr></thead>
+        <tbody>${firmRows || `<tr><td colspan="7">${empty("no firms yet")}</td></tr>`}</tbody>
+      </table></div>
+      <div class="panel-body row">
+        <div class="field"><label>Name</label><input id="firm-name" placeholder="Tradeify"></div>
+        <div class="field"><label>Platform</label><select id="firm-platform">
+          <option>NT8</option><option>MT5</option><option>Tradovate</option><option>Other</option>
+        </select></div>
+        <div class="field"><label>Eval phases</label><select id="firm-phases">
+          <option value="2">2 — phase 1 + phase 2</option>
+          <option value="1">1 — straight to funded</option>
+        </select></div>
+        <div class="field"><label>Default split (%)</label>
+          <input id="firm-split" type="number" step="0.01" placeholder="90"></div>
+        <div class="field auto"><label>&nbsp;</label>
+          <button class="btn" id="add-firm">Add firm</button></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Plans <span class="dim">${plans.length}</span></h2>
+      <div class="panel-body" style="padding-bottom:0">
+        <p class="muted" style="margin-top:0">
+          The rules per account size. This is what lets the panel know, on its own,
+          how far each account is from its target — every cell is editable.
+        </p>
+      </div>
+      <div class="scroll"><table>
+        <thead><tr><th>Firm</th><th>Model</th><th class="num">Size</th>
+          <th class="num">Target</th><th class="num">Target P2</th>
+          <th class="num">Drawdown</th><th>DD type</th><th class="num">Daily loss</th>
+          <th class="num">Min days</th><th class="num">Consist.</th><th class="num">Split</th>
+          <th class="num">Buffer &times;</th><th class="num">Buffer $</th>
+          <th>Notes</th><th></th></tr></thead>
+        <tbody>${planRows || `<tr><td colspan="15">${empty("no plans — add one below")}</td></tr>`}</tbody>
+      </table></div>
+      <div class="panel-body row">
+        <div class="field"><label>Firm</label><select id="plan-firm">${
+          firms.map((f) => `<option value="${f.id}">${esc(f.name)}</option>`).join("")
+        }</select></div>
+        <div class="field"><label>Model</label><input id="plan-name" placeholder="2 Step Standard"></div>
+        <div class="field"><label>Size</label><input id="plan-size" type="number" placeholder="50000"></div>
+        <div class="field"><label>Target</label><input id="plan-target" type="number" placeholder="3000"></div>
+        <div class="field"><label>Drawdown</label><input id="plan-dd" type="number" placeholder="2000"></div>
+        <div class="field auto"><label>&nbsp;</label>
+          <button class="btn" id="add-plan">Add plan</button></div>
+      </div>
+    </div>
+
+    <div class="panel">
       <h2>Account<span class="dim">${esc(state.email)}</span></h2>
       <div class="panel-body row">
         <div class="field"><label>New password</label>
@@ -1039,32 +1305,247 @@ async function renderConfig() {
           changing it here, update TRACKER_PASSWORD in the .env.
         </p>
       </div>
-    </div>
-
-    <div class="panel">
-      <h2>Prop firms</h2>
-      <div class="panel-body">
-        <div class="row">
-          ${firms.map((f) => badge("closed",
-            `${f.name} · ${f.platform} · ${Number(f.eval_phases) === 1 ? "1 phase" : "2 phases"}`)
-          ).join(" ") || `<span class="muted">none</span>`}
-        </div>
-        <div class="row" style="margin-top:12px">
-          <div class="field"><label>Name</label><input id="firm-name" placeholder="Tradeify"></div>
-          <div class="field"><label>Platform</label><select id="firm-platform">
-            <option>NT8</option><option>MT5</option><option>Tradovate</option><option>Other</option>
-          </select></div>
-          <div class="field"><label>Eval phases</label><select id="firm-phases">
-            <option value="2">2 — phase 1 + phase 2</option>
-            <option value="1">1 — straight to funded</option>
-          </select></div>
-          <div class="field"><label>Default split (%)</label>
-            <input id="firm-split" type="number" step="0.01" placeholder="90"></div>
-          <div class="field auto"><label>&nbsp;</label>
-            <button class="btn" id="add-firm">Add</button></div>
-        </div>
-      </div>
     </div>`);
+
+  wireEditables(view, (field, id, value) => saveSetupField(field, id, value, accounts));
+
+  const onboardPhases = document.getElementById("onboard-phases");
+  const onboardStatus = document.getElementById("onboard-status");
+  const onboardAccount = document.getElementById("onboard-account");
+  const onboardFirm = document.getElementById("onboard-firm");
+  const onboardButton = document.getElementById("register-prop");
+
+  const selectedOnboardingAccount = () => {
+    const [kind, rawId] = (onboardAccount.value || "").split(":");
+    const id = Number(rawId);
+    if (kind === "source") return { kind, row: discovered.find((d) => d.id === id) };
+    if (kind === "account") return { kind, row: accounts.find((a) => a.id === id) };
+    return { kind: null, row: null };
+  };
+
+  const refreshOnboardingAccount = () => {
+    const selected = selectedOnboardingAccount();
+    document.getElementById("onboard-mt5-field").hidden = selected.row?.platform !== "MT5"
+      || selected.kind !== "source";
+  };
+
+  const refreshOnboardingStages = () => {
+    const phases = Number(onboardPhases.value);
+    const previous = onboardStatus.value;
+    const options = statusOptions(phases)
+      .filter((o) => ["phase1", "phase2", "funded"].includes(o.value));
+    onboardStatus.innerHTML = options.map((o) =>
+      `<option value="${o.value}" ${o.value === previous ? "selected" : ""}>${
+        esc(o.label)}</option>`).join("");
+    document.getElementById("onboard-p2-field").hidden = phases !== 2;
+  };
+
+  const existingOnboardingFirm = () => {
+    const wanted = onboardFirm.value.trim().toLocaleLowerCase();
+    return firms.find((f) => f.name.trim().toLocaleLowerCase() === wanted);
+  };
+
+  onboardAccount.onchange = refreshOnboardingAccount;
+  onboardPhases.onchange = refreshOnboardingStages;
+  onboardFirm.onchange = () => {
+    const firm = existingOnboardingFirm();
+    if (!firm) return;
+    onboardPhases.value = String(firm.eval_phases || 2);
+    if (firm.default_split != null) {
+      document.getElementById("onboard-split").value = firm.default_split;
+    }
+    refreshOnboardingStages();
+  };
+  refreshOnboardingAccount();
+  refreshOnboardingStages();
+
+  onboardButton.onclick = async () => {
+    const selected = selectedOnboardingAccount();
+    const firmName = onboardFirm.value.trim();
+    const size = Number(document.getElementById("onboard-size").value);
+    const drawdown = Number(document.getElementById("onboard-drawdown").value);
+    const evalPhases = Number(onboardPhases.value);
+    const status = onboardStatus.value;
+    const numberOrNull = (id) => {
+      const raw = document.getElementById(id).value.trim();
+      return raw === "" ? null : Number(raw);
+    };
+
+    if (!selected.row) return toast("Choose an account");
+    if (!firmName) return toast("Enter the prop firm name");
+    if (!(size > 0)) return toast("Enter the account size");
+    if (!(drawdown > 0)) return toast("Enter the max drawdown");
+
+    const platform = selected.row.platform;
+    const mt5Login = document.getElementById("onboard-mt5-login").value.trim();
+    if (selected.kind === "source" && platform === "MT5" && !/^\d+$/.test(mt5Login)) {
+      return toast("Enter the numeric MT5 login");
+    }
+
+    const modelInput = document.getElementById("onboard-model").value.trim();
+    const modelName = modelInput || `${evalPhases} Step`;
+    const targetP1 = numberOrNull("onboard-target-p1");
+    const targetP2 = evalPhases === 2 ? numberOrNull("onboard-target-p2") : null;
+    const dailyLoss = numberOrNull("onboard-daily-loss");
+    const minDays = numberOrNull("onboard-min-days");
+    const consistency = numberOrNull("onboard-consistency");
+    const split = numberOrNull("onboard-split");
+    const bufferMultiplier = numberOrNull("onboard-buffer-mult");
+    const bufferCash = numberOrNull("onboard-buffer-cash");
+    const cost = numberOrNull("onboard-cost");
+    const opened = document.getElementById("onboard-date").value || null;
+    const notes = document.getElementById("onboard-notes").value.trim() || null;
+
+    const nonNegative = [targetP1, targetP2, dailyLoss, minDays, consistency,
+      split, bufferMultiplier, bufferCash, cost];
+    if (nonNegative.some((value) => value != null
+        && (!Number.isFinite(value) || value < 0))) {
+      return toast("Rule values cannot be negative");
+    }
+    if (minDays != null && !Number.isInteger(minDays)) {
+      return toast("Minimum trading days must be an integer");
+    }
+    if (consistency != null && consistency > 100) {
+      return toast("Consistency must be between 0 and 100");
+    }
+    if (split != null && split > 100) {
+      return toast("Payout split must be between 0 and 100");
+    }
+
+    const created = { firmId: null, planId: null, accountId: null, challengeId: null };
+    let accountId = null;
+    let originalAccountPlan = null;
+
+    onboardButton.disabled = true;
+    try {
+      await guard(async () => {
+        let firm = existingOnboardingFirm();
+        if (firm && firm.platform !== platform
+            && !(firm.platform === "Tradovate" && platform === "NT8")) {
+          throw new Error(`${firm.name} is ${firm.platform}, but the account is ${platform}`);
+        }
+        if (!firm) {
+          firm = await save.createFirm({
+            name: firmName,
+            platform,
+            eval_phases: evalPhases,
+            default_split: split,
+          });
+          created.firmId = firm.id;
+        }
+
+        let plan = plans.find((pl) => Number(pl.firm_id) === Number(firm.id)
+          && Number(pl.account_size) === size
+          && String(pl.name || "").trim().toLocaleLowerCase() === modelName.toLocaleLowerCase());
+        if (plan) {
+          const existingPhases = Number(plan.eval_phases ?? firm.eval_phases ?? 2);
+          if (existingPhases !== evalPhases) {
+            throw new Error(`${modelName} already exists with ${existingPhases} phase(s)`);
+          }
+        } else {
+          plan = await save.createPlan({
+            firm_id: firm.id,
+            name: modelName,
+            account_size: size,
+            eval_phases: evalPhases,
+            profit_target: targetP1,
+            profit_target_p2: targetP2,
+            max_drawdown: drawdown,
+            drawdown_type: document.getElementById("onboard-dd-type").value,
+            daily_loss_limit: dailyLoss,
+            min_trading_days: minDays ?? 0,
+            consistency_pct: consistency,
+            profit_split: split,
+            // Futuros usa +0,03 como protecao operacional padrao do projeto.
+            // O campo continua livre para sobrescrever por mesa/modelo.
+            buffer_multiplier: bufferMultiplier ?? (platform === "NT8" ? 0.03 : 0),
+            buffer_cash: bufferCash ?? 0,
+            notes,
+          });
+          created.planId = plan.id;
+        }
+
+        if (selected.kind === "source") {
+          const source = selected.row;
+          const login = platform === "MT5" ? mt5Login : source.login_or_name;
+          const account = await save.createAccount({
+            kind: "prop",
+            platform,
+            login_or_name: login,
+            label: source.label,
+            terminal_hash: source.terminal_hash,
+            terminal_path: source.terminal_path,
+            broker_server: source.broker_server,
+            magic_source_part: magicSourcePart(platform, login),
+            plan_id: plan.id,
+            plan_source: "manual",
+          });
+          accountId = account.id;
+          created.accountId = account.id;
+        } else {
+          accountId = selected.row.id;
+          originalAccountPlan = {
+            plan_id: selected.row.plan_id ?? null,
+            plan_source: selected.row.plan_source ?? null,
+          };
+          await save.account(accountId, { plan_id: plan.id, plan_source: "manual" });
+        }
+
+        const challenge = await save.createChallenge({
+          firm_id: firm.id,
+          plan_id: plan.id,
+          date_open: opened,
+          status,
+          target: targetP1,
+          split_pct: split,
+          comments: notes,
+        });
+        created.challengeId = challenge.id;
+
+        const phase = { phase1: "P1", phase2: "P2", funded: "FUNDED" }[status];
+        await save.createPhase({
+          challenge_id: challenge.id,
+          phase,
+          account_id: accountId,
+          started_at: new Date().toISOString(),
+          outcome: "active",
+        });
+
+        if (cost != null && cost !== 0) {
+          await save.createCashEvent({
+            challenge_id: challenge.id,
+            kind: "cost",
+            amount: -Math.abs(cost),
+            occurred_on: opened || new Date().toISOString().slice(0, 10),
+            source: "manual",
+          });
+        }
+      }, "Prop account registered");
+      renderConfig();
+    } catch (error) {
+      const rollbackErrors = [];
+      const rollback = async (label, fn) => {
+        try {
+          await fn();
+        } catch (rollbackError) {
+          rollbackErrors.push(`${label}: ${rollbackError.message}`);
+        }
+      };
+      if (created.challengeId) {
+        await rollback("challenge", () => save.deleteChallenge(created.challengeId));
+      }
+      if (created.accountId) {
+        await rollback("account", () => save.deleteAccount(created.accountId));
+      } else if (accountId && originalAccountPlan) {
+        await rollback("account plan", () => save.account(accountId, originalAccountPlan));
+      }
+      if (created.planId) await rollback("plan", () => save.deletePlan(created.planId));
+      if (created.firmId) await rollback("firm", () => save.deleteFirm(created.firmId));
+      if (rollbackErrors.length) toast(`Rollback error: ${rollbackErrors.join("; ")}`);
+    } finally {
+      if (document.body.contains(onboardButton)) onboardButton.disabled = false;
+    }
+  };
 
   // O plano define alvo, drawdown e regras -- sem ele o painel não tem o que medir.
   view.querySelectorAll("[data-plan]").forEach((sel) => {
@@ -1097,6 +1578,28 @@ async function renderConfig() {
         { kind: b.dataset.kind === "live" ? "prop" : "live" }), "Account updated");
       renderConfig();
     };
+  });
+
+  view.querySelectorAll("[data-del-account]").forEach((b) => {
+    const trades = Number(b.dataset.trades);
+    armDelete(b, trades ? `Delete + ${trades} trades?` : "Delete?", async () => {
+      await guard(() => save.deleteAccount(Number(b.dataset.delAccount)), "Account deleted");
+      renderConfig();
+    });
+  });
+
+  view.querySelectorAll("[data-del-firm]").forEach((b) => {
+    armDelete(b, "Firm + its plans?", async () => {
+      await guard(() => save.deleteFirm(Number(b.dataset.delFirm)), "Firm deleted");
+      renderConfig();
+    });
+  });
+
+  view.querySelectorAll("[data-del-plan]").forEach((b) => {
+    armDelete(b, "Sure?", async () => {
+      await guard(() => save.deletePlan(Number(b.dataset.delPlan)), "Plan deleted");
+      renderConfig();
+    });
   });
 
   view.querySelectorAll("[data-claim]").forEach((b) => {
@@ -1138,6 +1641,63 @@ async function renderConfig() {
     }), "Firm added");
     renderConfig();
   };
+
+  document.getElementById("add-plan").onclick = async () => {
+    const size = Number(document.getElementById("plan-size").value);
+    const target = Number(document.getElementById("plan-target").value);
+    const drawdown = Number(document.getElementById("plan-dd").value);
+    if (!firms.length) return toast("Add a firm first");
+    if (!size) return toast("Enter the account size");
+    // Alvo e drawdown são NOT NULL no banco: barrar aqui dá uma mensagem que se
+    // entende, em vez do erro cru do Postgres.
+    if (!target || !drawdown) return toast("Target and drawdown are required");
+
+    await guard(() => save.createPlan({
+      firm_id: Number(document.getElementById("plan-firm").value),
+      name: document.getElementById("plan-name").value.trim() || null,
+      account_size: size,
+      profit_target: target,
+      max_drawdown: drawdown,
+    }), "Plan added");
+    renderConfig();
+  };
+}
+
+/**
+ * Grava uma célula do Setup. O prefixo do campo diz a que tabela ela pertence
+ * -- `wireEditables` liga a raiz inteira de uma vez, e a página tem três
+ * tabelas editáveis.
+ */
+async function saveSetupField(field, id, raw, accounts) {
+  const [table, column] = field.split(":");
+  const rowId = Number(id);
+  const value = raw === "" ? null : raw;
+  const number = () => (value === null ? null : Number(value));
+
+  await guard(async () => {
+    if (table === "firm") {
+      const patch = ["eval_phases", "default_split"].includes(column)
+        ? { [column]: number() } : { [column]: value };
+      return save.firm(rowId, patch);
+    }
+
+    if (table === "plan") {
+      const patch = column === "drawdown_type" || column === "name" || column === "notes"
+        ? { [column]: value } : { [column]: number() };
+      return save.plan(rowId, patch);
+    }
+
+    // Conta: `cash_value` e `magic_source_part` são medidos/derivados, então a
+    // correção precisa da marca -- sem ela o coletor devolve o valor antigo no
+    // ciclo seguinte e a edição parece não ter funcionado.
+    const account = accounts.find((a) => a.id === rowId) || {};
+    const patch = ["cash_value", "magic_source_part"].includes(column)
+      ? manualPatch(account, { [column]: number() })
+      : { [column]: value };
+    return save.account(rowId, patch);
+  }, "Saved");
+
+  renderConfig();
 }
 
 // ------------------------------------------------------- reporte de problema

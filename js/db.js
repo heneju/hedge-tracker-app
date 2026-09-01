@@ -5,7 +5,7 @@
 // fica so no coletor, no PC.
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { CONFIG } from "./config.js?v=4605ca5433";
+import { CONFIG } from "./config.js?v=4d4f0eb14c";
 
 export const supabase = createClient(CONFIG.url, CONFIG.anonKey);
 
@@ -133,8 +133,22 @@ export const load = {
 
 // ------------------------------------------------------------------ escrita
 //
-// O app so escreve nos campos manuais. Execucoes, trades e vinculos sao
-// territorio do coletor -- por isso nao ha nenhum save() para eles aqui.
+// O app escreve em tudo o que a tela mostra. Nos campos que o coletor MEDE
+// (resultado de um trade, saldo, a fase a que ele pertence) a correcao passa
+// por `manualPatch`, que marca a coluna: o gatilho no banco segura aquele valor
+// e o coletor deixa de sobrescrever. Sem a marca, o coletor vence -- e assim
+// que deve ser, porque a medicao e a fonte normal.
+
+/**
+ * Marca as colunas do patch como corrigidas a mao.
+ *
+ * `row` e a linha como esta na tela: as marcas anteriores tem que ir junto,
+ * senao corrigir um segundo campo soltaria o primeiro de volta para o coletor.
+ */
+export function manualPatch(row, patch) {
+  const marked = new Set([...(row.manual_cols || []), ...Object.keys(patch)]);
+  return { ...patch, manual_cols: [...marked] };
+}
 
 export const save = {
   challenge: (id, patch) =>
@@ -169,6 +183,36 @@ export const save = {
 
   createFirm: (row) =>
     supabase.from("prop_firms").insert(row).select().single().then(unwrap),
+
+  firm: (id, patch) =>
+    supabase.from("prop_firms").update(patch).eq("id", id).then(unwrap),
+
+  // Leva junto os planos da mesa (cascade). Os challenges dela ficam, com a
+  // mesa em branco -- perder o historico por causa de um cadastro seria pior.
+  deleteFirm: (id) =>
+    supabase.from("prop_firms").delete().eq("id", id).then(unwrap),
+
+  createPlan: (row) =>
+    supabase.from("firm_plans").insert(row).select().single().then(unwrap),
+
+  plan: (id, patch) =>
+    supabase.from("firm_plans").update(patch).eq("id", id).then(unwrap),
+
+  deletePlan: (id) =>
+    supabase.from("firm_plans").delete().eq("id", id).then(unwrap),
+
+  // Apaga tambem as execucoes e trades da conta (cascade). Quem chama avisa.
+  deleteAccount: (id) =>
+    supabase.from("accounts").delete().eq("id", id).then(unwrap),
+
+  trade: (id, patch) =>
+    supabase.from("trades").update(patch).eq("id", id).then(unwrap),
+
+  deleteLink: (id) =>
+    supabase.from("hedge_links").delete().eq("id", id).then(unwrap),
+
+  createLink: (row) =>
+    supabase.from("hedge_links").insert(row).select().single().then(unwrap),
 
   phaseByChallenge: (challengeId, phase, patch) =>
     supabase.from("challenge_phases").update(patch)

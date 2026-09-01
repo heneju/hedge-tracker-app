@@ -178,6 +178,9 @@ td input.num{text-align:right}
 .btn.ghost:hover:not(:disabled){border-color:var(--dim);color:var(--text)}
 .btn.danger{color:var(--down-soft)}
 .btn.danger:hover:not(:disabled){border-color:var(--down-soft)}
+/* Botao armado: o segundo clique apaga. Fica vermelho de verdade para nao
+   passar por engano como se fosse o estado normal. */
+.btn.armed{color:#fff;background:var(--down-soft);border-color:var(--down-soft)}
 .btn:disabled{opacity:.35;cursor:default}
 .btn.icon{padding:5px 9px;letter-spacing:0;font-size:11px}
 
@@ -268,6 +271,6 @@ dialog th{background:#0b0b0b}
 
 <dialog id="modal"></dialog>
 
-<script type="module" src="./js/app.js?v=4605ca5433"></script>
+<script type="module" src="./js/app.js?v=4d4f0eb14c"></script>
 </body>
 </html>
