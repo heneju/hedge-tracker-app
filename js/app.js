@@ -10,16 +10,16 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=937768fa90";
+} from "./db.js?v=3592c88e83";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=937768fa90";
+} from "./util.js?v=3592c88e83";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=937768fa90";
-import { cell, locked, wireEditables } from "./editable.js?v=937768fa90";
+} from "./charts.js?v=3592c88e83";
+import { cell, locked, wireEditables } from "./editable.js?v=3592c88e83";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -2534,6 +2534,394 @@ function hedgeDetail(a, notes) {
       ${notes.map((n) => `<div class="mult-note">${esc(n.long)}</div>`).join("")}
     </div>
   </div>`;
+}
+
+// ------------------------------------------------------ o que falta cadastrar
+//
+// Há coisas que o coletor não tem como descobrir sozinho: quanto o challenge
+// custou (está no email da mesa, não na plataforma) e qual modelo a conta é
+// quando dois têm o mesmo tamanho. Sem elas o painel calcula em cima de um
+// buraco -- o multiplicador sai menor do que devia, o total ignora um custo que
+// existiu -- e nada na tela denuncia isso.
+//
+// Por isso o aviso é ativo: aparece ao entrar, com o campo ali para preencher
+// na hora. Some quando não há mais pendência, e não reaparece depois de
+// dispensado -- só volta se surgir uma pendência NOVA, comparando a assinatura
+// do que está pendente com a do que já foi visto.
+
+const PENDING_SEEN = "tracking:pending-seen";
+
+// NinjaTrader e Tradovate são a mesma conta por dois caminhos; a Tradeify
+// cadastra a mesa como NT8 e o app aceita as duas grafias.
+const FUTURES = new Set(["NT8", "Tradovate"]);
+
+/**
+ * Levanta o que só o usuário pode responder.
+ *
+ * Cada item traz o porquê junto: "falta o custo" não diz nada, "falta o custo,
+ * e sem ele o multiplicador do hedge sai menor do que devia" diz.
+ */
+async function loadPending() {
+  const [journal, progress, accounts, plans, discovered, phases] = await Promise.all([
+    load.journal(), load.progress(), load.accounts(), load.plans(),
+    load.discovered(), load.phasesOfPassed()]);
+
+  const items = [];
+  const accountById = new Map(accounts.map((a) => [a.id, a]));
+  const claimed = new Set(accounts.map((a) => `${a.platform}:${a.login_or_name}`));
+  const inUse = new Set(progress.filter((p) => p.challenge_id).map((p) => p.account_id));
+  const fundedPhase = new Set(phases.filter((p) => p.phase === "FUNDED")
+    .map((p) => p.challenge_id));
+
+  // Candidatas a conta funded: o que a descoberta achou e ninguem classificou,
+  // mais conta ja registrada que nao pertence a challenge nenhum. Fonte MT5 nao
+  // entra porque o login so aparece quando alguem digita -- essa fica no Setup.
+  const freshAccounts = [
+    ...discovered
+      .filter((d) => d.platform !== "MT5" && !claimed.has(`${d.platform}:${d.login_or_name}`))
+      .map((d) => ({ value: `source:${d.id}`, platform: d.platform,
+                     label: `${d.platform} · ${d.login_or_name} · found ${day(d.first_seen)}` })),
+    ...accounts
+      .filter((a) => a.kind === "prop" && a.is_active !== false && !inUse.has(a.id))
+      .map((a) => ({ value: `account:${a.id}`, platform: a.platform,
+                     label: `${a.platform} · ${a.login_or_name} · registered` })),
+  ];
+
+  for (const c of journal) {
+    // Avaliação aprovada esperando a conta funded. A mesa libera uma conta
+    // nova, com outro número, e é essa ligação que ninguém consegue deduzir.
+    if (c.status === "passed" && !fundedPhase.has(c.id)) {
+      items.push({
+        key: `activation:${c.id}`,
+        kind: "activation",
+        id: c.id,
+        options: freshAccounts,
+        title: `${c.account_ids || "?"} · ${c.firm || "?"}`,
+        ask: "Passed. Which account did the firm activate?",
+        why: freshAccounts.length
+          ? "The collector already sees new accounts on this PC, but the funded"
+            + " number does not derive from the evaluation one — only you know"
+            + " which is which. Pick it and the challenge moves to funded, with"
+            + " the new account carrying the funded phase."
+          : "No unassigned account showed up yet. When the firm activates it, the"
+            + " collector finds it on its own and this question comes back.",
+      });
+    }
+
+    // Rede de segurança. Quem marca conta estourada é o coletor, no ciclo
+    // seguinte ao estouro -- isto só aparece se ele estiver parado, e aí o
+    // clique resolve na mão.
+    if (c.drawdown_blown && c.status !== "failed") {
+      items.push({
+        key: `failed:${c.id}`,
+        kind: "failed",
+        id: c.id,
+        title: `${c.account_ids || "?"} · ${c.firm || "?"}`,
+        ask: "This account hit the drawdown floor.",
+        why: `It is still marked as ${statusLabel(c.status, c.eval_phases)}, so`
+          + " the panel keeps giving it a target and a multiplier as if it were"
+          + " alive. The collector marks this on its own — seeing it here means"
+          + " it is not running.",
+      });
+    }
+
+    // Custo: linha importada da planilha já traz o número, então fica de fora --
+    // o aviso é para o que o coletor criou e ninguém preencheu.
+    if (c.import_source || Number(c.cost_entries) > 0) continue;
+    items.push({
+      key: `cost:${c.id}`,
+      kind: "cost",
+      id: c.id,
+      title: `${c.account_ids || "?"} · ${c.firm || "?"}`,
+      ask: "What did this challenge cost?",
+      why: "It is the starting point of the hedge multiplier — without it the"
+        + " panel recommends a smaller hedge than it should.",
+      date: c.date_open,
+    });
+  }
+
+  for (const a of progress) {
+    const account = accountById.get(a.account_id) || {};
+    if (!a.plan_id || a.plan_source === "inferred") {
+      items.push({
+        key: `plan:${a.account_id}`,
+        kind: "plan",
+        id: a.account_id,
+        platform: account.platform,
+        title: `${accountShort(a.login_or_name)} · ${a.login_or_name}`,
+        ask: a.plan_id
+          ? `Is this really ${a.plan_name || "?"} ${money0(a.account_size)}?`
+          : "Which model is this account?",
+        why: a.plan_id
+          ? "Guessed from the balance. Two models can share a size with"
+            + ` different drawdowns (${money0(a.max_drawdown)} here), and the`
+            + " drawdown is what sets the multiplier."
+          : "Without the plan there is no target and no drawdown to measure"
+            + " against, so this account gets no multiplier at all.",
+      });
+      continue;
+    }
+    if (a.phase == null && Number(a.days_traded) > 0) {
+      items.push({
+        key: `challenge:${a.account_id}`,
+        kind: "challenge",
+        id: a.account_id,
+        title: `${accountShort(a.login_or_name)} · ${a.login_or_name}`,
+        ask: "This account has trades but no challenge.",
+        why: `${a.days_traded} day(s) traded and ${cash(a.pnl)} of result are`
+          + " sitting outside every total until it belongs to one.",
+      });
+    }
+  }
+
+  return { items, plans, accounts };
+}
+
+/** Roda depois da primeira tela: o aviso não pode atrasar o que já ia carregar. */
+async function checkPending() {
+  // Offline não é motivo para atrapalhar quem já está com a tela aberta.
+  const { items, plans, accounts } = await loadPending()
+    .catch(() => ({ items: [], plans: [], accounts: [] }));
+  state.pendingSetup = items.length;
+  renderNav();
+  if (!items.length) return;
+
+  const signature = items.map((i) => i.key).sort().join(",");
+  let seen = "";
+  try {
+    seen = localStorage.getItem(PENDING_SEEN) || "";
+  } catch {
+    seen = "";   // Janela anônima: mostra sempre, que é o lado seguro.
+  }
+  if (seen === signature) return;
+  openPendingForm(items, plans, accounts, signature);
+}
+
+/**
+ * Liga a conta funded ao challenge aprovado.
+ *
+ * A fase FUNDED nasce SEM `started_at`: ela cobre tudo o que a conta nova fez,
+ * inclusive o que já foi operado antes de alguém abrir o painel. Uma janela
+ * começando agora deixaria essas trades órfãs, e órfã não entra em total
+ * nenhum -- é o buraco silencioso que este tracker existe para não ter.
+ */
+async function activateFunded(challengeId, choice) {
+  const [kind, rawId] = choice.split(":");
+  const id = Number(rawId);
+  let accountId = id;
+
+  if (kind === "source") {
+    const [discovered, journal] = await Promise.all([load.discovered(), load.journal()]);
+    const source = discovered.find((d) => d.id === id);
+    const challenge = journal.find((c) => c.id === challengeId) || {};
+    const created = await save.createAccount({
+      kind: "prop",
+      platform: source.platform,
+      login_or_name: source.login_or_name,
+      label: source.label,
+      terminal_hash: source.terminal_hash,
+      terminal_path: source.terminal_path,
+      broker_server: source.broker_server,
+      magic_source_part: magicSourcePart(source.platform, source.login_or_name),
+      // O plano é o mesmo do challenge: a conta funded segue as regras que a
+      // avaliação seguia, e sem plano ela não teria drawdown para medir.
+      plan_id: challenge.plan_id ?? null,
+      plan_source: challenge.plan_id ? "manual" : null,
+    });
+    accountId = created.id;
+  }
+
+  await save.createPhase({
+    challenge_id: challengeId,
+    phase: "FUNDED",
+    account_id: accountId,
+    outcome: "active",
+  });
+  // O status por último: se a criação da fase falhar, o challenge continua em
+  // `passed` e a pergunta volta no ciclo seguinte em vez de sumir pela metade.
+  await save.challenge(challengeId, { status: "funded" });
+}
+
+function openPendingForm(items, plans, accounts, signature) {
+  const accountById = new Map(accounts.map((a) => [a.id, a]));
+
+  // Plano só faz sentido dentro da mesma plataforma: um plano CFD não descreve
+  // uma conta de futuros, por mais que os dois tamanhos sejam 50k.
+  const plansFor = (platform) => plans.filter((pl) => {
+    const firm = pl.prop_firms?.platform;
+    if (!firm || !platform) return true;   // cadastro pela metade não esconde nada
+    return FUTURES.has(platform) ? FUTURES.has(firm) : firm === platform;
+  });
+
+  const field = (item) => {
+    if (item.kind === "cost") {
+      return `<div class="row" style="margin-top:8px">
+        <div class="field"><label>Cost paid</label>
+          <input type="number" min="0" step="0.01" data-pending-cost="${item.id}"
+                 placeholder="99.00" inputmode="decimal"></div>
+        <div class="field auto"><label>&nbsp;</label>
+          <button class="btn" data-save-cost="${item.id}"
+                  data-date="${esc(item.date || "")}">Save</button></div>
+      </div>`;
+    }
+    if (item.kind === "plan") {
+      const account = accountById.get(item.id) || {};
+      const options = plansFor(item.platform);
+      return `<div class="row" style="margin-top:8px">
+        <div class="field wide"><label>Model</label>
+          <select data-pending-plan="${item.id}">
+            <option value="">— pick the model —</option>
+            ${options.map((pl) => `<option value="${pl.id}" ${
+              pl.id === account.plan_id ? "selected" : ""}>${esc(
+              `${pl.prop_firms?.name || "?"} · ${pl.name || "?"} · ${
+                money0(pl.account_size)} · ${money0(pl.max_drawdown)} dd`)}</option>`).join("")}
+          </select></div>
+        <div class="field auto"><label>&nbsp;</label>
+          <button class="btn" data-save-plan="${item.id}">Confirm</button></div>
+      </div>`;
+    }
+    if (item.kind === "activation") {
+      if (!item.options.length) return "";
+      return `<div class="row" style="margin-top:8px">
+        <div class="field wide"><label>Funded account</label>
+          <select data-pending-activation="${item.id}">
+            <option value="">— which one —</option>
+            ${item.options.map((o) => `<option value="${esc(o.value)}">${
+              esc(o.label)}</option>`).join("")}
+          </select></div>
+        <div class="field auto"><label>&nbsp;</label>
+          <button class="btn" data-save-activation="${item.id}">Activate</button></div>
+      </div>`;
+    }
+    if (item.kind === "failed") {
+      return `<div class="row" style="margin-top:8px">
+        <div class="field auto"><button class="btn ghost danger"
+          data-save-failed="${item.id}">Mark as failed</button></div>
+      </div>`;
+    }
+    return `<div class="row" style="margin-top:8px">
+      <div class="field auto"><button class="btn ghost" data-go-setup="1">
+        Open Setup to register it</button></div>
+    </div>`;
+  };
+
+  modal.innerHTML = `
+    <header><h1>${items.length} thing${items.length === 1 ? "" : "s"} only you can fill in</h1>
+      <span class="spacer"></span>
+      <button class="btn ghost" id="pending-later">Later</button></header>
+    <div style="padding:16px;max-height:74vh;overflow:auto">
+      <p class="muted" style="margin-top:0;line-height:1.8">
+        The collector reads the platforms, so it knows every trade, every balance
+        and every result on its own. <strong class="bright">These it cannot
+        know</strong> — the purchase cost lives in the firm's email, and when two
+        models share an account size the balance cannot tell them apart. Until
+        they are filled the panel is doing the maths over a hole: the hedge
+        multiplier comes out smaller than it should, and a cost that was really
+        paid never reaches the total.
+      </p>
+      ${items.map((item) => `
+        <div class="pending-item">
+          <div class="pending-head">
+            <strong class="bright">${esc(item.title)}</strong>
+            <span class="muted">${esc(item.ask)}</span>
+          </div>
+          <p class="pending-why">${esc(item.why)}</p>
+          ${field(item)}
+        </div>`).join("")}
+      <p class="muted" style="font-size:9px;margin-bottom:0">
+        Closing this is fine — it comes back only if something new shows up, and
+        the Setup tab keeps the count.
+      </p>
+    </div>`;
+
+  const remember = () => {
+    try {
+      localStorage.setItem(PENDING_SEEN, signature);
+    } catch {
+      // Sem armazenamento o aviso volta na próxima entrada. Chato, não errado.
+    }
+  };
+
+  modal.querySelector("#pending-later").onclick = () => {
+    remember();
+    modal.close();
+  };
+
+  modal.querySelectorAll("[data-save-cost]").forEach((b) => {
+    b.onclick = async () => {
+      const id = Number(b.dataset.saveCost);
+      const input = modal.querySelector(`[data-pending-cost="${id}"]`);
+      const amount = Number(input.value);
+      if (!amount) return toast("Enter the cost");
+      // Custo é dinheiro que sai: guardado negativo, como na planilha, mesmo
+      // que a pessoa digite positivo.
+      await guard(() => save.createCashEvent({
+        challenge_id: id,
+        kind: "cost",
+        amount: -Math.abs(amount),
+        occurred_on: b.dataset.date || new Date().toISOString().slice(0, 10),
+        source: "manual",
+      }), "Cost saved");
+      finishPending();
+    };
+  });
+
+  modal.querySelectorAll("[data-save-plan]").forEach((b) => {
+    b.onclick = async () => {
+      const id = Number(b.dataset.savePlan);
+      const select = modal.querySelector(`[data-pending-plan="${id}"]`);
+      if (!select.value) return toast("Pick the model");
+      // `manual` trava a escolha: o coletor não a sobrepõe mais, e é isso que
+      // faz o aviso sumir de vez para esta conta.
+      await guard(() => save.account(id, {
+        plan_id: Number(select.value),
+        plan_source: "manual",
+      }), "Model confirmed");
+      finishPending();
+    };
+  });
+
+  modal.querySelectorAll("[data-save-activation]").forEach((b) => {
+    b.onclick = async () => {
+      const id = Number(b.dataset.saveActivation);
+      const select = modal.querySelector(`[data-pending-activation="${id}"]`);
+      if (!select.value) return toast("Pick the account");
+      await guard(() => activateFunded(id, select.value), "Funded");
+      finishPending();
+    };
+  });
+
+  modal.querySelectorAll("[data-save-failed]").forEach((b) => {
+    b.onclick = async () => {
+      await guard(() => save.challenge(Number(b.dataset.saveFailed),
+        { status: "failed" }), "Marked as failed");
+      finishPending();
+    };
+  });
+
+  modal.querySelectorAll("[data-go-setup]").forEach((b) => {
+    b.onclick = () => {
+      remember();
+      modal.close();
+      go("config");
+    };
+  });
+
+  // Depois de gravar, refaz a lista: sobrou pendência, o aviso continua com o
+  // que sobrou; acabou, fecha e o contador zera.
+  async function finishPending() {
+    const fresh = await loadPending();
+    state.pendingSetup = fresh.items.length;
+    renderNav();
+    if (!fresh.items.length) {
+      modal.close();
+      return go(state.page);
+    }
+    openPendingForm(fresh.items, fresh.plans, fresh.accounts,
+                    fresh.items.map((i) => i.key).sort().join(","));
+  }
+
+  modal.showModal();
 }
 
 // -------------------------------------------------------------- calculadora
