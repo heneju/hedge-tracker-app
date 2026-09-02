@@ -10,17 +10,17 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=83910b3437";
+} from "./db.js?v=29a2187084";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=83910b3437";
+} from "./util.js?v=29a2187084";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=83910b3437";
-import { cell, locked, wireEditables } from "./editable.js?v=83910b3437";
-import { exportChallenges } from "./export.js?v=83910b3437";
+} from "./charts.js?v=29a2187084";
+import { cell, locked, wireEditables } from "./editable.js?v=29a2187084";
+import { exportChallenges } from "./export.js?v=29a2187084";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -286,11 +286,125 @@ function renderLogin() {
   email.focus();
 }
 
+// ------------------------------------------------------------------ no ar
+//
+// A única coisa do sistema que olha para posição ABERTA. Tudo o mais conta
+// trade fechada, de propósito: resultado flutuante muda a cada tick e não é
+// resultado. Aqui é diferente porque a pergunta é outra -- não "quanto rendeu"
+// e sim "a perna está coberta agora".
+//
+// É o risco que este tracker existe para não ter. Se o Copyator não copiar, ou
+// copiar com o tamanho errado, a ponta prop fica nua e isso não aparecia em
+// lugar nenhum até a trade fechar.
+//
+// Nada daqui entra em soma nenhuma. O retrato é substituído a cada ciclo do
+// coletor; `seen_at` diz quando, e a tela avisa quando está velho em vez de
+// mostrar posição que talvez já tenha fechado.
+
+const STALE_AFTER = 3 * 60 * 1000;   // coletor roda a cada ~5s; 3 min já é abandono
+
+function openPositions(rows, accounts) {
+  if (!rows.length) return "";
+
+  const byId = new Map(accounts.map((a) => [a.id, a]));
+  const props = rows.filter((p) => byId.get(p.account_id)?.kind === "prop");
+  const lives = rows.filter((p) => byId.get(p.account_id)?.kind === "live");
+
+  // A perna live carrega no magic a conta prop que ela hedgeia -- a mesma
+  // chave que atribui trade fechada. Aqui ela responde "quem cobre quem".
+  const coverOf = (prop) => lives.filter((l) =>
+    Number(l.magic ?? 0) % 2 ** 32 === Number(prop.magic_source_part ?? -1));
+
+  const oldest = Math.min(...rows.map((p) => new Date(p.seen_at).getTime()));
+  const stale = Date.now() - oldest > STALE_AFTER;
+
+  const card = (p) => {
+    const account = byId.get(p.account_id) || {};
+    const prop = { ...p, magic_source_part: account.magic_source_part };
+    const cover = coverOf(prop);
+    const coveredQty = cover.reduce((t, c) => t + Number(c.qty || 0), 0);
+    const floating = cover.reduce((t, c) => t + Number(c.floating_pnl || 0), 0);
+    const naked = cover.length === 0;
+
+    return `
+    <div class="acct" style="${naked ? "border-left:2px solid var(--loss)" : ""}">
+      <div style="display:flex;align-items:baseline;gap:10px;
+                  border-bottom:2px solid var(--color-divider);padding-bottom:12px">
+        <span style="font-family:var(--font-heading);font-weight:800;font-size:22px">${
+          esc(accountShort(account.login_or_name))}</span>
+        <span style="font-size:11px;color:var(--color-neutral-700)">${
+          esc(p.symbol)} ${esc(p.side)} ${num(p.qty, 0)}</span>
+        <span style="margin-left:auto">${naked
+          ? `<span class="badge failed">uncovered</span>`
+          : `<span class="badge live">hedged</span>`}</span>
+      </div>
+
+      ${naked ? `
+        <div class="mult-note" style="margin-top:14px">
+          No live position carrying this account’s magic. Either the copy has not
+          landed yet, or this leg is running naked — the loss on the prop side is
+          not being returned anywhere.
+        </div>`
+      : `
+        <div style="display:flex;align-items:flex-end;gap:24px;margin-top:16px;flex-wrap:wrap">
+          <div>
+            <div class="n ${signClass(floating)}" style="font-family:var(--font-heading);
+                 font-weight:800;font-size:32px;line-height:1">${money0(floating)}</div>
+            <div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+                 color:var(--color-neutral-700);margin-top:6px">hedge, floating now</div>
+          </div>
+          <div style="padding-bottom:4px">
+            <div class="n" style="font-family:var(--font-heading);font-weight:800;
+                 font-size:18px">${num(coveredQty, 2)}</div>
+            <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+                 color:var(--color-neutral-700);margin-top:3px">live size</div>
+          </div>
+          <div style="padding-bottom:4px">
+            <div class="n" style="font-family:var(--font-heading);font-weight:800;
+                 font-size:18px">${Number(p.qty) ? num(coveredQty / Number(p.qty), 3) : "—"}</div>
+            <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+                 color:var(--color-neutral-700);margin-top:3px">multiplier now</div>
+          </div>
+        </div>
+        <div class="n" style="margin-top:12px;font-size:11px;color:var(--color-neutral-600)">
+          ${cover.map((c) => `${esc(byId.get(c.account_id)?.login_or_name ?? "?")} ·
+            ${esc(c.symbol)} ${esc(c.side)} ${num(c.qty, 2)}`).join(" · ")}
+        </div>`}
+    </div>`;
+  };
+
+  // Perna live sem prop do outro lado tambem e um descasamento, so que do
+  // outro sentido: hedge sem nada para hedgear.
+  const cobertas = new Set(props.flatMap((p) => {
+    const account = byId.get(p.account_id) || {};
+    return coverOf({ ...p, magic_source_part: account.magic_source_part }).map((c) => c.id);
+  }));
+  const soltas = lives.filter((l) => !cobertas.has(l.id));
+
+  return `
+    <div class="panel">
+      <h2>In the air right now<span class="dim">${
+        stale ? "collector has not reported for a while — this may be out of date"
+              : "open positions · not counted in any total"}</span></h2>
+      <div class="panel-body">
+        <div class="accts">${props.map(card).join("")}</div>
+        ${soltas.length ? `
+        <div class="mult-note" style="margin-top:16px">
+          ${soltas.length} live position${soltas.length === 1 ? "" : "s"} with no prop
+          leg behind ${soltas.length === 1 ? "it" : "them"}:
+          ${soltas.map((l) => `${esc(l.symbol)} ${esc(l.side)} ${num(l.qty, 2)}`).join(" · ")}.
+          A hedge with nothing to hedge is an open trade of its own.
+        </div>` : ""}
+      </div>
+    </div>`;
+}
+
 // ----------------------------------------------------------------- overview
 
 async function renderOverview() {
-  const [journal, monthly, progress] = await Promise.all([
-    load.journal(), load.monthly(), load.progress()]);
+  const [journal, monthly, progress, open, accounts] = await Promise.all([
+    load.journal(), load.monthly(), load.progress(),
+    load.openPositions(), load.accounts()]);
   setTotals(journal);
 
   // Só contas que ainda estão valendo: conta encerrada não tem alvo a
@@ -410,6 +524,8 @@ async function renderOverview() {
                `${pctOf(paidRate)} · ${pctOf(hedgeDrag)} · ${pctOf(roi)}`, "",
                `${paid} paid · drag on gross · on spend`)}
     </section>
+
+    ${openPositions(open, accounts)}
 
     ${running.length ? `<div class="panel">
       <h2>Live accounts<span class="dim">target · drawdown · today’s multiplier</span></h2>

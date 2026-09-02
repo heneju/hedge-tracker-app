@@ -5,7 +5,7 @@
 // fica so no coletor, no PC.
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { CONFIG } from "./config.js?v=83910b3437";
+import { CONFIG } from "./config.js?v=29a2187084";
 
 export const supabase = createClient(CONFIG.url, CONFIG.anonKey);
 
@@ -86,6 +86,10 @@ export const load = {
 
   // Fase e challenge de todas as linhas: e so o que o aviso de pendencias
   // precisa para saber se um challenge aprovado ja tem a conta funded ligada.
+  // Retrato do que esta aberto. Nunca entra em soma -- ver a migration.
+  openPositions: () =>
+    supabase.from("open_positions").select("*").then(unwrap),
+
   phasesOfPassed: () =>
     supabase.from("challenge_phases").select("challenge_id, phase").then(unwrap),
 
