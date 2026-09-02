@@ -5,13 +5,13 @@
 // `vector-effect="non-scaling-stroke"` mantém a espessura da linha constante
 // mesmo com a escala distorcida, que é o que quebra SVG esticado.
 
-import { money, money0, monthLabel, signClass, esc } from "./util.js?v=5407baeda9";
+import { money, money0, monthLabel, signClass, esc } from "./util.js?v=937768fa90";
 
 // Cores por token, nunca literais: o painel tem tema claro e escuro, e um hex
 // cravado aqui fica errado em um dos dois. Perda usa o acento da marca -- num
 // sistema em que o acento JA e vermelho, um segundo vermelho so briga.
 const UP = "var(--gain)";
-const DOWN = "var(--color-accent)";
+const DOWN = "var(--loss)";
 const GRID = "var(--color-divider)";
 const RULE = "var(--color-neutral-300)";
 const INK = "var(--color-text)";
@@ -336,12 +336,12 @@ function daysLine(a) {
       <span>days <b class="n" style="color:${INK}">${a.days_traded}</b>${
         a.min_trading_days ? `/${a.min_trading_days}` : ""}</span>
       ${limit != null ? `<span>best day <b class="n" style="color:${
-        breaks ? DOWN : over ? "var(--color-accent-700)" : bestPct == null ? SOFT : INK}">${
+        breaks ? DOWN : over ? "var(--loss)" : bestPct == null ? SOFT : INK}">${
         bestPct == null ? "—" : bestPct.toFixed(0) + "%"}</b> / ${limit.toFixed(0)}% max</span>` : ""}
       ${breaks
         ? `<span style="color:${DOWN}">consistency broken</span>`
         : over
-          ? `<span style="color:var(--color-accent-700)">needs more days to spread</span>`
+          ? `<span style="color:var(--loss)">needs more days to spread</span>`
           : ""}
     </div>`;
 }

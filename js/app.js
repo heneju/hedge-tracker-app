@@ -10,16 +10,16 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=5407baeda9";
+} from "./db.js?v=937768fa90";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=5407baeda9";
+} from "./util.js?v=937768fa90";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=5407baeda9";
-import { cell, locked, wireEditables } from "./editable.js?v=5407baeda9";
+} from "./charts.js?v=937768fa90";
+import { cell, locked, wireEditables } from "./editable.js?v=937768fa90";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -308,8 +308,9 @@ async function renderOverview() {
   // preenchimento é o próprio resultado.
   const hero = `
     <div style="padding:0">
-      <div style="height:100%;padding:32px 26px 28px;color:var(--gain-ink);background:${
-        total >= 0 ? "var(--gain-fill)" : "var(--color-accent-700)"}">
+      <div style="height:100%;padding:32px 26px 28px;color:${
+        total >= 0 ? "var(--gain-ink)" : "var(--loss-ink)"};background:${
+        total >= 0 ? "var(--gain-fill)" : "var(--loss-fill)"}">
         <div style="font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;
               opacity:.82;margin-bottom:10px">Total P&amp;L</div>
         <div class="n" style="font-family:var(--font-heading);font-weight:800;font-size:72px;
@@ -349,7 +350,7 @@ async function renderOverview() {
         <div style="height:6px;background:var(--color-neutral-200);position:relative">
           <div style="position:absolute;top:0;bottom:0;left:${left.toFixed(1)}%;
                width:${half.toFixed(1)}%;background:${
-                 pnl >= 0 ? "var(--gain)" : "var(--color-accent)"}"></div>
+                 pnl >= 0 ? "var(--gain)" : "var(--loss)"}"></div>
           <div style="position:absolute;top:-3px;bottom:-3px;left:50%;width:1px;
                background:var(--color-neutral-500)"></div>
         </div>
@@ -2349,7 +2350,7 @@ async function renderHedge() {
         : "var(--color-accent)"}">${
         a.blown ? "blown" : mult == null ? "—" : num(mult, 2)}</td>
       <td style="font-size:12px;color:${notes.length
-        ? "var(--color-accent-700)" : "var(--color-neutral-600)"}">${
+        ? "var(--loss)" : "var(--color-neutral-600)"}">${
         notes.length ? esc(notes[0].short) : "ok"}</td>
     </tr>
     ${open ? `<tr><td colspan="7" style="padding:0;background:var(--color-neutral-100)">
@@ -2375,7 +2376,7 @@ async function renderHedge() {
         <div class="sub">what the number divides by</div></div>
       <div class="card"><div class="label">Accounts</div>
         <div class="value n">${live.length}</div>
-        <div class="sub" style="color:${flagged.length ? "var(--color-accent-700)" : ""}">${
+        <div class="sub" style="color:${flagged.length ? "var(--loss)" : ""}">${
           flagged.length ? `${flagged.length} of ${rows.length} flagged` : "all registered"}</div></div>
     </section>
 

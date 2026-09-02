@@ -46,11 +46,15 @@
   --color-accent-800:#7c1405;
   --color-accent-900:#4d170e;
 
-  /* Ganho tem cor propria: o acento e vermelho, entao perda usa o acento e
-     lucro precisa de um verde que nao brigue com ele. */
+  /* Ganho e perda tem par proprio: um tom para texto, um tom cheio para
+     bloco. O acento da marca fica so para o que e acao -- botao, aba ativa,
+     chip ligado -- e nao vira sinal de resultado. */
   --gain:#0c6a49;
   --gain-fill:#0c6a49;
   --gain-ink:#ffffff;
+  --loss:#c0300f;
+  --loss-fill:#ae1800;
+  --loss-ink:#ffffff;
 
   --font-heading:"Archivo",system-ui,sans-serif;
   --font-body:"Archivo",system-ui,sans-serif;
@@ -94,6 +98,11 @@ html[data-theme="dark"]{
   --gain:#3ecf99;
   --gain-fill:#17624a;
   --gain-ink:#ffffff;
+  /* Vivo, mas sem gritar: o salmao claro que estava aqui lavava, e o acento
+     cheio (#ff4a2b) num bloco desse tamanho cansa a vista. */
+  --loss:#ff6a4d;
+  --loss-fill:#a32d14;
+  --loss-ink:#ffffff;
 
   color-scheme:dark;
 }
@@ -132,7 +141,7 @@ button,input,select,textarea{font-family:inherit}
 .dim{color:var(--color-neutral-500)}
 .muted{color:var(--color-neutral-700)}
 .pos{color:var(--gain)}
-.neg{color:var(--color-accent-700)}
+.neg{color:var(--loss)}
 /* Herdado do tema anterior; no papel claro brilho nao existe. */
 .glow-green,.glow-red{text-shadow:none}
 
@@ -304,8 +313,8 @@ tfoot td{
 .badge.phase1,.badge.phase2{background:var(--color-neutral-100);color:var(--color-neutral-800)}
 .badge.passed{background:var(--color-accent-100);color:var(--color-accent-800)}
 .badge.funded{background:color-mix(in srgb, var(--gain) 14%, transparent);color:var(--gain)}
-.badge.failed{background:var(--color-accent-100);color:var(--color-accent-800);
-              border-color:var(--color-accent-300)}
+.badge.failed{background:color-mix(in srgb, var(--loss) 16%, transparent);color:var(--loss);
+              border-color:color-mix(in srgb, var(--loss) 40%, transparent)}
 .badge.closed,.badge.prop{background:var(--color-neutral-100);color:var(--color-neutral-700)}
 .badge.live{border-color:var(--color-accent);color:var(--color-accent);background:transparent}
 
@@ -367,12 +376,12 @@ input[type=checkbox]{width:auto;accent-color:var(--color-accent)}
 /* max-width: com poucos meses, sem teto uma barra sozinha vira um paredao. */
 .bars .col{flex:1 1 0;max-width:88px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:5px;min-width:0}
 .bars .bar{width:100%;min-height:2px;background:var(--gain)}
-.bars .bar.neg{background:var(--color-accent)}
+.bars .bar.neg{background:var(--loss)}
 .bars .val{font-size:11px;font-variant-numeric:tabular-nums}
 .bars .tick{font-size:10px;color:var(--color-neutral-600);white-space:nowrap;letter-spacing:.06em;text-transform:uppercase}
 
 .blown{
-  text-decoration:line-through;text-decoration-color:var(--color-accent);
+  text-decoration:line-through;text-decoration-color:var(--loss);
   text-decoration-thickness:2px;color:var(--color-neutral-600);
 }
 
@@ -619,6 +628,6 @@ dialog th{background:var(--color-bg)}
     if (t === "dark" || t === "light") document.documentElement.setAttribute("data-theme", t);
   } catch (e) {}
 </script>
-<script type="module" src="./js/app.js?v=5407baeda9"></script>
+<script type="module" src="./js/app.js?v=937768fa90"></script>
 </body>
 </html>
