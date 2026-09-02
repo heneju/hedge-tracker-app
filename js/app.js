@@ -10,16 +10,16 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=e8607d028f";
+} from "./db.js?v=35db52bfe9";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=e8607d028f";
+} from "./util.js?v=35db52bfe9";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=e8607d028f";
-import { cell, locked, wireEditables } from "./editable.js?v=e8607d028f";
+} from "./charts.js?v=35db52bfe9";
+import { cell, locked, wireEditables } from "./editable.js?v=35db52bfe9";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -209,8 +209,8 @@ function empty(message) {
 
 function renderLogin() {
   render(`
-    <div class="panel" style="max-width:340px;margin:10vh auto">
-      <h2>auth<span style="color:var(--ghostest)">v1</span></h2>
+    <div class="panel" style="max-width:360px;margin:12vh auto">
+      <h2>Sign in<span class="dim">tracking</span></h2>
       <div class="panel-body">
         <div class="field"><label>Email</label>
           <input id="email" type="email" autocomplete="username" placeholder="voce@exemplo.com">
@@ -220,9 +220,9 @@ function renderLogin() {
         </div>
         <button class="btn" id="signin" style="margin-top:14px;width:100%">Sign in</button>
 
-        <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line-soft)">
+        <div style="margin-top:18px;padding-top:16px;border-top:2px solid var(--color-divider)">
           <button class="btn ghost" id="magic" style="width:100%">Email me a link instead</button>
-          <p class="muted" style="margin:10px 0 0;font-size:9px;letter-spacing:.08em;line-height:1.7">
+          <p class="muted" style="margin:12px 0 0;font-size:11px;line-height:1.7">
             The link is single use — some email providers open it before you do,
             and then it is already spent. Password always works.
           </p>
@@ -918,9 +918,9 @@ async function openChallengeEditor(c, firms) {
     if (pl.consistency_pct) bits.push(`consistency <b class="bright">${pl.consistency_pct}%</b>`);
     if (Number(pl.buffer_multiplier)) bits.push(`buffer <b class="bright">+${pl.buffer_multiplier}</b>`);
     if (Number(pl.buffer_cash)) bits.push(`buffer <b class="bright">+${money0(pl.buffer_cash)}</b>`);
-    const line = bits.join(" <span style='color:#2a2a2a'>·</span> ");
+    const line = bits.join(" <span style='color:var(--color-neutral-400)'>·</span> ");
     return pl.notes
-      ? `${line}<div style="color:#555;margin-top:5px">${esc(pl.notes)}</div>`
+      ? `${line}<div style="color:var(--color-neutral-600);margin-top:5px">${esc(pl.notes)}</div>`
       : line;
   };
 
@@ -984,8 +984,9 @@ async function openChallengeEditor(c, firms) {
         <div class="field wide" id="target-field" hidden><label>Profit target</label>
           <input id="c-target" type="number" step="0.01" value="${esc(c?.target ?? "")}"></div>
       </div>
-      <div id="plan-summary" style="font-size:10px;color:#888;margin-top:8px;
-           padding:7px 10px;background:#0b0b0b;border:1px solid var(--line-soft)">
+      <div id="plan-summary" style="font-size:11px;color:var(--color-neutral-700);
+           margin-top:8px;padding:9px 11px;background:var(--color-neutral-100);
+           border:1px solid var(--color-divider)">
         ${planSummary(c?.plan_id)}
       </div>
       <div class="field" style="margin-top:12px"><label>Notes</label>
@@ -1254,7 +1255,7 @@ async function renderConfig() {
         ${plans.map((pl) => `<option value="${pl.id}" ${pl.id === a.plan_id ? "selected" : ""}>${
           esc(planLabel(pl))}</option>`).join("")}
       </select>${a.plan_id && a.plan_source === "inferred"
-        ? `<div style="font-size:9px;color:#555;margin-top:2px">from balance</div>` : ""}`
+        ? `<div style="font-size:10px;color:var(--color-neutral-600);margin-top:2px">from balance</div>` : ""}`
         : `<span class="dim">—</span>`}</td>
       ${cell(a.label, { id: a.id, field: "account:label", type: "text",
         format: () => `<span class="muted">${esc(a.label || a.terminal_path || "—")}</span>` })}
