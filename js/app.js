@@ -10,17 +10,17 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=ba35c0851e";
+} from "./db.js?v=9933ef056f";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=ba35c0851e";
+} from "./util.js?v=9933ef056f";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=ba35c0851e";
-import { cell, locked, wireEditables } from "./editable.js?v=ba35c0851e";
-import { exportChallenges } from "./export.js?v=ba35c0851e";
+} from "./charts.js?v=9933ef056f";
+import { cell, locked, wireEditables } from "./editable.js?v=9933ef056f";
+import { exportChallenges } from "./export.js?v=9933ef056f";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -2481,9 +2481,19 @@ async function renderIssues() {
 async function renderHedge() {
   const progress = await load.progress();
 
-  // Estourada e aprovada por ultimo: continuam na tela porque o gasto delas
-  // ainda conta historia, mas nao e o que se olha antes de operar.
-  const rank = (a) => (a.blown ? 2 : a.hedge_multiplier == null ? 1 : 0);
+  // Quem substituiu quem: um challenge passa por mais de uma conta, e a da
+  // fase anterior aparece aqui com `spent` e multiplicador só porque a linha
+  // de `account_progress` é por conta. Ela já entregou o bastão.
+  const currentOf = new Map(progress
+    .filter((a) => a.challenge_id && isCurrentPhase(a))
+    .map((a) => [a.challenge_id, accountShort(a.login_or_name)]));
+  const supersededBy = (a) =>
+    (isCurrentPhase(a) ? null : currentOf.get(a.challenge_id) ?? null);
+
+  // Estourada e substituída por último: continuam na tela porque o gasto delas
+  // ainda conta história, mas não é o que se olha antes de operar.
+  const rank = (a) => (a.blown ? 3 : supersededBy(a) ? 2
+    : a.hedge_multiplier == null ? 1 : 0);
   const rows = [...progress].sort((a, b) =>
     rank(a) - rank(b) || String(a.short_id).localeCompare(String(b.short_id)));
 
@@ -2497,7 +2507,10 @@ async function renderHedge() {
   // todo ainda pode perder. NAO e um numero para digitar em lugar nenhum -- o
   // Receiver e por conta, e cada uma tem o seu na tabela. Serve para dizer o
   // tamanho do buraco antes de abrir a sessao.
-  const live = rows.filter((a) => !a.blown && a.drawdown_room > 0);
+  // `spent` e do CHALLENGE, e as duas contas dele carregam o mesmo numero --
+  // somar as duas contava o mesmo buraco duas vezes. So a conta da fase
+  // corrente entra.
+  const live = rows.filter((a) => !a.blown && a.drawdown_room > 0 && isCurrentPhase(a));
   const spent = live.reduce((t, a) => t + Number(a.spent || 0), 0);
   const room = live.reduce((t, a) => t + Number(a.drawdown_room || 0), 0);
   const pooled = room ? (spent / room) : null;
@@ -2508,14 +2521,18 @@ async function renderHedge() {
 
   const body = shown.map((a) => {
     const notes = hedgeNotes(a);
-    const mult = a.hedge_multiplier;
+    const passouPara = supersededBy(a);
+    // Numero de conta que ja entregou o bastao convida a digitar o que nao
+    // vale mais. Melhor traco e dizer quem assumiu.
+    const mult = passouPara ? null : a.hedge_multiplier;
     // A barra le contra 0,50: acima disso o hedge ja custa metade do drawdown
     // e a conta esta cara de segurar.
     const barW = mult == null ? 0 : Math.min(100, (Number(mult) / 0.5) * 100);
     const open = state.hedgeOpen === a.account_id;
 
     return `
-    <tr class="pick" data-hedge-row="${a.account_id}">
+    <tr class="pick" data-hedge-row="${a.account_id}" ${
+      passouPara ? 'style="opacity:.55"' : ""}>
       <td style="font-weight:700"><span style="display:inline-block;width:15px;
         color:var(--color-neutral-600)">${open ? "−" : "+"}</span><span class="${
         a.blown ? "blown" : ""}">${esc(accountShort(a.login_or_name))}</span></td>
@@ -2530,13 +2547,14 @@ async function renderHedge() {
         </div>
       </td>
       <td class="num" style="font-weight:700;font-size:15px;color:${
-        a.blown ? "var(--color-neutral-500)"
+        a.blown || passouPara ? "var(--color-neutral-500)"
         : a.plan_source === "inferred" ? "var(--color-neutral-500)"
         : "var(--color-accent)"}">${
         a.blown ? "blown" : mult == null ? "—" : num(mult, 2)}</td>
-      <td style="font-size:12px;color:${notes.length
-        ? "var(--loss)" : "var(--color-neutral-600)"}">${
-        notes.length ? esc(notes[0].short) : "ok"}</td>
+      <td style="font-size:12px;color:${passouPara ? "var(--color-neutral-600)"
+        : notes.length ? "var(--loss)" : "var(--color-neutral-600)"}">${
+        passouPara ? `handed over to ${esc(passouPara)}`
+          : notes.length ? esc(notes[0].short) : "ok"}</td>
     </tr>
     ${open ? `<tr><td colspan="7" style="padding:0;background:var(--color-neutral-100)">
       ${hedgeDetail(a, notes)}</td></tr>` : ""}`;
@@ -2696,6 +2714,11 @@ function hedgeDetail(a, notes) {
                   border-top:1px solid var(--color-divider)">${cash(a.spent)}</td></tr>
         </tbody>
       </table>
+      ${supersededBy(a) ? `<div class="mult-note" style="margin-top:14px">
+        This account finished its phase — the challenge moved on to
+        ${esc(supersededBy(a))}. The spend shown here belongs to the challenge,
+        not to this account, and it is counted once, on the account in play.
+      </div>` : ""}
       <div style="margin-top:16px">
         <button class="btn ghost" data-report-hedge="${a.account_id}">Report</button>
       </div>
