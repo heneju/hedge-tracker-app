@@ -5,7 +5,7 @@
 // `vector-effect="non-scaling-stroke"` mantém a espessura da linha constante
 // mesmo com a escala distorcida, que é o que quebra SVG esticado.
 
-import { money, money0, monthLabel, signClass, esc } from "./util.js?v=34424eff0e";
+import { money, money0, monthLabel, signClass, esc } from "./util.js?v=83910b3437";
 
 // Cores por token, nunca literais: o painel tem tema claro e escuro, e um hex
 // cravado aqui fica errado em um dos dois. Perda usa o acento da marca -- num
@@ -308,6 +308,15 @@ function todayBlock(a) {
           <div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;
                 color:${MUTE};margin-top:6px">multiplier</div>
         </div>
+        ${a.phase === "FUNDED" ? `
+        <div style="display:flex;gap:20px;padding-bottom:6px">
+          <div>
+            <div class="n" style="font-family:var(--font-heading);font-weight:800;
+                  font-size:18px;color:${DOWN}">-${money0(Number(mult) * 1000)}</div>
+            <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+                  color:${MUTE};margin-top:3px">hedge per $1,000 taken</div>
+          </div>
+        </div>` : ""}
         ${a.rec_today_target ? `
         <div style="display:flex;gap:20px;padding-bottom:6px">
           <div>
@@ -327,8 +336,8 @@ function todayBlock(a) {
       ${chips}
       ${a.phase === "FUNDED" ? `<div style="margin-top:10px;font-size:11px;
             line-height:1.6;color:${SOFT}">
-          No daily target on a funded account, so there is no "cost if today\u2019s
-          target lands" to show. The multiplier still applies to whatever you take.
+          A funded account has no daily target, so there is no cost-if-today\u2019s-target-lands
+          to show. What the hedge costs here scales with what you take.
         </div>` : ""}
       ${guessed ? `<div class="mult-note" style="margin-top:14px">
         Plan deduced from balance, not chosen. Confirm the model in Setup before
