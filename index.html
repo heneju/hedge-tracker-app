@@ -417,6 +417,57 @@ dialog th{background:var(--color-bg)}
 .account-picker-option:hover{background:var(--color-neutral-100)}
 .account-picker-option input{width:auto;flex:0 0 auto}
 
+/* Barra de ferramentas de uma tela: titulo, uma linha de contexto e os
+   controles, tudo assentado na mesma regua. Substitui o cabecalho de painel
+   quando a tela e uma tabela so. */
+.tool{
+  display:flex;flex-wrap:wrap;align-items:baseline;gap:10px 16px;
+  border-bottom:2px solid var(--color-divider);padding-bottom:12px;margin-top:26px;
+}
+.tool h2{
+  margin:0;font-family:var(--font-heading);font-size:12px;font-weight:800;
+  letter-spacing:.12em;text-transform:uppercase;border:0;padding:0;
+}
+.tool .hint{font-size:12px;color:var(--color-neutral-600)}
+.tool .spacer{flex:1}
+.tool .right{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-left:auto}
+
+/* Filtros: botoes colados, o ativo pintado de acento. Um grupo de chips le
+   melhor que tres selects quando as opcoes cabem na linha. */
+.filt,.snav{display:flex;flex-wrap:wrap;gap:0}
+.snav{margin-top:2px}
+.filt button,.snav button{
+  appearance:none;cursor:pointer;background:transparent;font-family:var(--font-body);
+  font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+  padding:5px 10px;color:var(--color-neutral-700);
+  border:2px solid var(--color-divider);border-right-width:0;
+}
+.filt button:last-child,.snav button:last-child{border-right-width:2px}
+.filt button:hover,.snav button:hover{color:var(--color-text)}
+.filt button[aria-pressed="true"],.snav button[aria-pressed="true"]{
+  background:var(--color-accent);border-color:var(--color-accent);color:#fff;
+}
+
+/* Campo enxuto para a barra: mesma altura dos chips, sem esticar a linha. */
+.inp,select.inp{
+  width:auto;min-width:130px;font-size:12px;padding:5px 8px;
+  border:2px solid var(--color-divider);background:transparent;color:var(--color-text);
+}
+.chip{
+  display:inline-flex;align-items:baseline;gap:6px;
+  border:1px solid var(--color-divider);padding:5px 8px;font-size:11px;
+}
+/* Tabela de dados: linha clicavel e cabecalho colado no fundo da pagina. */
+.dt tbody tr.pick{cursor:pointer}
+.dt tbody tr.pick:hover > td{background:var(--color-neutral-100)}
+.dt tfoot td{background:var(--color-bg)}
+/* Coluna que so existe em mesa de duas fases. */
+.noP2 th.p2,.noP2 td.p2{display:none}
+.count{
+  padding:10px 0 2px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--color-neutral-700);
+}
+
 /* Contas vivas: um cartao por conta, com o multiplicador do dia dentro. As
    reguas sao borda dos cartoes, nao fundo do container -- com fundo, uma
    celula vazia do grid vira um retangulo cinza solto no fim da linha. */
@@ -547,6 +598,6 @@ dialog th{background:var(--color-bg)}
     if (t === "dark" || t === "light") document.documentElement.setAttribute("data-theme", t);
   } catch (e) {}
 </script>
-<script type="module" src="./js/app.js?v=6f3f19878a"></script>
+<script type="module" src="./js/app.js?v=e8607d028f"></script>
 </body>
 </html>

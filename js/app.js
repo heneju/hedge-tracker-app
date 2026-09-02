@@ -10,16 +10,16 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=6f3f19878a";
+} from "./db.js?v=e8607d028f";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=6f3f19878a";
+} from "./util.js?v=e8607d028f";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=6f3f19878a";
-import { cell, locked, wireEditables } from "./editable.js?v=6f3f19878a";
+} from "./charts.js?v=e8607d028f";
+import { cell, locked, wireEditables } from "./editable.js?v=e8607d028f";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -36,7 +36,7 @@ const PAGES = [
 
 const state = {
   page: "overview",
-  filters: { status: "", firm: "", month: "" },
+  filters: { status: "", firm: "", month: "", q: "" },
   // Alimentado sempre que o journal e carregado, para a barra de status nao
   // precisar de uma consulta so dela.
   totals: { pnl: null, challenges: null },
@@ -46,6 +46,12 @@ const state = {
   // que tem coisa para olhar.
   openIssues: 0,
   isAdmin: false,
+  // Linha aberta na tela Hedge e filtro da lista. Ficam no estado para a
+  // escolha sobreviver ao redesenho da tela a cada clique.
+  hedgeOpen: null,
+  hedgeFilter: "all",
+  // Sub-aba aberta no Setup.
+  setupTab: "register",
   // Quantas informações o coletor não tem como descobrir e continuam em branco.
   // Fica no menu pelo mesmo motivo dos reportes: buraco esquecido vira número
   // errado que ninguém questiona.
@@ -425,11 +431,14 @@ async function renderChallenges() {
   const months = [...new Set(journal.filter((c) => c.date_open)
     .map((c) => c.date_open.slice(0, 7)))].sort().reverse();
 
-  const { status, firm, month } = state.filters;
+  const { status, firm, month, q } = state.filters;
+  const needle = q.trim().toLocaleLowerCase();
   const rows = journal.filter((c) =>
     (!status || c.status === status) &&
     (!firm || c.firm === firm) &&
-    (!month || (c.date_open || "").startsWith(month)));
+    (!month || (c.date_open || "").startsWith(month)) &&
+    (!needle || `${c.account_ids || ""} ${c.firm || ""} ${c.comments || ""}`
+      .toLocaleLowerCase().includes(needle)));
 
   const totals = ["cost", "funded_payout", "p1_live", "p2_live", "funded_live",
     "lost_hedging", "total_pnl", "eval_prop", "funded_prop",
@@ -441,6 +450,18 @@ async function renderChallenges() {
   const options = (list, selected, blank) =>
     `<option value="">${esc(blank)}</option>` +
     list.map((v) => `<option value="${esc(v.value)}" ${v.value === selected ? "selected" : ""}>${esc(v.label)}</option>`).join("");
+
+  // Status como chips e nao select: as opcoes cabem na linha, e ver qual esta
+  // ativo sem abrir nada e o que se quer numa barra de filtro.
+  const statusChips = [{ value: "", label: "All" }]
+    .concat(Object.entries(STATUS_LABEL).map(([value, label]) => ({
+      value,
+      // "Passed -- awaiting activation" nao cabe num chip; o rotulo longo fica
+      // no title e na tabela, onde ha espaco.
+      label: value === "passed" ? "Passed" : label,
+    })))
+    .map((o) => `<button type="button" data-status="${esc(o.value)}"
+      aria-pressed="${o.value === status}">${esc(o.label)}</button>`).join("");
 
   // Uma mesa de etapa unica (Tradeify) nunca tera fase 2. Se nenhuma linha em
   // vista usa duas fases, a coluna some em vez de exibir zeros para sempre.
@@ -518,28 +539,26 @@ async function renderChallenges() {
     </tr>`).join("");
 
   render(`
-    <div class="panel">
-      <h2>Filters</h2>
-      <div class="panel-body row">
-        <div class="field"><label>Status</label>
-          <select id="f-status">${options(
-            Object.entries(STATUS_LABEL).map(([value, label]) => ({ value, label })),
-            status, "All")}</select></div>
-        <div class="field"><label>Firm</label>
-          <select id="f-firm">${options(
-            firms.map((f) => ({ value: f.name, label: f.name })), firm, "All")}</select></div>
-        <div class="field"><label>Opened in</label>
-          <select id="f-month">${options(
-            months.map((m) => ({ value: m, label: monthLabel(m) })), month, "All")}</select></div>
-        <div class="field auto"><label>&nbsp;</label>
-          <button class="btn" id="new-challenge">New challenge</button></div>
-      </div>
+    <div class="tool">
+      <h2>Challenges</h2>
+      <span class="hint">the journal · ${journal.length} rows, filtered down to what
+        you are looking at</span>
+      <span class="right">
+        <input class="inp n" id="f-q" type="search" placeholder="account, firm or note"
+               value="${esc(q)}" style="min-width:180px">
+        <select class="inp" id="f-firm">${options(
+          firms.map((f) => ({ value: f.name, label: f.name })), firm, "All firms")}</select>
+        <select class="inp" id="f-month">${options(
+          months.map((m) => ({ value: m, label: monthLabel(m) })), month, "All months")}</select>
+        <span class="filt">${statusChips}</span>
+        <button class="btn" id="new-challenge">New challenge</button>
+      </span>
     </div>
+    <div class="count n">${rows.length} of ${journal.length} challenges</div>
 
-    <div class="panel">
-      <h2>${rows.length} challenges</h2>
+    <div class="panel" style="margin-top:0">
       <div class="scroll">
-        <table>
+        <table class="dt wide n">
           <thead><tr>
             <th>Acct</th><th>Firm</th><th>Platform</th><th>Opened</th><th>Status</th>
             <th class="num">Mult.</th>
@@ -571,12 +590,28 @@ async function renderChallenges() {
 
   wireEditables(view, saveChallengeField);
 
-  for (const [id, key] of [["f-status", "status"], ["f-firm", "firm"], ["f-month", "month"]]) {
+  for (const [id, key] of [["f-firm", "firm"], ["f-month", "month"]]) {
     document.getElementById(id).onchange = (e) => {
       state.filters[key] = e.target.value;
       renderChallenges();
     };
   }
+  view.querySelectorAll("[data-status]").forEach((b) => {
+    b.onclick = () => {
+      state.filters.status = b.dataset.status;
+      renderChallenges();
+    };
+  });
+  // Redesenha a cada tecla, mas devolve o cursor: sem isto a busca perde o
+  // foco na primeira letra e a pessoa digita uma letra por clique.
+  const search = document.getElementById("f-q");
+  search.oninput = () => {
+    state.filters.q = search.value;
+    renderChallenges();
+    const again = document.getElementById("f-q");
+    again.focus();
+    again.setSelectionRange(again.value.length, again.value.length);
+  };
   document.getElementById("new-challenge").onclick = () => openChallengeEditor(null, firms);
   view.querySelectorAll("tr.clickable").forEach((tr) => {
     tr.onclick = () => openChallenge(Number(tr.dataset.id), journal, firms);
@@ -1113,16 +1148,17 @@ async function renderUnassigned() {
     </tr>`).join("");
 
   render(`
-    <div class="panel">
-      <h2>${trades.length} trades with no challenge</h2>
-      <div class="panel-body" style="padding-bottom:0">
-        <p class="muted" style="margin-top:0">
-          The collector only attributes by the Copyator magic. What lands here is a
-          manual trade, an old account, one not registered yet, or one you took off
-          a challenge — nothing is guessed.
-        </p>
-      </div>
-      <div class="scroll"><table>
+    <div class="tool">
+      <h2>Unassigned trades</h2>
+      <span class="hint">nothing is guessed — the collector only attributes by the
+        Copyator magic. What lands here is a manual trade, an old account, one not
+        registered yet, or one you took off a challenge.</span>
+      <span class="right n" style="color:var(--color-neutral-600);font-size:11px">${
+        trades.length} pending</span>
+    </div>
+
+    <div class="panel" style="margin-top:0">
+      <div class="scroll"><table class="dt n" style="min-width:1000px">
         <thead><tr><th>Exit</th><th>Leg</th><th>Symbol</th><th class="num">P&amp;L</th>
           <th>Comment</th><th>Magic</th><th style="min-width:230px">Assign to</th></tr></thead>
         <tbody>${rows || `<tr><td colspan="7">${empty("nothing pending — all attributed")}</td></tr>`}</tbody>
@@ -1319,8 +1355,26 @@ async function renderConfig() {
       <td><button class="btn ghost danger" data-del-plan="${pl.id}">Delete</button></td>
     </tr>`).join("");
 
+  const setupTabs = [
+    ["register", "Register"],
+    ["accounts", `Accounts · ${accounts.length}`],
+    ["found", `Found · ${discovered.length}`],
+    ["firms", `Firms · ${firms.length}`],
+    ["plans", `Plans · ${plans.length}`],
+    ["account", "Sign-in"],
+  ];
+  const tab = setupTabs.some(([id]) => id === state.setupTab) ? state.setupTab : "register";
+
   render(`
-    <div class="panel">
+    <div class="tool">
+      <h2>Setup</h2>
+      <span class="hint">what the collector cannot find out on its own</span>
+      <span class="snav" style="margin-left:auto">${setupTabs.map(([id, label]) =>
+        `<button type="button" data-setup-tab="${id}" aria-pressed="${id === tab}">${
+          esc(label)}</button>`).join("")}</span>
+    </div>
+
+    <div class="panel" data-setup="register" ${tab === "register" ? "" : "hidden"}>
       <h2>Register prop account <span class="dim">one step</span></h2>
       <div class="panel-body">
         <p class="muted" style="margin-top:0">
@@ -1401,7 +1455,7 @@ async function renderConfig() {
       </div>
     </div>
 
-    <div class="panel">
+    <div class="panel" data-setup="accounts" ${tab === "accounts" ? "" : "hidden"}>
       <h2>Registered accounts</h2>
       <div class="scroll"><table>
         <thead><tr><th>Kind</th><th>ID</th><th>Platform</th><th>Account</th>
@@ -1412,7 +1466,7 @@ async function renderConfig() {
       </table></div>
     </div>
 
-    <div class="panel">
+    <div class="panel" data-setup="found" ${tab === "found" ? "" : "hidden"}>
       <h2>Found on this PC</h2>
       <div class="panel-body" style="padding-bottom:0">
         <p class="muted" style="margin-top:0">
@@ -1426,7 +1480,7 @@ async function renderConfig() {
       </table></div>
     </div>
 
-    <div class="panel">
+    <div class="panel" data-setup="firms" ${tab === "firms" ? "" : "hidden"}>
       <h2>Prop firms</h2>
       <div class="scroll"><table>
         <thead><tr><th>Name</th><th>Platform</th><th>Phases</th><th class="num">Split</th>
@@ -1449,7 +1503,7 @@ async function renderConfig() {
       </div>
     </div>
 
-    <div class="panel">
+    <div class="panel" data-setup="plans" ${tab === "plans" ? "" : "hidden"}>
       <h2>Plans <span class="dim">${plans.length}</span></h2>
       <div class="panel-body" style="padding-bottom:0">
         <p class="muted" style="margin-top:0">
@@ -1479,7 +1533,7 @@ async function renderConfig() {
       </div>
     </div>
 
-    <div class="panel">
+    <div class="panel" data-setup="account" ${tab === "account" ? "" : "hidden"}>
       <h2>Account<span class="dim">${esc(state.email)}</span></h2>
       <div class="panel-body row">
         <div class="field"><label>New password</label>
@@ -1495,6 +1549,20 @@ async function renderConfig() {
     </div>`);
 
   wireEditables(view, (field, id, value) => saveSetupField(field, id, value, accounts));
+
+  // A aba so troca a visibilidade: tudo ja esta montado e ligado, entao nao ha
+  // consulta nem redesenho aqui.
+  view.querySelectorAll("[data-setup-tab]").forEach((b) => {
+    b.onclick = () => {
+      state.setupTab = b.dataset.setupTab;
+      view.querySelectorAll("[data-setup]").forEach((panel) => {
+        panel.hidden = panel.dataset.setup !== state.setupTab;
+      });
+      view.querySelectorAll("[data-setup-tab]").forEach((other) => {
+        other.setAttribute("aria-pressed", String(other.dataset.setupTab === state.setupTab));
+      });
+    };
+  });
 
   const onboardPhases = document.getElementById("onboard-phases");
   const onboardStatus = document.getElementById("onboard-status");
@@ -2153,31 +2221,33 @@ async function renderIssues() {
   const cols = isAdmin ? 6 : 5;
 
   render(`
-    <div class="panel">
-      <h2>Report a problem</h2>
-      <div class="panel-body">
-        <p class="muted" style="margin-top:0">
-          A number showing wrong, or a field you cannot fix? Report it here.
-          To point at one exact row, open it and use the
-          <b class="bright">Report</b> button inside &mdash; the report then
-          carries that row and field with it.
-        </p>
+    <div class="tool">
+      <h2>Open reports</h2>
+      <span class="hint">a number showing wrong, or a field you cannot fix. To point
+        at one exact row, open it and use the <b>Report</b> button inside — the report
+        then carries that row and field with it.</span>
+      <span class="right">
+        <span class="n" style="font-size:11px;color:var(--color-neutral-600)">${
+          open.length} open · ${closed.length} resolved</span>
         <button class="btn" id="new-issue">New report</button>
-      </div>
+      </span>
     </div>
 
-    <div class="panel">
-      <h2>${open.length} open</h2>
-      <div class="scroll"><table>
+    <div class="panel" style="margin-top:0">
+      <div class="scroll"><table class="dt">
         <thead>${head}</thead>
         <tbody>${open.map(row).join("") ||
           `<tr><td colspan="${cols}">${empty("nothing reported")}</td></tr>`}</tbody>
       </table></div>
     </div>
 
-    ${closed.length ? `<div class="panel">
-      <h2>${closed.length} resolved</h2>
-      <div class="scroll"><table>
+    ${closed.length ? `
+    <div class="tool" style="margin-top:36px">
+      <h2>Resolved</h2>
+      <span class="hint n">${closed.length}</span>
+    </div>
+    <div class="panel" style="margin-top:0;opacity:.62">
+      <div class="scroll"><table class="dt">
         <thead>${head}</thead>
         <tbody>${closed.map(row).join("")}</tbody>
       </table></div>
@@ -2224,124 +2294,133 @@ async function renderIssues() {
 async function renderHedge() {
   const progress = await load.progress();
 
-  // Estourada por último: continua na tela porque o gasto dela ainda conta
-  // história, mas não é o que se olha antes de operar.
+  // Estourada e aprovada por ultimo: continuam na tela porque o gasto delas
+  // ainda conta historia, mas nao e o que se olha antes de operar.
   const rank = (a) => (a.blown ? 2 : a.hedge_multiplier == null ? 1 : 0);
   const rows = [...progress].sort((a, b) =>
     rank(a) - rank(b) || String(a.short_id).localeCompare(String(b.short_id)));
 
-  const card = (a) => {
-    const cost = Math.abs(Number(a.challenge_cost || 0));
-    const hedge = Number(a.hedge_pnl || 0);
-    const room = a.drawdown_room == null ? null : Number(a.drawdown_room);
-    const size = a.account_size ? money0(a.account_size) : "size —";
+  const flagged = rows.filter((a) => hedgeNotes(a).length);
+  const shown = state.hedgeFilter === "flagged" ? flagged
+    : state.hedgeFilter === "live" ? rows.filter((a) => !a.blown && a.hedge_multiplier != null)
+    : rows;
 
-    // Cada aviso é uma coisa que faz o número mentir, com o que fazer a
-    // respeito. Sem isso um 0,00 parece recomendação e não falta de cadastro.
-    const notes = [];
-    if (!a.plan_id) {
-      notes.push("no plan on this account — set the size and the drawdown in Setup, "
-        + "otherwise there is nothing to divide by");
-    }
-    if (a.plan_id && !cost) {
-      notes.push("purchase cost not recorded — until it is, the multiplier is "
-        + "lower than it should be");
-    }
-    if (a.phase === "FUNDED") {
-      notes.push("funded: no target left to chase — the multiplier here is what "
-        + "protects the payout");
-    }
-    // O plano deduzido pelo saldo é a maior fonte de número errado aqui: dois
-    // modelos de 50k com drawdown diferente dão 0,17 e 0,04 para o mesmo gasto.
-    if (a.plan_source === "inferred") {
-      notes.push(`plan guessed from the balance (${a.plan_name || "?"}, `
-        + `${money0(a.max_drawdown)} drawdown) — confirm it in Setup, it is the `
-        + "drawdown that sets this number");
-    }
+  // Razao agregada: quanto o conjunto todo gastou dividido pelo que o conjunto
+  // todo ainda pode perder. NAO e um numero para digitar em lugar nenhum -- o
+  // Receiver e por conta, e cada uma tem o seu na tabela. Serve para dizer o
+  // tamanho do buraco antes de abrir a sessao.
+  const live = rows.filter((a) => !a.blown && a.drawdown_room > 0);
+  const spent = live.reduce((t, a) => t + Number(a.spent || 0), 0);
+  const room = live.reduce((t, a) => t + Number(a.drawdown_room || 0), 0);
+  const pooled = room ? (spent / room) : null;
 
-    const value = a.blown
-      ? `<span class="mult-off">blown</span>`
-      : a.hedge_multiplier == null
-        ? `<span class="mult-off">—</span>`
-        : num(a.hedge_multiplier, 2);
+  const chips = [["all", "All"], ["live", "Active"], ["flagged", "Flagged"]]
+    .map(([id, label]) => `<button type="button" data-hedge-filter="${id}"
+      aria-pressed="${(state.hedgeFilter || "all") === id}">${label}</button>`).join("");
 
-    const derivation = a.hedge_multiplier == null ? "" : `
-      <div class="mult-math">
-        ${money0(a.spent)} spent ÷ ${money0(room)} drawdown =
-        <strong class="bright">${num(a.hedge_multiplier_raw, 4)}</strong>
-        → ${num(a.hedge_multiplier, 2)}
-      </div>
-      <table class="mult-breakdown"><tbody>
-        <tr><td>challenge cost</td><td class="num">${cash(cost)}</td></tr>
-        <tr><td>live leg so far</td><td class="num">${cash(hedge)}</td></tr>
-        <tr class="total"><td>to recover</td>
-            <td class="num"><strong>${cash(a.spent)}</strong></td></tr>
-      </tbody></table>`;
-
-    // O cronograma é do coletor e pode estar velho: a hora vai junto para dar
-    // para desconfiar dele sem precisar adivinhar.
-    const schedule = Array.isArray(a.rec_schedule) && a.rec_schedule.length
-      ? `<div class="mult-days">
-           ${a.rec_schedule.map((d) => `<span class="chip">day ${d.day}
-             <strong>${money0(d.target)}</strong>
-             <span class="dim">${num(d.share_pct, 1)}%</span></span>`).join("")}
-         </div>
-         <div class="mult-foot">
-           ${a.rec_hedge_cost != null
-             ? `hedge costs about ${money0(a.rec_hedge_cost)} if today's target lands · ` : ""}
-           computed ${stamp(a.rec_computed_at)}
-         </div>`
-      : "";
+  const body = shown.map((a) => {
+    const notes = hedgeNotes(a);
+    const mult = a.hedge_multiplier;
+    // A barra le contra 0,50: acima disso o hedge ja custa metade do drawdown
+    // e a conta esta cara de segurar.
+    const barW = mult == null ? 0 : Math.min(100, (Number(mult) / 0.5) * 100);
+    const open = state.hedgeOpen === a.account_id;
 
     return `
-    <div class="mult-card ${a.blown ? "off" : ""}">
-      <div class="mult-head">
-        <strong class="${a.blown ? "blown" : "bright"}">${esc(accountShort(a.login_or_name))}</strong>
-        <span class="muted">${esc(a.plan_name || "no plan")} · ${size}</span>
-        <span class="spacer"></span>
-        ${a.phase ? badge(a.blown ? "failed" : "closed",
-          PHASE_LABEL[a.phase] || a.phase) : ""}
-      </div>
-      <div class="mult-value">${value}</div>
-      <div class="mult-caption">multiplier for the Copyator receiver</div>
-      ${derivation}
-      ${a.target_left != null && !a.blown
-        ? `<div class="mult-target">${money0(a.target_left)} left to pass${
-            a.days_left ? ` · ${a.days_left} day${a.days_left === 1 ? "" : "s"} minimum` : ""}${
-            a.consistency_pct ? ` · ${num(a.consistency_pct, 0)}% consistency` : ""}</div>`
-        : ""}
-      ${schedule}
-      ${notes.map((n) => `<div class="mult-note">${esc(n)}</div>`).join("")}
-      <div class="mult-actions">
-        <button class="btn ghost" data-report-hedge="${a.account_id}">Report</button>
-      </div>
-    </div>`;
-  };
+    <tr class="pick" data-hedge-row="${a.account_id}">
+      <td style="font-weight:700"><span style="display:inline-block;width:15px;
+        color:var(--color-neutral-600)">${open ? "−" : "+"}</span><span class="${
+        a.blown ? "blown" : ""}">${esc(accountShort(a.login_or_name))}</span></td>
+      <td class="muted">${esc(a.plan_name || "no plan")}${
+        a.account_size ? ` · ${money0(a.account_size)}` : ""}</td>
+      <td class="num">${money0(a.spent)}</td>
+      <td class="num muted">${a.drawdown_room == null ? "—" : money0(a.drawdown_room)}</td>
+      <td style="padding-right:20px;min-width:180px">
+        <div style="height:6px;background:var(--color-neutral-200)">
+          <div style="height:100%;width:${barW.toFixed(1)}%;background:${
+            a.blown ? "var(--color-neutral-400)" : "var(--color-accent)"}"></div>
+        </div>
+      </td>
+      <td class="num" style="font-weight:700;font-size:15px;color:${
+        a.blown ? "var(--color-neutral-500)"
+        : a.plan_source === "inferred" ? "var(--color-neutral-500)"
+        : "var(--color-accent)"}">${
+        a.blown ? "blown" : mult == null ? "—" : num(mult, 2)}</td>
+      <td style="font-size:12px;color:${notes.length
+        ? "var(--color-accent-700)" : "var(--color-neutral-600)"}">${
+        notes.length ? esc(notes[0].short) : "ok"}</td>
+    </tr>
+    ${open ? `<tr><td colspan="7" style="padding:0;background:var(--color-neutral-100)">
+      ${hedgeDetail(a, notes)}</td></tr>` : ""}`;
+  }).join("");
 
   render(`
-    <div class="panel">
-      <h2>Multiplier per account <span class="dim">${rows.length}</span></h2>
-      <div class="panel-body" style="padding-bottom:0">
-        <p class="muted" style="margin-top:0;line-height:1.8">
-          <strong class="bright">Spent ÷ drawdown left</strong>, rounded to two
-          decimals. Spent is the challenge cost plus everything the live leg has
-          already lost. Sized this way, blowing the prop account gives the money
-          back on the live side — the account dies at break-even and anything
-          above that is profit. The number climbs as you spend and as the
-          drawdown shrinks, so read it here before every session.
-        </p>
+    <section class="cards kpi">
+      <div class="card">
+        <div class="label" style="color:var(--color-accent)">Pooled ratio</div>
+        <div class="value n" style="font-size:72px">${pooled == null ? "—" : num(pooled, 2)}</div>
+        <div class="sub" style="max-width:46ch;line-height:1.6">
+          Everything spent ÷ everything still losable, across the live accounts.
+          A reading of the hole, not a number to type — the receiver takes one
+          multiplier per account, and each is in the table below.
+        </div>
       </div>
+      <div class="card"><div class="label">To recover</div>
+        <div class="value n">${money0(spent)}</div>
+        <div class="sub">cost + live leg so far</div></div>
+      <div class="card"><div class="label">Drawdown left</div>
+        <div class="value n">${money0(room)}</div>
+        <div class="sub">what the number divides by</div></div>
+      <div class="card"><div class="label">Accounts</div>
+        <div class="value n">${live.length}</div>
+        <div class="sub" style="color:${flagged.length ? "var(--color-accent-700)" : ""}">${
+          flagged.length ? `${flagged.length} of ${rows.length} flagged` : "all registered"}</div></div>
+    </section>
+
+    <div class="tool">
+      <h2>Line by line</h2>
+      <span class="hint">click a row for the full math · bar reads against 0.50</span>
+      <span class="right">
+        <span class="n" style="font-size:11px;color:var(--color-neutral-600)">${
+          shown.length} of ${rows.length}</span>
+        <span class="filt">${chips}</span>
+      </span>
     </div>
-    ${rows.length
-      ? `<div class="mult-grid">${rows.map(card).join("")}</div>`
-      : `<div class="panel"><div class="panel-body">${
-           empty("no prop account registered yet")}</div></div>`}`);
+
+    <div class="panel" style="margin-top:0">
+      <div class="scroll"><table class="dt n" style="min-width:880px">
+        <thead><tr>
+          <th style="width:110px">Account</th><th>Plan</th>
+          <th class="num">Spent</th><th class="num">DD left</th>
+          <th style="width:200px"></th>
+          <th class="num" style="width:80px">Mult</th><th>Flag</th>
+        </tr></thead>
+        <tbody>${body || `<tr><td colspan="7">${
+          empty("no prop account registered yet")}</td></tr>`}</tbody>
+      </table></div>
+    </div>`);
+
+  view.querySelectorAll("[data-hedge-filter]").forEach((b) => {
+    b.onclick = () => {
+      state.hedgeFilter = b.dataset.hedgeFilter;
+      renderHedge();
+    };
+  });
+
+  view.querySelectorAll("[data-hedge-row]").forEach((tr) => {
+    tr.onclick = () => {
+      const id = Number(tr.dataset.hedgeRow);
+      state.hedgeOpen = state.hedgeOpen === id ? null : id;
+      renderHedge();
+    };
+  });
 
   view.querySelectorAll("[data-report-hedge]").forEach((b) => {
-    b.onclick = () => {
+    b.onclick = (e) => {
+      e.stopPropagation();
       const a = rows.find((x) => x.account_id === Number(b.dataset.reportHedge));
       openIssueForm({
-        area: "setup",
+        area: "hedge",
         targetTable: "accounts",
         targetId: a.account_id,
         targetLabel: `${accountShort(a.login_or_name)} · multiplier ${
@@ -2351,317 +2430,139 @@ async function renderHedge() {
   });
 }
 
-// ------------------------------------------------------ o que falta cadastrar
-//
-// Há coisas que o coletor não tem como descobrir sozinho: quanto o challenge
-// custou (está no email da mesa, não na plataforma) e qual modelo a conta é
-// quando dois têm o mesmo tamanho. Sem elas o painel calcula em cima de um
-// buraco -- o multiplicador sai menor do que devia, o total ignora um custo que
-// existiu -- e nada na tela denuncia isso.
-//
-// Por isso o aviso é ativo: aparece ao entrar, com o campo ali para preencher
-// na hora. Some quando não há mais pendência, e não reaparece depois de
-// dispensado -- só volta se surgir uma pendência NOVA, comparando a assinatura
-// do que está pendente com a do que já foi visto.
-
-const PENDING_SEEN = "tracking:pending-seen";
-
-// NinjaTrader e Tradovate são a mesma conta por dois caminhos; a Tradeify
-// cadastra a mesa como NT8 e o app aceita as duas grafias.
-const FUTURES = new Set(["NT8", "Tradovate"]);
-
 /**
- * Levanta o que só o usuário pode responder.
+ * Tudo que faz o número mentir, com o que fazer a respeito.
  *
- * Cada item traz o porquê junto: "falta o custo" não diz nada, "falta o custo,
- * e sem ele o multiplicador do hedge sai menor do que devia" diz.
+ * Cada aviso tem uma forma curta, para caber na coluna Flag, e uma longa, que
+ * aparece quando a linha abre. Sem o motivo, um 0,00 parece recomendação e não
+ * falta de cadastro.
  */
-async function loadPending() {
-  const [journal, progress, accounts, plans] = await Promise.all([
-    load.journal(), load.progress(), load.accounts(), load.plans()]);
-
-  const items = [];
-  const accountById = new Map(accounts.map((a) => [a.id, a]));
-
-  for (const c of journal) {
-    // Rede de segurança. Quem marca conta estourada é o coletor, no ciclo
-    // seguinte ao estouro -- isto só aparece se ele estiver parado, e aí o
-    // clique resolve na mão.
-    if (c.drawdown_blown && c.status !== "failed") {
-      items.push({
-        key: `failed:${c.id}`,
-        kind: "failed",
-        id: c.id,
-        title: `${c.account_ids || "?"} · ${c.firm || "?"}`,
-        ask: "This account hit the drawdown floor.",
-        why: `It is still marked as ${statusLabel(c.status, c.eval_phases)}, so`
-          + " the panel keeps giving it a target and a multiplier as if it were"
-          + " alive. The collector marks this on its own — seeing it here means"
-          + " it is not running.",
-      });
-    }
-
-    // Custo: linha importada da planilha já traz o número, então fica de fora --
-    // o aviso é para o que o coletor criou e ninguém preencheu.
-    if (c.import_source || Number(c.cost_entries) > 0) continue;
-    items.push({
-      key: `cost:${c.id}`,
-      kind: "cost",
-      id: c.id,
-      title: `${c.account_ids || "?"} · ${c.firm || "?"}`,
-      ask: "What did this challenge cost?",
-      why: "It is the starting point of the hedge multiplier — without it the"
-        + " panel recommends a smaller hedge than it should.",
-      date: c.date_open,
+function hedgeNotes(a) {
+  const notes = [];
+  if (!a.plan_id) {
+    notes.push({
+      short: "no plan",
+      long: "no plan on this account — set the size and the drawdown in Setup,"
+        + " otherwise there is nothing to divide by",
     });
   }
-
-  for (const a of progress) {
-    const account = accountById.get(a.account_id) || {};
-    if (!a.plan_id || a.plan_source === "inferred") {
-      items.push({
-        key: `plan:${a.account_id}`,
-        kind: "plan",
-        id: a.account_id,
-        platform: account.platform,
-        title: `${accountShort(a.login_or_name)} · ${a.login_or_name}`,
-        ask: a.plan_id
-          ? `Is this really ${a.plan_name || "?"} ${money0(a.account_size)}?`
-          : "Which model is this account?",
-        why: a.plan_id
-          ? "Guessed from the balance. Two models can share a size with"
-            + ` different drawdowns (${money0(a.max_drawdown)} here), and the`
-            + " drawdown is what sets the multiplier."
-          : "Without the plan there is no target and no drawdown to measure"
-            + " against, so this account gets no multiplier at all.",
-      });
-      continue;
-    }
-    if (a.phase == null && Number(a.days_traded) > 0) {
-      items.push({
-        key: `challenge:${a.account_id}`,
-        kind: "challenge",
-        id: a.account_id,
-        title: `${accountShort(a.login_or_name)} · ${a.login_or_name}`,
-        ask: "This account has trades but no challenge.",
-        why: `${a.days_traded} day(s) traded and ${cash(a.pnl)} of result are`
-          + " sitting outside every total until it belongs to one.",
-      });
-    }
+  if (a.plan_id && a.plan_source === "inferred") {
+    notes.push({
+      short: "plan guessed",
+      long: `plan deduced from the balance (${a.plan_name || "?"}, ${
+        money0(a.max_drawdown)} drawdown) — confirm it in Setup, it is the drawdown`
+        + " that sets this number",
+    });
   }
-
-  return { items, plans, accounts };
+  if (a.plan_id && !Math.abs(Number(a.challenge_cost || 0))) {
+    notes.push({
+      short: "no cost",
+      long: "purchase cost not recorded — until it is, the multiplier is lower"
+        + " than it should be",
+    });
+  }
+  if (a.phase === "FUNDED") {
+    notes.push({
+      short: "funded",
+      long: "funded: no target left to chase — the multiplier here is what protects"
+        + " the payout",
+    });
+  }
+  return notes;
 }
 
-/** Roda depois da primeira tela: o aviso não pode atrasar o que já ia carregar. */
-async function checkPending() {
-  // Offline não é motivo para atrapalhar quem já está com a tela aberta.
-  const { items, plans, accounts } = await loadPending()
-    .catch(() => ({ items: [], plans: [], accounts: [] }));
-  state.pendingSetup = items.length;
-  renderNav();
-  if (!items.length) return;
+/** A conta aberta: de onde o número saiu e o que ainda falta na conta. */
+function hedgeDetail(a, notes) {
+  const cost = Math.abs(Number(a.challenge_cost || 0));
+  const hedge = Number(a.hedge_pnl || 0);
 
-  const signature = items.map((i) => i.key).sort().join(",");
-  let seen = "";
-  try {
-    seen = localStorage.getItem(PENDING_SEEN) || "";
-  } catch {
-    seen = "";   // Janela anônima: mostra sempre, que é o lado seguro.
-  }
-  if (seen === signature) return;
-  openPendingForm(items, plans, accounts, signature);
-}
+  const chips = Array.isArray(a.rec_schedule) && a.rec_schedule.length
+    ? a.rec_schedule.map((d) => `<span class="chip n">day ${d.day}
+        <b>${money0(d.target)}</b>
+        <span style="color:var(--color-neutral-600)">${num(d.share_pct, 1)}%</span></span>`).join("")
+    : "";
 
-function openPendingForm(items, plans, accounts, signature) {
-  const accountById = new Map(accounts.map((a) => [a.id, a]));
+  return `
+  <div style="display:flex;flex-wrap:wrap;gap:36px;padding:22px 24px 26px">
+    <div style="min-width:250px">
+      <div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+           color:var(--color-accent)">Account ${esc(accountShort(a.login_or_name))} · the math</div>
+      ${a.hedge_multiplier == null ? `
+        <div style="margin-top:12px;font-size:13px;color:var(--color-neutral-700)">
+          no drawdown left to divide by</div>` : `
+        <div class="n" style="margin-top:12px;font-size:14px;line-height:1.7;
+             color:var(--color-neutral-700)">
+          ${money0(a.spent)} spent ÷ ${money0(a.drawdown_room)} drawdown<br>
+          = <b style="color:var(--color-text)">${num(a.hedge_multiplier_raw, 4)}</b>
+          → <b style="color:var(--color-text)">${num(a.hedge_multiplier, 2)}</b>
+        </div>`}
+      <table class="n" style="margin-top:14px;font-size:12px;min-width:240px">
+        <tbody>
+          <tr><td style="color:var(--color-neutral-700);border:0">challenge cost</td>
+              <td class="num" style="border:0">${cash(cost)}</td></tr>
+          <tr><td style="color:var(--color-neutral-700);border:0">live leg so far</td>
+              <td class="num" style="border:0">${cash(hedge)}</td></tr>
+          <tr><td style="font-weight:600;border:0;border-top:1px solid var(--color-divider)">
+                to recover</td>
+              <td class="num" style="font-weight:700;border:0;
+                  border-top:1px solid var(--color-divider)">${cash(a.spent)}</td></tr>
+        </tbody>
+      </table>
+      <div style="margin-top:16px">
+        <button class="btn ghost" data-report-hedge="${a.account_id}">Report</button>
+      </div>
+    </div>
 
-  // Plano só faz sentido dentro da mesma plataforma: um plano CFD não descreve
-  // uma conta de futuros, por mais que os dois tamanhos sejam 50k.
-  const plansFor = (platform) => plans.filter((pl) => {
-    const firm = pl.prop_firms?.platform;
-    if (!firm || !platform) return true;   // cadastro pela metade não esconde nada
-    return FUTURES.has(platform) ? FUTURES.has(firm) : firm === platform;
-  });
-
-  const field = (item) => {
-    if (item.kind === "cost") {
-      return `<div class="row" style="margin-top:8px">
-        <div class="field"><label>Cost paid</label>
-          <input type="number" min="0" step="0.01" data-pending-cost="${item.id}"
-                 placeholder="99.00" inputmode="decimal"></div>
-        <div class="field auto"><label>&nbsp;</label>
-          <button class="btn" data-save-cost="${item.id}"
-                  data-date="${esc(item.date || "")}">Save</button></div>
-      </div>`;
-    }
-    if (item.kind === "plan") {
-      const account = accountById.get(item.id) || {};
-      const options = plansFor(item.platform);
-      return `<div class="row" style="margin-top:8px">
-        <div class="field wide"><label>Model</label>
-          <select data-pending-plan="${item.id}">
-            <option value="">— pick the model —</option>
-            ${options.map((pl) => `<option value="${pl.id}" ${
-              pl.id === account.plan_id ? "selected" : ""}>${esc(
-              `${pl.prop_firms?.name || "?"} · ${pl.name || "?"} · ${
-                money0(pl.account_size)} · ${money0(pl.max_drawdown)} dd`)}</option>`).join("")}
-          </select></div>
-        <div class="field auto"><label>&nbsp;</label>
-          <button class="btn" data-save-plan="${item.id}">Confirm</button></div>
-      </div>`;
-    }
-    if (item.kind === "failed") {
-      return `<div class="row" style="margin-top:8px">
-        <div class="field auto"><button class="btn ghost danger"
-          data-save-failed="${item.id}">Mark as failed</button></div>
-      </div>`;
-    }
-    return `<div class="row" style="margin-top:8px">
-      <div class="field auto"><button class="btn ghost" data-go-setup="1">
-        Open Setup to register it</button></div>
-    </div>`;
-  };
-
-  modal.innerHTML = `
-    <header><h1>${items.length} thing${items.length === 1 ? "" : "s"} only you can fill in</h1>
-      <span class="spacer"></span>
-      <button class="btn ghost" id="pending-later">Later</button></header>
-    <div style="padding:16px;max-height:74vh;overflow:auto">
-      <p class="muted" style="margin-top:0;line-height:1.8">
-        The collector reads the platforms, so it knows every trade, every balance
-        and every result on its own. <strong class="bright">These it cannot
-        know</strong> — the purchase cost lives in the firm's email, and when two
-        models share an account size the balance cannot tell them apart. Until
-        they are filled the panel is doing the maths over a hole: the hedge
-        multiplier comes out smaller than it should, and a cost that was really
-        paid never reaches the total.
-      </p>
-      ${items.map((item) => `
-        <div class="pending-item">
-          <div class="pending-head">
-            <strong class="bright">${esc(item.title)}</strong>
-            <span class="muted">${esc(item.ask)}</span>
-          </div>
-          <p class="pending-why">${esc(item.why)}</p>
-          ${field(item)}
-        </div>`).join("")}
-      <p class="muted" style="font-size:9px;margin-bottom:0">
-        Closing this is fine — it comes back only if something new shows up, and
-        the Setup tab keeps the count.
-      </p>
-    </div>`;
-
-  const remember = () => {
-    try {
-      localStorage.setItem(PENDING_SEEN, signature);
-    } catch {
-      // Sem armazenamento o aviso volta na próxima entrada. Chato, não errado.
-    }
-  };
-
-  modal.querySelector("#pending-later").onclick = () => {
-    remember();
-    modal.close();
-  };
-
-  modal.querySelectorAll("[data-save-cost]").forEach((b) => {
-    b.onclick = async () => {
-      const id = Number(b.dataset.saveCost);
-      const input = modal.querySelector(`[data-pending-cost="${id}"]`);
-      const amount = Number(input.value);
-      if (!amount) return toast("Enter the cost");
-      // Custo é dinheiro que sai: guardado negativo, como na planilha, mesmo
-      // que a pessoa digite positivo.
-      await guard(() => save.createCashEvent({
-        challenge_id: id,
-        kind: "cost",
-        amount: -Math.abs(amount),
-        occurred_on: b.dataset.date || new Date().toISOString().slice(0, 10),
-        source: "manual",
-      }), "Cost saved");
-      finishPending();
-    };
-  });
-
-  modal.querySelectorAll("[data-save-plan]").forEach((b) => {
-    b.onclick = async () => {
-      const id = Number(b.dataset.savePlan);
-      const select = modal.querySelector(`[data-pending-plan="${id}"]`);
-      if (!select.value) return toast("Pick the model");
-      // `manual` trava a escolha: o coletor não a sobrepõe mais, e é isso que
-      // faz o aviso sumir de vez para esta conta.
-      await guard(() => save.account(id, {
-        plan_id: Number(select.value),
-        plan_source: "manual",
-      }), "Model confirmed");
-      finishPending();
-    };
-  });
-
-  modal.querySelectorAll("[data-save-failed]").forEach((b) => {
-    b.onclick = async () => {
-      await guard(() => save.challenge(Number(b.dataset.saveFailed),
-        { status: "failed" }), "Marked as failed");
-      finishPending();
-    };
-  });
-
-  modal.querySelectorAll("[data-go-setup]").forEach((b) => {
-    b.onclick = () => {
-      remember();
-      modal.close();
-      go("config");
-    };
-  });
-
-  // Depois de gravar, refaz a lista: sobrou pendência, o aviso continua com o
-  // que sobrou; acabou, fecha e o contador zera.
-  async function finishPending() {
-    const fresh = await loadPending();
-    state.pendingSetup = fresh.items.length;
-    renderNav();
-    if (!fresh.items.length) {
-      modal.close();
-      return go(state.page);
-    }
-    openPendingForm(fresh.items, fresh.plans, fresh.accounts,
-                    fresh.items.map((i) => i.key).sort().join(","));
-  }
-
-  modal.showModal();
+    <div style="flex:1 1 340px;min-width:280px">
+      <div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+           color:var(--color-neutral-700)">${esc(a.plan_name || "no plan")}${
+        a.account_size ? ` · ${money0(a.account_size)}` : ""}${
+        a.phase ? ` · ${PHASE_LABEL[a.phase] || a.phase}` : ""}</div>
+      <div class="n" style="margin-top:10px;font-size:12px">${
+        a.target_left == null ? "no target to chase"
+          : `${money0(a.target_left)} left to pass${
+              a.days_left ? ` · ${a.days_left} day${a.days_left === 1 ? "" : "s"} minimum` : ""}${
+              a.consistency_pct ? ` · ${num(a.consistency_pct, 0)}% consistency` : ""}`}</div>
+      ${chips ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:12px">${chips}</div>
+        <div class="n" style="margin-top:8px;font-size:11px;color:var(--color-neutral-600)">${
+          a.rec_hedge_cost != null
+            ? `hedge costs about ${money0(a.rec_hedge_cost)} if today's target lands · ` : ""
+        }computed ${stamp(a.rec_computed_at)}</div>` : ""}
+      ${notes.map((n) => `<div class="mult-note">${esc(n.long)}</div>`).join("")}
+    </div>
+  </div>`;
 }
 
 // -------------------------------------------------------------- calculadora
 
 function renderCalc() {
   render(`
-    <div class="panel" style="max-width:560px">
-      <h2>Hedge economics</h2>
-      <div class="panel-body">
-        <p class="muted" style="margin-top:0">
-          The <em>Target × Multiplier</em> block from the spreadsheet: how much of the payout the hedge eats.
-        </p>
-        <div class="row">
-          <div class="field"><label>Target</label>
-            <input id="k-target" type="number" value="3000" step="100"></div>
-          <div class="field"><label>Multiplier</label>
-            <input id="k-mult" type="number" value="0.1" step="0.01"></div>
-          <div class="field"><label>Trader split (%)</label>
-            <input id="k-split" type="number" value="90" step="1"></div>
-        </div>
-        <div class="cards" style="margin-top:16px">
-          <div class="card"><div class="label">Hedge cost</div>
-            <div class="value neg" id="k-cost">—</div>
-            <div class="sub">target × multiplier</div></div>
-          <div class="card"><div class="label">After split</div>
-            <div class="value" id="k-after">—</div>
-            <div class="sub">target × split</div></div>
-          <div class="card"><div class="label">Net profit</div>
-            <div class="value" id="k-net">—</div>
-            <div class="sub">after split − hedge cost</div></div>
-        </div>
+    <div style="max-width:900px">
+      <div class="tool">
+        <h2>Hedge economics</h2>
+        <span class="hint">the <em>Target × Multiplier</em> block from the spreadsheet:
+          how much of the payout the hedge eats</span>
       </div>
+      <div class="row" style="margin-top:22px">
+        <div class="field"><label>Target</label>
+          <input id="k-target" type="number" value="3000" step="100"></div>
+        <div class="field"><label>Multiplier</label>
+          <input id="k-mult" type="number" value="0.1" step="0.01"></div>
+        <div class="field"><label>Trader split (%)</label>
+          <input id="k-split" type="number" value="90" step="1"></div>
+      </div>
+      <section class="cards" style="grid-template-columns:repeat(3,minmax(0,1fr));
+               border-top:2px solid var(--color-divider);border-bottom:0;margin-top:28px">
+        <div class="card"><div class="label">Hedge cost</div>
+          <div class="value n neg" id="k-cost" style="font-size:44px">—</div>
+          <div class="sub">target × multiplier</div></div>
+        <div class="card"><div class="label">After split</div>
+          <div class="value n" id="k-after" style="font-size:44px">—</div>
+          <div class="sub">target × split</div></div>
+        <div class="card"><div class="label" style="color:var(--color-accent)">Net profit</div>
+          <div class="value n" id="k-net" style="font-size:44px">—</div>
+          <div class="sub">after split − hedge cost</div></div>
+      </section>
     </div>`);
 
   const recompute = () => {
@@ -2675,7 +2576,7 @@ function renderCalc() {
     document.getElementById("k-after").textContent = money(after);
     const netEl = document.getElementById("k-net");
     netEl.textContent = money(net);
-    netEl.className = `value ${signClass(net)}`;
+    netEl.className = `value n ${signClass(net)}`;
   };
   ["k-target", "k-mult", "k-split"].forEach((id) => {
     document.getElementById(id).oninput = recompute;
