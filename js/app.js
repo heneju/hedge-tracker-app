@@ -10,17 +10,17 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=29a2187084";
+} from "./db.js?v=ba35c0851e";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=29a2187084";
+} from "./util.js?v=ba35c0851e";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=29a2187084";
-import { cell, locked, wireEditables } from "./editable.js?v=29a2187084";
-import { exportChallenges } from "./export.js?v=29a2187084";
+} from "./charts.js?v=ba35c0851e";
+import { cell, locked, wireEditables } from "./editable.js?v=ba35c0851e";
+import { exportChallenges } from "./export.js?v=ba35c0851e";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -402,7 +402,7 @@ function openPositions(rows, accounts) {
 // ----------------------------------------------------------------- overview
 
 async function renderOverview() {
-  const [journal, monthly, progress, open, accounts] = await Promise.all([
+  const [journal, monthly, progress, inTheAir, accounts] = await Promise.all([
     load.journal(), load.monthly(), load.progress(),
     load.openPositions(), load.accounts()]);
   setTotals(journal);
@@ -525,7 +525,7 @@ async function renderOverview() {
                `${paid} paid · drag on gross · on spend`)}
     </section>
 
-    ${openPositions(open, accounts)}
+    ${openPositions(inTheAir, accounts)}
 
     ${running.length ? `<div class="panel">
       <h2>Live accounts<span class="dim">target · drawdown · today’s multiplier</span></h2>
