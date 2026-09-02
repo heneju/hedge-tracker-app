@@ -10,17 +10,17 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=531caa732d";
+} from "./db.js?v=98f54b6894";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=531caa732d";
+} from "./util.js?v=98f54b6894";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=531caa732d";
-import { cell, locked, wireEditables } from "./editable.js?v=531caa732d";
-import { exportChallenges } from "./export.js?v=531caa732d";
+} from "./charts.js?v=98f54b6894";
+import { cell, locked, wireEditables } from "./editable.js?v=98f54b6894";
+import { exportChallenges } from "./export.js?v=98f54b6894";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -1395,7 +1395,9 @@ async function renderConfig() {
     <div class="tool">
       <h2>Setup</h2>
       <span class="hint">what the collector cannot find out on its own</span>
-      <span class="snav" style="margin-left:auto">${setupTabs.map(([id, label]) =>
+      <button class="btn ghost" id="open-pending" style="margin-left:auto">Pending${
+        state.pendingSetup ? ` <span class="pill">${state.pendingSetup}</span>` : ""}</button>
+      <span class="snav">${setupTabs.map(([id, label]) =>
         `<button type="button" data-setup-tab="${id}" aria-pressed="${id === tab}">${
           esc(label)}</button>`).join("")}</span>
     </div>
@@ -1575,6 +1577,17 @@ async function renderConfig() {
     </div>`);
 
   wireEditables(view, (field, id, value) => saveSetupField(field, id, value, accounts));
+
+  // Reabrir o aviso na mao. Ele so aparece sozinho quando surge pendencia
+  // NOVA -- e quem clicou em "Later" uma vez ficava sem nenhuma porta para
+  // voltar, com a resposta pendente e nada na tela oferecendo respondê-la.
+  document.getElementById("open-pending").onclick = async () => {
+    const { items, plans, accounts: fresh } = await loadPending();
+    state.pendingSetup = items.length;
+    renderNav();
+    if (!items.length) return toast("Nothing pending");
+    openPendingForm(items, plans, fresh, items.map((i) => i.key).sort().join(","));
+  };
 
   // A aba so troca a visibilidade: tudo ja esta montado e ligado, entao nao ha
   // consulta nem redesenho aqui.
