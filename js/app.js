@@ -10,17 +10,17 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=98f54b6894";
+} from "./db.js?v=c8302e1550";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=98f54b6894";
+} from "./util.js?v=c8302e1550";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=98f54b6894";
-import { cell, locked, wireEditables } from "./editable.js?v=98f54b6894";
-import { exportChallenges } from "./export.js?v=98f54b6894";
+} from "./charts.js?v=c8302e1550";
+import { cell, locked, wireEditables } from "./editable.js?v=c8302e1550";
+import { exportChallenges } from "./export.js?v=c8302e1550";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -1582,11 +1582,18 @@ async function renderConfig() {
   // NOVA -- e quem clicou em "Later" uma vez ficava sem nenhuma porta para
   // voltar, com a resposta pendente e nada na tela oferecendo respondê-la.
   document.getElementById("open-pending").onclick = async () => {
-    const { items, plans, accounts: fresh } = await loadPending();
-    state.pendingSetup = items.length;
-    renderNav();
-    if (!items.length) return toast("Nothing pending");
-    openPendingForm(items, plans, fresh, items.map((i) => i.key).sort().join(","));
+    // Com `try`: um `onclick` async sem ele transforma qualquer erro em nada
+    // acontecendo -- foi assim que este botao pareceu morto na primeira vez.
+    try {
+      const { items, plans, accounts: fresh } = await loadPending();
+      state.pendingSetup = items.length;
+      renderNav();
+      if (!items.length) return toast("Nothing pending");
+      openPendingForm(items, plans, fresh, items.map((i) => i.key).sort().join(","));
+    } catch (err) {
+      console.error("pending:", err);
+      toast(`Pending failed: ${err.message}`);
+    }
   };
 
   // A aba so troca a visibilidade: tudo ja esta montado e ligado, entao nao ha
@@ -2715,9 +2722,13 @@ async function loadPending() {
 
 /** Roda depois da primeira tela: o aviso não pode atrasar o que já ia carregar. */
 async function checkPending() {
-  // Offline não é motivo para atrapalhar quem já está com a tela aberta.
-  const { items, plans, accounts } = await loadPending()
-    .catch(() => ({ items: [], plans: [], accounts: [] }));
+  // Offline não é motivo para atrapalhar quem já está com a tela aberta. Mas
+  // engolir calado também não serve: sem o console, uma falha aqui vira "o
+  // aviso simplesmente nunca aparece", que foi exatamente o que aconteceu.
+  const { items, plans, accounts } = await loadPending().catch((err) => {
+    console.error("pending:", err);
+    return { items: [], plans: [], accounts: [] };
+  });
   state.pendingSetup = items.length;
   renderNav();
   if (!items.length) return;
