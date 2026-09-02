@@ -12,7 +12,7 @@
 // dele, e os formatos numéricos usados aqui são os que o Sheets importa sem
 // reinterpretar.
 
-import { monthLabel } from "./util.js?v=3cadfc1eb7";
+import { monthLabel } from "./util.js?v=6df6265fed";
 
 const EXCELJS = "https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js";
 
@@ -107,13 +107,17 @@ export async function exportChallenges(rows, { filters = {}, statusLabel, showP2
   wb.creator = "Tracking";
   wb.created = new Date();
 
+  // Congela SO as linhas de cabeçalho. Congelar a coluna da conta junto
+  // desenha uma barra cinza grossa entre A e B, do topo ao fim da planilha --
+  // com a grade desligada ela fica sendo a única linha vertical da tela e
+  // parece defeito, não recurso.
   const ws = wb.addWorksheet("Challenges", {
-    views: [{ state: "frozen", xSplit: 1, ySplit: 4, showGridLines: false }],
+    views: [{ state: "frozen", ySplit: 4, showGridLines: false }],
     pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
   });
 
   const cols = columns(showP2);
-  ws.columns = cols.map((c) => ({ key: c.key, width: c.width }));
+  ws.columns = cols.map((c) => ({ key: c.key }));
   const last = cols.length;
 
   // ------------------------------------------------------------- cabeçalho
@@ -240,6 +244,19 @@ export async function exportChallenges(rows, { filters = {}, statusLabel, showP2
   // Filtro na linha de cabeçalho: no Sheets é o que transforma o arquivo de
   // retrato em ferramenta.
   ws.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4 + rows.length, column: last } };
+
+  // Largura por último, uma coluna de cada vez.
+  //
+  // Duas armadilhas juntas. A primeira: passar `width` dentro de `ws.columns`
+  // perde silenciosamente algumas colunas -- no primeiro arquivo exportado,
+  // PROP FUNDED, FUNDED LIVE, PENDING e TRADES sairam na largura padrão e com
+  // o nome cortado. `getColumn().width` depois das linhas escritas sempre
+  // pega. A segunda: o botão de filtro do Sheets fica DENTRO da célula e come
+  // umas três letras do título, então a largura mínima considera o cabeçalho
+  // mais essa folga, e não só o número que eu achei bonito.
+  cols.forEach((c, i) => {
+    ws.getColumn(i + 1).width = Math.max(c.width, c.header.length + 4.5);
+  });
 
   const buffer = await wb.xlsx.writeBuffer();
   download(buffer, `tracking-challenges-${new Date().toISOString().slice(0, 10)}.xlsx`);
