@@ -59,6 +59,8 @@
   --shadow-md:0 3px 10px color-mix(in srgb, #2d2b2b 16%, transparent);
   --shadow-lg:0 12px 32px color-mix(in srgb, #2d2b2b 22%, transparent);
 
+  --shell:2000px;
+
   color-scheme:light;
 }
 
@@ -138,8 +140,11 @@ button,input,select,textarea{font-family:inherit}
 header{
   position:sticky;top:0;z-index:30;
   background:var(--color-bg);border-bottom:2px solid var(--color-divider);
-  padding:0 32px;padding-top:env(safe-area-inset-top);
+  padding-top:env(safe-area-inset-top);
 }
+/* Cabecalho e conteudo na mesma caixa: sem isto a marca fica na borda e a
+   tabela comeca no meio da tela. */
+.shell{max-width:var(--shell);margin:0 auto;padding:0 32px}
 .topline{display:flex;align-items:center;gap:24px;min-height:56px;flex-wrap:wrap}
 header h1{
   margin:0;font-size:18px;font-weight:800;letter-spacing:-.01em;
@@ -195,9 +200,12 @@ nav button[aria-current="page"]{
   font-size:10px;font-weight:600;letter-spacing:.02em;
 }
 
+/* O painel e uma tabela de 17 colunas, nao um texto: apertar a largura para
+   uma medida de leitura so cria rolagem horizontal com a tela vazia dos dois
+   lados. O teto existe para nao esticar num monitor de 4K. */
 main{
   padding:0 32px calc(64px + env(safe-area-inset-bottom));
-  max-width:1560px;margin:0 auto;
+  max-width:var(--shell);margin:0 auto;
 }
 
 /* ------------------------------------------------------------------ pieces */
@@ -257,7 +265,7 @@ main{
 .panel > h2 .dim{font-weight:400;font-size:12px;letter-spacing:0;text-transform:none}
 .panel-body{padding:16px 0 0}
 /* Dois paineis lado a lado no desktop, empilhados no celular. */
-.grid-2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 40px}
+.grid-2{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:0 40px}
 
 .scroll{overflow-x:auto}
 table{border-collapse:collapse;width:100%;font-size:12.5px}
@@ -463,6 +471,10 @@ dialog th{background:var(--color-bg)}
 .dt tfoot td{background:var(--color-bg)}
 /* Coluna que so existe em mesa de duas fases. */
 .noP2 th.p2,.noP2 td.p2{display:none}
+/* Nota livre e o que estoura a largura das tabelas: ela corta com reticencias
+   em vez de empurrar dezesseis colunas de numero para fora da tela. O texto
+   inteiro fica no title e na linha aberta. */
+.dt td.note{max-width:220px;overflow:hidden;text-overflow:ellipsis}
 .count{
   padding:10px 0 2px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;
   color:var(--color-neutral-700);
@@ -472,6 +484,13 @@ dialog th{background:var(--color-bg)}
    reguas sao borda dos cartoes, nao fundo do container -- com fundo, uma
    celula vazia do grid vira um retangulo cinza solto no fim da linha. */
 .accts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0}
+@media (min-width:1700px){
+  .accts{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .accts > .acct:nth-child(3n + 1){border-left:2px solid var(--color-divider);padding-left:22px}
+  .accts > .acct:nth-child(4n + 1){border-left:0;padding-left:0}
+  .accts > .acct:nth-child(n + 4){border-top:0}
+  .accts > .acct:nth-child(n + 5){border-top:2px solid var(--color-divider)}
+}
 .acct{padding:20px 22px 22px;border-left:2px solid var(--color-divider)}
 .accts > .acct:nth-child(3n + 1){border-left:0;padding-left:0}
 .accts > .acct:nth-child(n + 4){border-top:2px solid var(--color-divider)}
@@ -550,7 +569,7 @@ dialog th{background:var(--color-bg)}
 }
 @media (max-width:640px){
   main{padding:0 14px 40px}
-  header{padding:0 14px}
+  .shell{padding:0 14px}
   .topline{min-height:0;padding:10px 0;gap:12px}
   /* Sem wrap a barra empurra os botoes para fora e a pagina inteira ganha
      rolagem horizontal. */
@@ -578,13 +597,15 @@ dialog th{background:var(--color-bg)}
 <body>
 
 <header>
-  <div class="topline">
-    <h1>TRACKING</h1>
-    <span class="sep">/</span>
-    <span id="section"></span>
-    <div class="status" id="status"></div>
+  <div class="shell">
+    <div class="topline">
+      <h1>TRACKING</h1>
+      <span class="sep">/</span>
+      <span id="section"></span>
+      <div class="status" id="status"></div>
+    </div>
+    <nav id="nav"></nav>
   </div>
-  <nav id="nav"></nav>
 </header>
 
 <main id="view"><div class="empty">carregando</div></main>
@@ -598,6 +619,6 @@ dialog th{background:var(--color-bg)}
     if (t === "dark" || t === "light") document.documentElement.setAttribute("data-theme", t);
   } catch (e) {}
 </script>
-<script type="module" src="./js/app.js?v=35db52bfe9"></script>
+<script type="module" src="./js/app.js?v=5407baeda9"></script>
 </body>
 </html>

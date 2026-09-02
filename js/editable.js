@@ -8,16 +8,16 @@
 // veio. Para as linhas importadas da planilha não há trade nenhuma, então
 // aquele mesmo campo volta a ser editável.
 
-import { esc } from "./util.js?v=35db52bfe9";
+import { esc } from "./util.js?v=5407baeda9";
 
 /**
  * Marca uma célula como editável. O HTML fica com os dados no dataset e o
  * comportamento é ligado depois por `wireEditables`, para funcionar em tabelas
  * redesenhadas por innerHTML.
  */
-export function cell(value, { type = "text", field, id, options, format, title, align }) {
+export function cell(value, { type = "text", field, id, options, format, title, align, cls }) {
   const shown = format ? format(value) : (value ?? "");
-  return `<td class="editable${align ? " num" : ""}"
+  return `<td class="editable${align ? " num" : ""}${cls ? ` ${cls}` : ""}"
     data-edit-field="${esc(field)}"
     data-edit-id="${esc(String(id))}"
     data-edit-type="${esc(type)}"

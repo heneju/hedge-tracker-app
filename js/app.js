@@ -10,16 +10,16 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=35db52bfe9";
+} from "./db.js?v=5407baeda9";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=35db52bfe9";
+} from "./util.js?v=5407baeda9";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=35db52bfe9";
-import { cell, locked, wireEditables } from "./editable.js?v=35db52bfe9";
+} from "./charts.js?v=5407baeda9";
+import { cell, locked, wireEditables } from "./editable.js?v=5407baeda9";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -534,6 +534,7 @@ async function renderChallenges() {
       <td class="num">${cash(c.lost_hedging)}</td>
       <td class="num"><strong>${cash(c.total_pnl)}</strong></td>
       ${cell(c.comments, { id: c.id, field: "comments", type: "text",
+                           cls: "note", title: c.comments || "",
                            format: () => `<span class="muted">${esc(c.comments || "—")}</span>` })}
       <td class="num muted">${c.trade_count || (c.import_source ? "imp." : "0")}</td>
     </tr>`).join("");
@@ -558,7 +559,7 @@ async function renderChallenges() {
 
     <div class="panel" style="margin-top:0">
       <div class="scroll">
-        <table class="dt wide n">
+        <table class="dt n">
           <thead><tr>
             <th>Acct</th><th>Firm</th><th>Platform</th><th>Opened</th><th>Status</th>
             <th class="num">Mult.</th>
