@@ -10,16 +10,17 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=3592c88e83";
+} from "./db.js?v=3cadfc1eb7";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=3592c88e83";
+} from "./util.js?v=3cadfc1eb7";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=3592c88e83";
-import { cell, locked, wireEditables } from "./editable.js?v=3592c88e83";
+} from "./charts.js?v=3cadfc1eb7";
+import { cell, locked, wireEditables } from "./editable.js?v=3cadfc1eb7";
+import { exportChallenges } from "./export.js?v=3cadfc1eb7";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -553,6 +554,8 @@ async function renderChallenges() {
         <select class="inp" id="f-month">${options(
           months.map((m) => ({ value: m, label: monthLabel(m) })), month, "All months")}</select>
         <span class="filt">${statusChips}</span>
+        <button class="btn ghost" id="export-xlsx" title="Download what is on screen">
+          Export .xlsx</button>
         <button class="btn" id="new-challenge">New challenge</button>
       </span>
     </div>
@@ -615,6 +618,26 @@ async function renderChallenges() {
     again.setSelectionRange(again.value.length, again.value.length);
   };
   document.getElementById("new-challenge").onclick = () => openChallengeEditor(null, firms);
+
+  // Exporta o que está em vista, com o filtro registrado no cabeçalho: um
+  // arquivo com 3 das 296 linhas e nada dizendo o porquê vira número sem
+  // procedência daqui a um mês.
+  const exportBtn = document.getElementById("export-xlsx");
+  exportBtn.onclick = async () => {
+    if (!rows.length) return toast("Nothing to export");
+    const label = exportBtn.textContent;
+    exportBtn.disabled = true;
+    exportBtn.textContent = "Building…";
+    try {
+      await exportChallenges(rows, { filters: state.filters, statusLabel, showP2 });
+      toast(`${rows.length} rows exported`);
+    } catch (err) {
+      toast(`Error: ${err.message}`);
+    } finally {
+      exportBtn.disabled = false;
+      exportBtn.textContent = label;
+    }
+  };
   view.querySelectorAll("tr.clickable").forEach((tr) => {
     tr.onclick = () => openChallenge(Number(tr.dataset.id), journal, firms);
   });
