@@ -10,16 +10,16 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=bc804f6d3c";
+} from "./db.js?v=87f31d2aea";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=bc804f6d3c";
+} from "./util.js?v=87f31d2aea";
 import {
   equityCurve, equityFinal, gauges, monthlyBars, firmBreakdown, accountProgress,
-} from "./charts.js?v=bc804f6d3c";
-import { cell, locked, wireEditables } from "./editable.js?v=bc804f6d3c";
+} from "./charts.js?v=87f31d2aea";
+import { cell, locked, wireEditables } from "./editable.js?v=87f31d2aea";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");

@@ -62,7 +62,8 @@ export const accountShort = (loginOrName) =>
   String(loginOrName ?? "").slice(-4) || "—";
 
 export const STATUS_LABEL = {
-  phase1: "Phase 1", phase2: "Phase 2", funded: "Funded",
+  phase1: "Phase 1", phase2: "Phase 2",
+  passed: "Passed — awaiting activation", funded: "Funded",
   failed: "Failed", closed: "Closed",
 };
 
@@ -79,8 +80,8 @@ export const statusLabel = (status, evalPhases = 2) =>
 // Status oferecidos por mesa: sem fase 2 quando a mesa avalia em uma etapa.
 export const statusOptions = (evalPhases = 2) =>
   (Number(evalPhases) === 1
-    ? ["phase1", "funded", "failed", "closed"]
-    : ["phase1", "phase2", "funded", "failed", "closed"]
+    ? ["phase1", "passed", "funded", "failed", "closed"]
+    : ["phase1", "phase2", "passed", "funded", "failed", "closed"]
   ).map((value) => ({ value, label: statusLabel(value, evalPhases) }));
 
 export const phasesFor = (evalPhases = 2) =>
