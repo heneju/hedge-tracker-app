@@ -12,7 +12,7 @@
 // dele, e os formatos numéricos usados aqui são os que o Sheets importa sem
 // reinterpretar.
 
-import { monthLabel } from "./util.js?v=6df6265fed";
+import { monthLabel } from "./util.js?v=531caa732d";
 
 const EXCELJS = "https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js";
 
@@ -52,26 +52,26 @@ function loadExcel() {
 /** Colunas na mesma ordem da tela. `p2` some quando nenhuma linha usa 2 fases. */
 function columns(showP2) {
   return [
-    { key: "acct", header: "Acct", width: 10 },
+    { key: "acct", header: "Acct", width: 11 },
     { key: "firm", header: "Firm", width: 14 },
-    { key: "platform", header: "Platform", width: 10 },
-    { key: "opened", header: "Opened", width: 12, fmt: "yyyy-mm-dd" },
+    { key: "platform", header: "Platform", width: 14 },
+    { key: "opened", header: "Opened", width: 13, fmt: "yyyy-mm-dd" },
     { key: "status", header: "Status", width: 24 },
-    { key: "mult", header: "Mult.", width: 10, fmt: "0.000" },
-    { key: "eval_prop", header: "Prop eval", width: 13, fmt: MONEY, sign: true },
-    { key: "funded_prop", header: "Prop funded", width: 13, fmt: MONEY, sign: true },
-    { key: "cost", header: "Cost", width: 12, fmt: MONEY, sign: true },
-    { key: "p1_live", header: "Phase 1 live", width: 13, fmt: MONEY, sign: true },
+    { key: "mult", header: "Mult.", width: 11, fmt: "0.000" },
+    { key: "eval_prop", header: "Prop eval", width: 15, fmt: MONEY, sign: true },
+    { key: "funded_prop", header: "Prop funded", width: 17, fmt: MONEY, sign: true },
+    { key: "cost", header: "Cost", width: 13, fmt: MONEY, sign: true },
+    { key: "p1_live", header: "Phase 1 live", width: 18, fmt: MONEY, sign: true },
     ...(showP2
-      ? [{ key: "p2_live", header: "Phase 2 live", width: 13, fmt: MONEY, sign: true }]
+      ? [{ key: "p2_live", header: "Phase 2 live", width: 18, fmt: MONEY, sign: true }]
       : []),
-    { key: "funded_live", header: "Funded live", width: 13, fmt: MONEY, sign: true },
-    { key: "payout", header: "Payout", width: 12, fmt: MONEY, sign: true },
-    { key: "pending", header: "Pending", width: 12, fmt: MONEY, sign: true },
-    { key: "hedge", header: "Hedge", width: 13, fmt: MONEY, sign: true },
-    { key: "total", header: "Total", width: 14, fmt: MONEY, sign: true, strong: true },
+    { key: "funded_live", header: "Funded live", width: 17, fmt: MONEY, sign: true },
+    { key: "payout", header: "Payout", width: 13, fmt: MONEY, sign: true },
+    { key: "pending", header: "Pending", width: 14, fmt: MONEY, sign: true },
+    { key: "hedge", header: "Hedge", width: 14, fmt: MONEY, sign: true },
+    { key: "total", header: "Total", width: 16, fmt: MONEY, sign: true, strong: true },
     { key: "notes", header: "Notes", width: 34 },
-    { key: "trades", header: "Trades", width: 9, fmt: "0" },
+    { key: "trades", header: "Trades", width: 12, fmt: "0" },
   ];
 }
 
@@ -255,7 +255,7 @@ export async function exportChallenges(rows, { filters = {}, statusLabel, showP2
   // umas três letras do título, então a largura mínima considera o cabeçalho
   // mais essa folga, e não só o número que eu achei bonito.
   cols.forEach((c, i) => {
-    ws.getColumn(i + 1).width = Math.max(c.width, c.header.length + 4.5);
+    ws.getColumn(i + 1).width = Math.max(c.width, c.header.length + 6);
   });
 
   const buffer = await wb.xlsx.writeBuffer();
