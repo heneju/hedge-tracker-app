@@ -5,7 +5,7 @@
 // `vector-effect="non-scaling-stroke"` mantém a espessura da linha constante
 // mesmo com a escala distorcida, que é o que quebra SVG esticado.
 
-import { money, money0, monthLabel, signClass, esc } from "./util.js?v=502a7b9c68";
+import { money, money0, monthLabel, signClass, esc } from "./util.js?v=34424eff0e";
 
 // Cores por token, nunca literais: o painel tem tema claro e escuro, e um hex
 // cravado aqui fica errado em um dos dois. Perda usa o acento da marca -- num
@@ -222,9 +222,21 @@ function accountCard(a) {
   const roomPct = (room / dd) * 100;
   const roomColor = roomPct <= 25 ? DOWN : roomPct <= 50 ? "var(--color-accent-400)" : MUTE;
 
-  const meters = `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:16px">
-      <div>
+  // Conta funded nao tem alvo: ela ja passou, e o que existe dali em diante e
+  // lucro para sacar. Uma barra de progresso sem escala mostrando 0% e
+  // "target reached" ao mesmo tempo -- que era o que aparecia -- nao diz nada.
+  const funded = a.phase === "FUNDED";
+
+  const left = funded
+    ? `<div>
+        <div style="font-size:11px;color:${MUTE}">PROFIT</div>
+        <div class="n ${signClass(pnl)}" style="font-family:var(--font-heading);
+             font-weight:800;font-size:22px;line-height:1;margin-top:6px">${money0(pnl)}</div>
+        <div class="n" style="font-size:11px;color:${SOFT};margin-top:5px">
+          no target — this is withdrawable profit
+        </div>
+      </div>`
+    : `<div>
         <div style="display:flex;justify-content:space-between;font-size:11px;color:${MUTE}">
           <span>TARGET ${a.profit_target == null ? "—" : money0(a.profit_target)}</span>
           <span class="n" style="color:${INK};font-weight:600">${targetPct.toFixed(0)}%</span>
@@ -233,7 +245,11 @@ function accountCard(a) {
         <div class="n" style="font-size:11px;color:${SOFT};margin-top:5px">
           ${Number(a.target_left) <= 0 ? "target reached" : `${money0(a.target_left)} to go`}
         </div>
-      </div>
+      </div>`;
+
+  const meters = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:16px">
+      ${left}
       <div>
         <div style="display:flex;justify-content:space-between;font-size:11px;color:${MUTE}">
           <span>DD ROOM</span>
@@ -292,7 +308,7 @@ function todayBlock(a) {
           <div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;
                 color:${MUTE};margin-top:6px">multiplier</div>
         </div>
-        ${a.rec_today_target != null ? `
+        ${a.rec_today_target ? `
         <div style="display:flex;gap:20px;padding-bottom:6px">
           <div>
             <div class="n" style="font-family:var(--font-heading);font-weight:800;font-size:18px">${
@@ -309,6 +325,11 @@ function todayBlock(a) {
         </div>` : ""}
       </div>
       ${chips}
+      ${a.phase === "FUNDED" ? `<div style="margin-top:10px;font-size:11px;
+            line-height:1.6;color:${SOFT}">
+          No daily target on a funded account, so there is no "cost if today\u2019s
+          target lands" to show. The multiplier still applies to whatever you take.
+        </div>` : ""}
       ${guessed ? `<div class="mult-note" style="margin-top:14px">
         Plan deduced from balance, not chosen. Confirm the model in Setup before
         trusting this number — the drawdown is what sets it.
@@ -324,6 +345,10 @@ function todayBlock(a) {
  * todo começo de conta.
  */
 function daysLine(a) {
+  // Dias minimos e consistencia sao regra de AVALIACAO. Numa conta funded elas
+  // nao valem, e mostrar "days 0/3" ali sugere que ha tres dias a cumprir de
+  // novo -- que e o oposto do que aconteceu.
+  if (a.phase === "FUNDED") return "";
   const bestPct = a.best_day_pct == null ? null : Number(a.best_day_pct);
   const limit = a.consistency_pct == null ? null : Number(a.consistency_pct);
   const daysLeft = a.days_left == null ? null : Number(a.days_left);
