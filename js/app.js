@@ -10,16 +10,16 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=87f31d2aea";
+} from "./db.js?v=6f3f19878a";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=87f31d2aea";
+} from "./util.js?v=6f3f19878a";
 import {
-  equityCurve, equityFinal, gauges, monthlyBars, firmBreakdown, accountProgress,
-} from "./charts.js?v=87f31d2aea";
-import { cell, locked, wireEditables } from "./editable.js?v=87f31d2aea";
+  equityCurve, equityFinal, firmBreakdown, accountProgress,
+} from "./charts.js?v=6f3f19878a";
+import { cell, locked, wireEditables } from "./editable.js?v=6f3f19878a";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -127,23 +127,64 @@ function renderStatus() {
   const { pnl, challenges } = state.totals;
   const utc = new Date().toISOString().slice(11, 19);
 
+  const dark = theme() === "dark";
+
   el.innerHTML = `
-    <span><span class="dot"></span>live</span>
-    <span>utc <b>${utc}</b></span>
-    ${challenges != null ? `<span>accts <b>${challenges}</b></span>` : ""}
-    ${pnl != null ? `<span>pnl <b class="${signClass(pnl)} ${
-      Number(pnl) >= 0 ? "glow-green" : "glow-red"}">${money0(pnl)}</b></span>` : ""}
-    <span class="dim" title="${esc(state.email)}">${esc(state.email.split("@")[0])}</span>
+    <span class="lbl"><span class="dot"></span>LIVE</span>
+    <span class="lbl utc">UTC <b class="n">${utc}</b></span>
+    ${challenges != null ? `<span class="lbl">accts <b class="n">${challenges}</b></span>` : ""}
+    ${pnl != null ? `<span class="lbl">pnl <b class="n ${
+      signClass(pnl)}">${money0(pnl)}</b></span>` : ""}
+    <span class="lbl" title="${esc(state.email)}">${esc(state.email.split("@")[0])}</span>
+    <span class="thm">
+      <button type="button" data-theme-set="dark" aria-pressed="${dark}">Dark</button>
+      <button type="button" data-theme-set="light" aria-pressed="${!dark}">Light</button>
+    </span>
     <span class="actions">
-      <button class="btn ghost icon" id="refresh" title="Reload">↻</button>
-      <button class="btn ghost icon" id="logout" title="Sign out">⏻</button>
+      <button class="btn ghost icon" id="refresh" title="Reload">${ICON.reload}</button>
+      <button class="btn ghost icon" id="logout" title="Sign out">${ICON.signout}</button>
     </span>`;
 
+  el.querySelectorAll("[data-theme-set]").forEach((b) => {
+    b.onclick = () => setTheme(b.dataset.themeSet);
+  });
   el.querySelector("#refresh").onclick = () => go(state.page);
   el.querySelector("#logout").onclick = async () => {
     await signOut();
     location.reload();
   };
+}
+
+// Ícones do cabeçalho. Desenhados, não emoji: emoji muda de forma e de cor a
+// cada sistema, e num cabeçalho de duas cores isso aparece.
+const ICON = {
+  reload: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path
+    d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"></path><path d="M21 3v5h-5"></path></svg>`,
+  signout: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path
+    d="M18.36 6.64A9 9 0 0 1 20.77 15a9 9 0 0 1-17.54 0 9 9 0 0 1 2.41-8.36"></path><line
+    x1="12" y1="2" x2="12" y2="12"></line></svg>`,
+};
+
+/**
+ * Tema claro ou escuro.
+ *
+ * O `index.html` já aplica o salvo antes do app subir -- senão a página pinta
+ * clara e vira escura na frente de quem está olhando. Aqui só trocamos.
+ */
+function theme() {
+  return document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+}
+
+function setTheme(next) {
+  document.documentElement.setAttribute("data-theme", next);
+  try {
+    localStorage.setItem("tracking:theme", next);
+  } catch {
+    // Janela anônima: vale só para esta sessão, o que já é o suficiente.
+  }
+  renderStatus();
 }
 
 function setTotals(journal) {
@@ -239,85 +280,119 @@ async function renderOverview() {
   const evalProp = sum("eval_prop");
   const pending = sum("funded_pending");
   const withProp = journal.filter((c) => Number(c.prop_trades) > 0).length;
-  const open = journal.filter((c) => ["phase1", "phase2", "funded"].includes(c.status));
+  const open = journal.filter((c) => ["phase1", "phase2", "passed", "funded"].includes(c.status));
 
-  // signClass em tudo: zero fica neutro, senao "$0.00" apareceria colorido e
-  // sugeriria um resultado que nao existe.
-  const cards = [
-    ["Total P&L", money(total), signClass(total), `${journal.length} challenges`],
-    ["Without hedge", money(noHedge), signClass(noHedge), "costs + payouts"],
-    ["Hedge result", money(hedge), signClass(hedge), "the three live columns"],
-    ["Eval accounts", money(evalProp), signClass(evalProp),
-     `${withProp} tracked · not counted`],
-    ["Funded pending", money(pending), signClass(pending), "not withdrawn · in Total"],
-    ["Costs", money(cost), signClass(cost), "challenges bought"],
-    ["Payouts", money(payouts), signClass(payouts), "received from firms"],
-    ["Active accounts", String(open.length), open.length ? "bright" : "muted", "phase 1, 2 and funded"],
-  ].map(([label, value, cls, sub]) => `
-    <div class="card">
-      <div class="label">${esc(label)}</div>
-      <div class="value ${cls}">${esc(value)}</div>
-      <div class="sub">${esc(sub)}</div>
-    </div>`).join("");
-
-  // Indicadores só quando há base para eles -- null vira traço no anel.
-  //
   // "paid" e não "pass rate": uma conta marcada como failed pode ter pago
   // payout antes de estourar, e paga com frequência. Medir por status diria
   // que quase nada dá certo, o que não é o que os números mostram.
   const paid = journal.filter((c) => Number(c.funded_payout) > 0).length;
   const spent = Math.abs(cost);
   const gross = payouts + spent;
+  const pctOf = (v) => (v == null ? "—" : `${Math.round(v)}<span style="font-size:15px">%</span>`);
+  const paidRate = journal.length ? (paid / journal.length) * 100 : null;
+  const hedgeDrag = gross ? (Math.abs(hedge) / gross) * 100 : null;
+  const roi = spent ? (total / spent) * 100 : null;
 
-  const stats = {
-    paidRate: journal.length ? (paid / journal.length) * 100 : null,
-    hedgeDrag: gross ? (Math.abs(hedge) / gross) * 100 : null,
-    roi: spent ? (total / spent) * 100 : null,
-  };
+  const span = monthly.length
+    ? `${monthLabel(monthly[0].month)} → ${monthLabel(monthly[monthly.length - 1].month)}`
+    : "no month closed yet";
 
-  const rows = monthly.slice().reverse().map((m) => `
+  // O número que a operação inteira produz. Ele é o assunto da tela, então
+  // ocupa um bloco pintado em vez de mais um cartão na fila -- e a cor do
+  // preenchimento é o próprio resultado.
+  const hero = `
+    <div style="padding:0">
+      <div style="height:100%;padding:32px 26px 28px;color:var(--gain-ink);background:${
+        total >= 0 ? "var(--gain-fill)" : "var(--color-accent-700)"}">
+        <div style="font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;
+              opacity:.82;margin-bottom:10px">Total P&amp;L</div>
+        <div class="n" style="font-family:var(--font-heading);font-weight:800;font-size:72px;
+              line-height:.9;letter-spacing:-.03em">${money0(total)}</div>
+        <div style="margin-top:14px;font-size:12px;opacity:.78">${
+          journal.length} challenges · ${esc(span)}</div>
+      </div>
+    </div>`;
+
+  const kpi = (label, value, cls, sub) => `
+    <div class="card">
+      <div class="label">${esc(label)}</div>
+      <div class="value ${cls}">${value}</div>
+      <div class="sub">${sub}</div>
+    </div>`;
+
+  const ledger = (label, value, cls, sub) => `
+    <div class="card led">
+      <div class="label">${esc(label)}</div>
+      <div class="value n ${cls}">${value}</div>
+      <div class="sub">${esc(sub)}</div>
+    </div>`;
+
+  const rows = monthly.slice().reverse();
+  const peak = Math.max(1, ...rows.map((m) => Math.abs(Number(m.pnl) || 0)));
+  const monthRows = rows.map((m) => {
+    const pnl = Number(m.pnl) || 0;
+    // A barra cresce a partir do meio: à direita quando o mês fechou no azul,
+    // à esquerda quando fechou no vermelho. Uma barra da esquerda para a
+    // direita esconderia o sinal, que é o que se lê primeiro.
+    const half = (Math.abs(pnl) / peak) * 50;
+    const left = pnl >= 0 ? 50 : 50 - half;
+    return `
     <tr>
-      <td>${esc(monthLabel(m.month))}</td>
-      <td class="num">${m.accounts}</td>
+      <td style="font-weight:600">${esc(monthLabel(m.month))}</td>
+      <td style="width:180px;padding-right:20px">
+        <div style="height:6px;background:var(--color-neutral-200);position:relative">
+          <div style="position:absolute;top:0;bottom:0;left:${left.toFixed(1)}%;
+               width:${half.toFixed(1)}%;background:${
+                 pnl >= 0 ? "var(--gain)" : "var(--color-accent)"}"></div>
+          <div style="position:absolute;top:-3px;bottom:-3px;left:50%;width:1px;
+               background:var(--color-neutral-500)"></div>
+        </div>
+      </td>
+      <td class="num muted">${m.accounts}</td>
       <td class="num">${cash(m.pnl)}</td>
       <td class="num">${cash(m.cost)}</td>
       <td class="num">${cash(m.payouts)}</td>
       <td class="num">${cash(m.hedge_pnl)}</td>
       <td class="num">${cash(m.no_hedge_pnl)}</td>
-      <td class="num">${cash(m.prop_pnl)}</td>
-      <td class="num">${cash(m.funded_pending)}</td>
-    </tr>`).join("");
+      <td class="num muted">${cash(m.prop_pnl)}</td>
+      <td class="num muted">${cash(m.funded_pending)}</td>
+    </tr>`;
+  }).join("");
 
   render(`
-    <div class="cards">${cards}</div>
+    <section class="cards kpi">
+      ${hero}
+      ${kpi("Without hedge", money0(noHedge), signClass(noHedge), "costs + payouts")}
+      ${kpi("Hedge result", money0(hedge), signClass(hedge), "the three live columns")}
+      ${kpi("Funded pending", money0(pending), signClass(pending), "not withdrawn · in Total")}
+    </section>
+
+    <section class="cards ledger">
+      ${ledger("Costs", money0(cost), signClass(cost), "challenges bought")}
+      ${ledger("Payouts", money0(payouts), signClass(payouts), "received from firms")}
+      ${ledger("Eval accounts", money0(evalProp), signClass(evalProp),
+               `${withProp} tracked · not counted`)}
+      ${ledger("Active accounts", String(open.length), "", "phase 1, 2, passed and funded")}
+      ${ledger("Paid / Drag / ROI",
+               `${pctOf(paidRate)} · ${pctOf(hedgeDrag)} · ${pctOf(roi)}`, "",
+               `${paid} paid · drag on gross · on spend`)}
+    </section>
 
     ${running.length ? `<div class="panel">
-      <h2>Live accounts<span class="dim">target · drawdown · rules</span></h2>
+      <h2>Live accounts<span class="dim">target · drawdown · today’s multiplier</span></h2>
       <div class="panel-body">${accountProgress(running)}</div>
     </div>` : ""}
 
     <div class="grid-2">
       <div class="panel">
-        <h2>Equity curve<span class="${signClass(equityFinal(monthly))}">${money0(equityFinal(monthly))}</span></h2>
+        <h2>Equity curve<span class="dim n ${signClass(equityFinal(monthly))}">${
+          money0(equityFinal(monthly))}</span></h2>
         <div class="panel-body">
           ${monthly.length ? equityCurve(monthly) : empty("no data yet")}
         </div>
       </div>
       <div class="panel">
-        <h2>Gauges<span class="dim">paid / drag / roi</span></h2>
-        <div class="panel-body">${gauges(stats)}</div>
-      </div>
-    </div>
-
-    <div class="grid-2">
-      <div class="panel">
-        <h2>P&amp;L by month</h2>
-        <div class="panel-body">
-          ${monthly.length ? monthlyBars(monthly) : empty("no data yet")}
-        </div>
-      </div>
-      <div class="panel">
-        <h2>By firm</h2>
+        <h2>By firm<span class="dim">where it was made and lost</span></h2>
         <div class="panel-body">
           ${journal.length ? firmBreakdown(journal) : empty("no data yet")}
         </div>
@@ -325,16 +400,17 @@ async function renderOverview() {
     </div>
 
     <div class="panel">
-      <h2>Monthly close</h2>
+      <h2>Monthly close<span class="dim">bar reads P&amp;L against the strongest month</span></h2>
       <div class="scroll">
-        <table>
+        <table style="min-width:900px">
           <thead><tr>
-            <th>Month</th><th class="num">Accounts</th><th class="num">P&amp;L</th>
+            <th style="width:96px">Month</th><th></th>
+            <th class="num">Accounts</th><th class="num">P&amp;L</th>
             <th class="num">Cost</th><th class="num">Payouts</th>
             <th class="num">Hedge</th><th class="num">No hedge</th>
             <th class="num">Prop</th><th class="num">Pending</th>
           </tr></thead>
-          <tbody>${rows || `<tr><td colspan="9">${empty("no data")}</td></tr>`}</tbody>
+          <tbody>${monthRows || `<tr><td colspan="10">${empty("no data")}</td></tr>`}</tbody>
         </table>
       </div>
     </div>`);
