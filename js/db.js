@@ -5,7 +5,7 @@
 // fica so no coletor, no PC.
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { CONFIG } from "./config.js?v=c8302e1550";
+import { CONFIG } from "./config.js?v=155e87b24e";
 
 export const supabase = createClient(CONFIG.url, CONFIG.anonKey);
 
@@ -83,6 +83,11 @@ export const load = {
   unassigned: () =>
     supabase.from("unassigned_trades")
       .select("*").order("exit_ts", { ascending: false }).limit(300).then(unwrap),
+
+  // Fase e challenge de todas as linhas: e so o que o aviso de pendencias
+  // precisa para saber se um challenge aprovado ja tem a conta funded ligada.
+  phasesOfPassed: () =>
+    supabase.from("challenge_phases").select("challenge_id, phase").then(unwrap),
 
   phases: (challengeId) =>
     supabase.from("challenge_phases")
