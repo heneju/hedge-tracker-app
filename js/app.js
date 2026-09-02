@@ -10,17 +10,17 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=155e87b24e";
+} from "./db.js?v=502a7b9c68";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=155e87b24e";
+} from "./util.js?v=502a7b9c68";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=155e87b24e";
-import { cell, locked, wireEditables } from "./editable.js?v=155e87b24e";
-import { exportChallenges } from "./export.js?v=155e87b24e";
+} from "./charts.js?v=502a7b9c68";
+import { cell, locked, wireEditables } from "./editable.js?v=502a7b9c68";
+import { exportChallenges } from "./export.js?v=502a7b9c68";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -202,6 +202,28 @@ function setTotals(journal) {
   renderStatus();
 }
 
+/**
+ * A conta é a que está VALENDO no challenge agora?
+ *
+ * Um challenge passa por mais de uma conta: a avaliação em uma, a funded em
+ * outra que a mesa libera depois. As duas ficam em `account_progress`, porque
+ * lá a linha é por conta. Mostrar as duas lado a lado no painel sugere duas
+ * operações em curso quando é uma só -- e pior, a antiga aparece com o mesmo
+ * multiplicador da nova, como se ainda houvesse o que hedgear nela.
+ *
+ * Conta sem challenge continua aparecendo: ela não está superada, está sem
+ * cadastro, e é isso que o aviso de pendências cobra.
+ */
+const PHASE_OF_STATUS = { phase1: "P1", phase2: "P2", funded: "FUNDED" };
+
+function isCurrentPhase(a) {
+  if (!a.challenge_status || !a.phase) return true;
+  // `passed` ainda está na conta da avaliação: a funded não chegou.
+  if (a.challenge_status === "passed") return a.phase !== "FUNDED";
+  const expected = PHASE_OF_STATUS[a.challenge_status];
+  return !expected || a.phase === expected;
+}
+
 function empty(message) {
   return `<div class="empty">${esc(message)}</div>`;
 }
@@ -271,9 +293,12 @@ async function renderOverview() {
     load.journal(), load.monthly(), load.progress()]);
   setTotals(journal);
 
-  // Só contas que ainda estão valendo: conta encerrada não tem alvo a perseguir.
+  // Só contas que ainda estão valendo: conta encerrada não tem alvo a
+  // perseguir, e a conta de avaliação de um challenge que já virou funded
+  // cumpriu o papel dela -- quem está em jogo é a conta nova.
   const running = progress.filter((a) =>
-    a.challenge_status == null || ["phase1", "phase2", "funded"].includes(a.challenge_status));
+    (a.challenge_status == null || ["phase1", "phase2", "passed", "funded"]
+      .includes(a.challenge_status)) && isCurrentPhase(a));
 
   const sum = (f) => journal.reduce((a, c) => a + Number(c[f] || 0), 0);
   const total = sum("total_pnl");
@@ -2348,7 +2373,8 @@ async function renderHedge() {
 
   const flagged = rows.filter((a) => hedgeNotes(a).length);
   const shown = state.hedgeFilter === "flagged" ? flagged
-    : state.hedgeFilter === "live" ? rows.filter((a) => !a.blown && a.hedge_multiplier != null)
+    : state.hedgeFilter === "live"
+      ? rows.filter((a) => !a.blown && a.hedge_multiplier != null && isCurrentPhase(a))
     : rows;
 
   // Razao agregada: quanto o conjunto todo gastou dividido pelo que o conjunto
