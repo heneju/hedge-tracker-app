@@ -10,17 +10,17 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=a97ee5d304";
+} from "./db.js?v=2bfe72dbde";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=a97ee5d304";
+} from "./util.js?v=2bfe72dbde";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=a97ee5d304";
-import { cell, locked, wireEditables } from "./editable.js?v=a97ee5d304";
-import { exportChallenges } from "./export.js?v=a97ee5d304";
+} from "./charts.js?v=2bfe72dbde";
+import { cell, locked, wireEditables } from "./editable.js?v=2bfe72dbde";
+import { exportChallenges } from "./export.js?v=2bfe72dbde";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -2655,17 +2655,20 @@ async function renderHedge() {
       if (!input) return toast("Field not found");
       const challengeId = Number(input.dataset.risk);
       if (!challengeId) return toast("This account has no challenge yet");
+      const alvo = b.closest("tr")?.querySelector("[data-target]");
       const raw = input.value.trim();
+      const rawAlvo = (alvo?.value ?? "").trim();
       await guard(() => save.phaseByChallenge(challengeId, input.dataset.phase, {
         risk_per_trade: raw === "" ? null : Number(raw),
-      }), raw === "" ? "Stop cleared" : "Stop saved");
+        target_per_trade: rawAlvo === "" ? null : Number(rawAlvo),
+      }), "Entry saved");
       renderHedge();
     };
   });
 
   // Clique dentro do detalhe nao pode fechar a linha -- o campo ficaria
   // inalcancavel.
-  view.querySelectorAll("[data-risk]").forEach((input) => {
+  view.querySelectorAll("[data-risk], [data-target]").forEach((input) => {
     input.onclick = (e) => e.stopPropagation();
   });
 
@@ -2682,6 +2685,55 @@ async function renderHedge() {
       }, () => renderHedge());
     };
   });
+}
+
+/**
+ * Os dois caminhos da próxima entrada, em dinheiro.
+ *
+ * O stop e o alvo não dimensionam o hedge -- quem faz isso é a folga. Eles
+ * respondem outra coisa, que é o que se pergunta antes de entrar: se a mesa
+ * stopar, quanto a live devolve e como fica o gasto; se a mesa bater o alvo,
+ * quanto a live paga por isso.
+ *
+ * Os dois lados usam fatores diferentes e MEDIDOS, porque spread e swap não
+ * escolhem lado: quando a live precisa render, rende menos (`delivery`, 82%);
+ * quando ela paga, paga mais (`drag`, 112%). Projetar com o nominal nos dois
+ * lados pintaria a operação melhor do que ela é, das duas vezes.
+ */
+function entryOutcomes(a) {
+  const mult = Number(a.hedge_multiplier);
+  const stop = Number(a.risk_per_trade) || 0;
+  const target = Number(a.target_per_trade) || 0;
+  if (!mult || (!stop && !target)) return "";
+
+  const spent = Number(a.spent) || 0;
+  const devolve = stop * mult * (Number(a.delivery) || 1);
+  const paga = target * mult * (Number(a.drag) || 1);
+
+  const linha = (rotulo, movimento, resultado, bom) => `
+    <tr>
+      <td style="border:0;padding:3px 0;color:var(--color-neutral-700)">${rotulo}</td>
+      <td class="num" style="border:0;padding:3px 0;color:${
+        bom ? "var(--gain)" : "var(--loss)"}">${bom ? "+" : "−"}${money0(movimento)}</td>
+      <td class="num" style="border:0;padding:3px 0 3px 18px">spend
+        <b>${money0(Math.max(0, resultado))}</b></td>
+    </tr>`;
+
+  return `
+    <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--color-divider)">
+      <div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+           color:var(--color-neutral-700)">Next entry, both ways</div>
+      <table class="n" style="margin-top:8px;font-size:12px">
+        <tbody>
+          ${stop ? linha(`stops −${money0(stop)}`, devolve, spent - devolve, true) : ""}
+          ${target ? linha(`takes +${money0(target)}`, paga, spent + paga, false) : ""}
+        </tbody>
+      </table>
+      ${stop && devolve >= spent ? `
+        <div class="n" style="margin-top:6px;font-size:11px;color:var(--gain)">
+          one stop already covers everything spent
+        </div>` : ""}
+    </div>`;
 }
 
 /**
@@ -2779,12 +2831,18 @@ function hedgeDetail(a, notes, liveAccount) {
             : `No paired trade measured yet, so delivery counts as 100% — the
                panel does not invent a correction.`}
         </div>
+        ${entryOutcomes(a)}
         <div class="row" style="margin-top:12px">
           <div class="field"><label>Stop per entry</label>
             <input class="n" type="number" min="0" step="10"
                    data-risk="${a.challenge_id ?? ""}" data-phase="${esc(a.phase ?? "")}"
                    value="${a.risk_per_trade ?? ""}"
                    placeholder="what each entry risks"></div>
+          <div class="field"><label>Target per entry</label>
+            <input class="n" type="number" min="0" step="10"
+                   data-target="${a.challenge_id ?? ""}"
+                   value="${a.target_per_trade ?? ""}"
+                   placeholder="what each entry aims at"></div>
           <div class="field auto"><label>&nbsp;</label>
             <button class="btn ghost" data-save-risk="${a.account_id}">Save</button></div>
         </div>`}
