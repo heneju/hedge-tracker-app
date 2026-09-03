@@ -448,6 +448,8 @@ dialog th{background:var(--color-bg)}
 .tool .hint{font-size:12px;color:var(--color-neutral-600)}
 .tool .spacer{flex:1}
 .tool .right{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-left:auto}
+/* Um botao solto na barra tambem precisa ser empurrado para a direita. */
+.tool > .btn.right{margin-left:auto}
 
 /* Filtros: botoes colados, o ativo pintado de acento. Um grupo de chips le
    melhor que tres selects quando as opcoes cabem na linha. */
@@ -628,6 +630,6 @@ dialog th{background:var(--color-bg)}
     if (t === "dark" || t === "light") document.documentElement.setAttribute("data-theme", t);
   } catch (e) {}
 </script>
-<script type="module" src="./js/app.js?v=2bfe72dbde"></script>
+<script type="module" src="./js/app.js?v=81c37a454d"></script>
 </body>
 </html>

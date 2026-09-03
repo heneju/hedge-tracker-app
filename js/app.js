@@ -10,17 +10,17 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=2bfe72dbde";
+} from "./db.js?v=81c37a454d";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=2bfe72dbde";
+} from "./util.js?v=81c37a454d";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=2bfe72dbde";
-import { cell, locked, wireEditables } from "./editable.js?v=2bfe72dbde";
-import { exportChallenges } from "./export.js?v=2bfe72dbde";
+} from "./charts.js?v=81c37a454d";
+import { cell, locked, wireEditables } from "./editable.js?v=81c37a454d";
+import { exportChallenges } from "./export.js?v=81c37a454d";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -51,6 +51,8 @@ const state = {
   // escolha sobreviver ao redesenho da tela a cada clique.
   hedgeOpen: null,
   hedgeFilter: "all",
+  // O grupo das encerradas comeca fechado: elas sao historico, nao decisao.
+  hedgeClosed: false,
   // Sub-aba aberta no Setup.
   setupTab: "register",
   // Quantas informações o coletor não tem como descobrir e continuam em branco.
@@ -2502,11 +2504,13 @@ async function renderHedge() {
   const rows = [...progress].sort((a, b) =>
     rank(a) - rank(b) || String(a.short_id).localeCompare(String(b.short_id)));
 
-  const flagged = rows.filter((a) => hedgeNotes(a, liveAccount).length);
-  const shown = state.hedgeFilter === "flagged" ? flagged
-    : state.hedgeFilter === "live"
-      ? rows.filter((a) => !a.blown && a.hedge_multiplier != null && isCurrentPhase(a))
-    : rows;
+  // Em jogo x encerrada. Estourada e a que entregou o bastao nao voltam a
+  // operar: elas contam historia, nao decisao, e ficavam ocupando a tela toda
+  // com "blown" repetido enquanto a conta ativa se perdia no meio.
+  const emJogo = rows.filter((a) => !a.blown && isCurrentPhase(a));
+  const encerradas = rows.filter((a) => a.blown || !isCurrentPhase(a));
+  const flagged = emJogo.filter((a) => hedgeNotes(a, liveAccount).length);
+  const shown = state.hedgeFilter === "flagged" ? flagged : emJogo;
 
   // Razao agregada: quanto o conjunto todo gastou dividido pelo que o conjunto
   // todo ainda pode perder. NAO e um numero para digitar em lugar nenhum -- o
@@ -2520,11 +2524,13 @@ async function renderHedge() {
   const room = live.reduce((t, a) => t + Number(a.drawdown_room || 0), 0);
   const pooled = room ? (spent / room) : null;
 
-  const chips = [["all", "All"], ["live", "Active"], ["flagged", "Flagged"]]
+  const chips = [["all", "In play"], ["flagged", `Flagged · ${flagged.length}`]]
     .map(([id, label]) => `<button type="button" data-hedge-filter="${id}"
       aria-pressed="${(state.hedgeFilter || "all") === id}">${label}</button>`).join("");
 
-  const body = shown.map((a) => {
+  // Uma funcao so: a tabela em jogo e o grupo das encerradas desenham a
+  // mesma linha.
+  const linha = (a) => {
     const notes = hedgeNotes(a, liveAccount);
     const passouPara = supersededBy(a);
     // Numero de conta que ja entregou o bastao convida a digitar o que nao
@@ -2563,17 +2569,22 @@ async function renderHedge() {
     </tr>
     ${open ? `<tr><td colspan="7" style="padding:0;background:var(--color-neutral-100)">
       ${hedgeDetail(a, notes, liveAccount)}</td></tr>` : ""}`;
-  }).join("");
+  };
+
+  const body = shown.map(linha).join("");
 
   render(`
     <section class="cards kpi">
       <div class="card">
         <div class="label" style="color:var(--color-accent)">Pooled ratio</div>
-        <div class="value n" style="font-size:72px">${pooled == null ? "—" : num(pooled, 2)}</div>
-        <div class="sub" style="max-width:46ch;line-height:1.6">
-          Everything spent ÷ everything still losable, across the live accounts.
-          A reading of the hole, not a number to type — the receiver takes one
-          multiplier per account, and each is in the table below.
+        <div class="value n" style="font-size:72px">${
+          pooled == null ? `<span class="mult-off">—</span>` : num(pooled, 2)}</div>
+        <div class="sub" style="max-width:46ch;line-height:1.6">${live.length
+          ? `Everything spent ÷ everything still losable, across the accounts in
+             play. A reading of the hole, not a number to type — the receiver
+             takes one multiplier per account, and each is in the table below.`
+          : `No account in play. Every challenge here has either blown or been
+             closed — start one in Challenges and the numbers come back.`}
         </div>
       </div>
       <div class="card"><div class="label">To recover</div>
@@ -2607,9 +2618,37 @@ async function renderHedge() {
           <th class="num" style="width:80px">Mult</th><th>Flag</th>
         </tr></thead>
         <tbody>${body || `<tr><td colspan="7">${
-          empty("no prop account registered yet")}</td></tr>`}</tbody>
+          empty(rows.length ? "nothing in play — see the closed accounts below"
+                            : "no prop account registered yet")}</td></tr>`}</tbody>
       </table></div>
-    </div>`);
+    </div>
+
+    ${encerradas.length ? `
+    <div class="tool" style="margin-top:28px">
+      <h2>Closed</h2>
+      <span class="hint">blown, or handed over to another account — kept for the
+        history, out of the way of the decision</span>
+      <button class="btn ghost right" id="toggle-closed">${
+        state.hedgeClosed ? "Hide" : `Show ${encerradas.length}`}</button>
+    </div>
+    <div class="panel" style="margin-top:0" ${state.hedgeClosed ? "" : "hidden"}>
+      <div class="scroll"><table class="dt n" style="min-width:880px;opacity:.62">
+        <thead><tr>
+          <th style="width:110px">Account</th><th>Plan</th>
+          <th class="num">Spent</th><th class="num">DD left</th>
+          <th></th><th class="num" style="width:80px">Mult</th><th>Flag</th>
+        </tr></thead>
+        <tbody>${encerradas.map(linha).join("")}</tbody>
+      </table></div>
+    </div>` : ""}`);
+
+  const alternar = document.getElementById("toggle-closed");
+  if (alternar) {
+    alternar.onclick = () => {
+      state.hedgeClosed = !state.hedgeClosed;
+      renderHedge();
+    };
+  }
 
   view.querySelectorAll("[data-hedge-filter]").forEach((b) => {
     b.onclick = () => {
@@ -2745,6 +2784,9 @@ function entryOutcomes(a) {
  */
 function hedgeNotes(a, liveAccount) {
   const notes = [];
+  // Conta encerrada nao gera aviso: nao ha entrada pela frente, entao nada ali
+  // e acionavel. Dizer "funded" numa conta que estourou e so ruido.
+  if (a.blown) return notes;
   const falta = marginShortfall(a, liveAccount);
   if (falta) {
     notes.push({
