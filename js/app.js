@@ -10,17 +10,17 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=4c68d01ee0";
+} from "./db.js?v=f87f248d38";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=4c68d01ee0";
+} from "./util.js?v=f87f248d38";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=4c68d01ee0";
-import { cell, locked, wireEditables } from "./editable.js?v=4c68d01ee0";
-import { exportChallenges } from "./export.js?v=4c68d01ee0";
+} from "./charts.js?v=f87f248d38";
+import { cell, locked, wireEditables } from "./editable.js?v=f87f248d38";
+import { exportChallenges } from "./export.js?v=f87f248d38";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -2479,7 +2479,10 @@ async function renderIssues() {
 // coletor, porque a divisão pela regra de consistência é mais cara.
 
 async function renderHedge() {
-  const progress = await load.progress();
+  const [progress, accounts] = await Promise.all([load.progress(), load.accounts()]);
+  // A conta live e uma so, e e nela que o hedge entra -- por isso a margem dela
+  // vale para todas as linhas.
+  const liveAccount = accounts.find((a) => a.kind === "live" && a.margin_at) ?? null;
 
   // Quem substituiu quem: um challenge passa por mais de uma conta, e a da
   // fase anterior aparece aqui com `spent` e multiplicador só porque a linha
@@ -2557,7 +2560,7 @@ async function renderHedge() {
           : notes.length ? esc(notes[0].short) : "ok"}</td>
     </tr>
     ${open ? `<tr><td colspan="7" style="padding:0;background:var(--color-neutral-100)">
-      ${hedgeDetail(a, notes)}</td></tr>` : ""}`;
+      ${hedgeDetail(a, notes, liveAccount)}</td></tr>` : ""}`;
   }).join("");
 
   render(`
@@ -2699,7 +2702,7 @@ function hedgeNotes(a) {
 }
 
 /** A conta aberta: de onde o número saiu e o que ainda falta na conta. */
-function hedgeDetail(a, notes) {
+function hedgeDetail(a, notes, liveAccount) {
   const cost = Math.abs(Number(a.challenge_cost || 0));
   const hedge = Number(a.hedge_pnl || 0);
 
@@ -2788,9 +2791,65 @@ function hedgeDetail(a, notes) {
           a.rec_hedge_cost != null
             ? `hedge costs about ${money0(a.rec_hedge_cost)} if today's target lands · ` : ""
         }computed ${stamp(a.rec_computed_at)}</div>` : ""}
+      ${marginLine(a, liveAccount)}
       ${notes.map((n) => `<div class="mult-note">${esc(n.long)}</div>`).join("")}
     </div>
   </div>`;
+}
+
+/**
+ * O que a próxima entrada exige de margem, e o que a live tem.
+ *
+ * Vem antes da entrada de propósito. Ele opera a live com capital apertado --
+ * às vezes cem dólares de folga -- e repõe com o saque da funded. Nesse regime,
+ * descobrir que faltou margem DEPOIS de abrir na mesa é ficar com a perna
+ * descoberta, que é o risco que este sistema existe para evitar.
+ *
+ * O número que resolve não é o "falta margem": é quanto de multiplicador a
+ * margem aguenta. Com ele dá para decidir entrar menor em vez de não entrar.
+ */
+function marginLine(a, live) {
+  const mult = a.hedge_multiplier;
+  if (!live || mult == null) return "";
+
+  // O símbolo do hedge é o que a live opera de fato; sem par medido ainda, o
+  // único que ela tem cadastrado serve.
+  const perLot = live.margin_per_lot || {};
+  const symbol = Object.keys(perLot)[0];
+  if (!symbol) return "";
+
+  const contracts = Number(a.last_contracts) || 1;
+  const lots = Number(mult) * contracts;
+  const needed = Number(perLot[symbol]) * lots;
+  const free = Number(live.margin_free) || 0;
+  const cabe = needed <= free;
+  // Quanto de multiplicador a margem paga, arredondado para BAIXO: teto é teto.
+  const teto = Math.floor((free / (Number(perLot[symbol]) * contracts)) * 100) / 100;
+
+  // Margem velha não serve para decidir entrada.
+  const idade = Date.now() - new Date(live.margin_at).getTime();
+  const velha = idade > 5 * 60 * 1000;
+
+  return `
+    <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--color-divider)">
+      <div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+           color:${cabe ? "var(--color-neutral-700)" : "var(--loss)"}">
+        Margin on the live${velha ? " · last read " + stamp(live.margin_at) : ""}</div>
+      <div class="n" style="margin-top:8px;font-size:12px;line-height:1.8;
+           color:var(--color-neutral-700)">
+        ${num(contracts, 0)} contract${contracts === 1 ? "" : "s"} × ${num(mult, 2)}
+        = <b style="color:var(--color-text)">${num(lots, 2)} ${esc(symbol)}</b><br>
+        needs <b style="color:${cabe ? "var(--color-text)" : "var(--loss)"}">${
+          money0(needed)}</b> of ${money0(free)} free
+      </div>
+      ${cabe ? "" : `<div class="mult-note" style="margin-top:10px">
+        Not enough margin for this hedge. Your free margin covers a multiplier of
+        <b>${num(teto, 2)}</b> at ${num(contracts, 0)} contract${
+          contracts === 1 ? "" : "s"} — entering with less than
+        ${num(mult, 2)} leaves part of the prop leg uncovered, so either add to
+        the live account or size the entry down.
+      </div>`}
+    </div>`;
 }
 
 // ------------------------------------------------------ o que falta cadastrar
