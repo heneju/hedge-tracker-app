@@ -10,17 +10,17 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=9933ef056f";
+} from "./db.js?v=8a1bc0d785";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=9933ef056f";
+} from "./util.js?v=8a1bc0d785";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=9933ef056f";
-import { cell, locked, wireEditables } from "./editable.js?v=9933ef056f";
-import { exportChallenges } from "./export.js?v=9933ef056f";
+} from "./charts.js?v=8a1bc0d785";
+import { cell, locked, wireEditables } from "./editable.js?v=8a1bc0d785";
+import { exportChallenges } from "./export.js?v=8a1bc0d785";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -2621,6 +2621,27 @@ async function renderHedge() {
     };
   });
 
+  view.querySelectorAll("[data-save-risk]").forEach((b) => {
+    b.onclick = async (e) => {
+      e.stopPropagation();   // a linha inteira abre e fecha ao clique
+      const input = b.closest("tr")?.querySelector("[data-risk]");
+      if (!input) return toast("Field not found");
+      const challengeId = Number(input.dataset.risk);
+      if (!challengeId) return toast("This account has no challenge yet");
+      const raw = input.value.trim();
+      await guard(() => save.phaseByChallenge(challengeId, input.dataset.phase, {
+        risk_per_trade: raw === "" ? null : Number(raw),
+      }), raw === "" ? "Back to the whole drawdown" : "Risk saved");
+      renderHedge();
+    };
+  });
+
+  // Clique dentro do detalhe nao pode fechar a linha -- o campo ficaria
+  // inalcancavel.
+  view.querySelectorAll("[data-risk]").forEach((input) => {
+    input.onclick = (e) => e.stopPropagation();
+  });
+
   view.querySelectorAll("[data-report-hedge]").forEach((b) => {
     b.onclick = (e) => {
       e.stopPropagation();
@@ -2695,12 +2716,38 @@ function hedgeDetail(a, notes) {
            color:var(--color-accent)">Account ${esc(accountShort(a.login_or_name))} · the math</div>
       ${a.hedge_multiplier == null ? `
         <div style="margin-top:12px;font-size:13px;color:var(--color-neutral-700)">
-          no drawdown left to divide by</div>` : `
+          nothing left to divide by</div>` : `
         <div class="n" style="margin-top:12px;font-size:14px;line-height:1.7;
              color:var(--color-neutral-700)">
-          ${money0(a.spent)} spent ÷ ${money0(a.drawdown_room)} drawdown<br>
-          = <b style="color:var(--color-text)">${num(a.hedge_multiplier_raw, 4)}</b>
+          ${money0(a.spent)} spent ÷ ${money0(a.risk_now)} at risk
+          = <b style="color:var(--color-text)">${num(a.hedge_multiplier_raw, 4)}</b><br>
+          ÷ ${num(Number(a.delivery) * 100, 1)}% delivered
           → <b style="color:var(--color-text)">${num(a.hedge_multiplier, 2)}</b>
+        </div>
+        <div style="margin-top:8px;font-size:11px;line-height:1.6;
+             color:var(--color-neutral-600)">
+          ${a.risk_per_trade
+            ? `Risk is the stop you set for this phase.`
+            : `Risk is the whole drawdown — that is how an evaluation is run,
+               entering with the floor as the stop. On a funded account the stop
+               is smaller: set it below or the hedge comes out half of what it
+               needs to be.`}
+          ${Number(a.delivery_pairs)
+            ? `Delivery measured on ${a.delivery_pairs} pair${
+                Number(a.delivery_pairs) === 1 ? "" : "s"} where the firm
+               stopped out — spread and swap always pull against, so the nominal
+               has to be bigger than the effect you want.`
+            : `No paired trade measured yet, so delivery counts as 100% — the
+               panel does not invent a correction.`}
+        </div>
+        <div class="row" style="margin-top:12px">
+          <div class="field"><label>Risk per entry</label>
+            <input class="n" type="number" min="0" step="10"
+                   data-risk="${a.challenge_id ?? ""}" data-phase="${esc(a.phase ?? "")}"
+                   value="${a.risk_per_trade ?? ""}"
+                   placeholder="${num(a.drawdown_room, 0)} (whole drawdown)"></div>
+          <div class="field auto"><label>&nbsp;</label>
+            <button class="btn ghost" data-save-risk="${a.account_id}">Save</button></div>
         </div>`}
       <table class="n" style="margin-top:14px;font-size:12px;min-width:240px">
         <tbody>
