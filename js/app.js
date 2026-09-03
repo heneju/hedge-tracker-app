@@ -10,17 +10,17 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=8a1bc0d785";
+} from "./db.js?v=4c68d01ee0";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=8a1bc0d785";
+} from "./util.js?v=4c68d01ee0";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=8a1bc0d785";
-import { cell, locked, wireEditables } from "./editable.js?v=8a1bc0d785";
-import { exportChallenges } from "./export.js?v=8a1bc0d785";
+} from "./charts.js?v=4c68d01ee0";
+import { cell, locked, wireEditables } from "./editable.js?v=4c68d01ee0";
+import { exportChallenges } from "./export.js?v=4c68d01ee0";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -2631,7 +2631,7 @@ async function renderHedge() {
       const raw = input.value.trim();
       await guard(() => save.phaseByChallenge(challengeId, input.dataset.phase, {
         risk_per_trade: raw === "" ? null : Number(raw),
-      }), raw === "" ? "Back to the whole drawdown" : "Risk saved");
+      }), raw === "" ? "Stop cleared" : "Stop saved");
       renderHedge();
     };
   });
@@ -2719,19 +2719,21 @@ function hedgeDetail(a, notes) {
           nothing left to divide by</div>` : `
         <div class="n" style="margin-top:12px;font-size:14px;line-height:1.7;
              color:var(--color-neutral-700)">
-          ${money0(a.spent)} spent ÷ ${money0(a.risk_now)} at risk
+          ${money0(a.spent)} spent ÷ ${money0(a.risk_now)} still losable
           = <b style="color:var(--color-text)">${num(a.hedge_multiplier_raw, 4)}</b><br>
           ÷ ${num(Number(a.delivery) * 100, 1)}% delivered
           → <b style="color:var(--color-text)">${num(a.hedge_multiplier, 2)}</b>
         </div>
         <div style="margin-top:8px;font-size:11px;line-height:1.6;
              color:var(--color-neutral-600)">
+          The divisor is what can still be lost, not one entry\u2019s stop:
+          every loss that still fits feeds the recovery, and each stop already
+          cuts the spend for the next calculation. Dividing by a single stop
+          makes the first entry try to recover everything alone, with twice the
+          lot and twice the margin — and it ends up worse.
           ${a.risk_per_trade
-            ? `Risk is the stop you set for this phase.`
-            : `Risk is the whole drawdown — that is how an evaluation is run,
-               entering with the floor as the stop. On a funded account the stop
-               is smaller: set it below or the hedge comes out half of what it
-               needs to be.`}
+            ? `Stop of ${money0(a.risk_per_trade)} per entry — that is for the
+               lot size and the margin check, not for this division.` : ""}
           ${Number(a.delivery_pairs)
             ? `Delivery measured on ${a.delivery_pairs} pair${
                 Number(a.delivery_pairs) === 1 ? "" : "s"} where the firm
@@ -2741,11 +2743,11 @@ function hedgeDetail(a, notes) {
                panel does not invent a correction.`}
         </div>
         <div class="row" style="margin-top:12px">
-          <div class="field"><label>Risk per entry</label>
+          <div class="field"><label>Stop per entry</label>
             <input class="n" type="number" min="0" step="10"
                    data-risk="${a.challenge_id ?? ""}" data-phase="${esc(a.phase ?? "")}"
                    value="${a.risk_per_trade ?? ""}"
-                   placeholder="${num(a.drawdown_room, 0)} (whole drawdown)"></div>
+                   placeholder="what each entry risks"></div>
           <div class="field auto"><label>&nbsp;</label>
             <button class="btn ghost" data-save-risk="${a.account_id}">Save</button></div>
         </div>`}
