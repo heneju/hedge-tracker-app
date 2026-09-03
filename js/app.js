@@ -10,17 +10,17 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=0b57a6abb6";
+} from "./db.js?v=a97ee5d304";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=0b57a6abb6";
+} from "./util.js?v=a97ee5d304";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=0b57a6abb6";
-import { cell, locked, wireEditables } from "./editable.js?v=0b57a6abb6";
-import { exportChallenges } from "./export.js?v=0b57a6abb6";
+} from "./charts.js?v=a97ee5d304";
+import { cell, locked, wireEditables } from "./editable.js?v=a97ee5d304";
+import { exportChallenges } from "./export.js?v=a97ee5d304";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -2862,6 +2862,10 @@ function marginNeed(a, live) {
     missing: Math.max(0, needed - free),
     // Quanto de multiplicador a margem paga, arredondado para BAIXO: teto é teto.
     max: Math.floor((free / (Number(perLot[symbol]) * contracts)) * 100) / 100,
+    // E quantos contratos ela paga NO multiplicador recomendado. Este responde
+    // sem depender de adivinhar com quanto a pessoa vai entrar -- o outro
+    // supõe que a próxima entrada repete a anterior.
+    maxContracts: Math.floor(free / (Number(perLot[symbol]) * Number(mult))),
     // Margem velha não serve para decidir entrada.
     stale: Date.now() - new Date(live.margin_at).getTime() > 5 * 60 * 1000,
   };
@@ -2896,7 +2900,9 @@ function marginLine(a, live) {
       </div>
       ${cabe
         ? `<div class="n" style="margin-top:6px;font-size:11px;color:var(--color-neutral-600)">
-             room for a multiplier of up to ${num(teto, 2)} at this size
+             covers up to <b>${need.maxContracts} contract${
+               need.maxContracts === 1 ? "" : "s"}</b> at ${num(mult, 2)},
+             or a multiplier of ${num(teto, 2)} at ${num(contracts, 0)}
            </div>`
         : `<div class="mult-note" style="margin-top:10px">
              Not enough margin. Add <b>${money0(needed - free)}</b> to run
