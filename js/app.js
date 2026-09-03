@@ -10,17 +10,17 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=f87f248d38";
+} from "./db.js?v=0b57a6abb6";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=f87f248d38";
+} from "./util.js?v=0b57a6abb6";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=f87f248d38";
-import { cell, locked, wireEditables } from "./editable.js?v=f87f248d38";
-import { exportChallenges } from "./export.js?v=f87f248d38";
+} from "./charts.js?v=0b57a6abb6";
+import { cell, locked, wireEditables } from "./editable.js?v=0b57a6abb6";
+import { exportChallenges } from "./export.js?v=0b57a6abb6";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -405,6 +405,8 @@ async function renderOverview() {
   const [journal, monthly, progress, inTheAir, accounts] = await Promise.all([
     load.journal(), load.monthly(), load.progress(),
     load.openPositions(), load.accounts()]);
+  const liveAccount = () =>
+    accounts.find((a) => a.kind === "live" && a.margin_at) ?? null;
   setTotals(journal);
 
   // Só contas que ainda estão valendo: conta encerrada não tem alvo a
@@ -529,7 +531,7 @@ async function renderOverview() {
 
     ${running.length ? `<div class="panel">
       <h2>Live accounts<span class="dim">target · drawdown · today’s multiplier</span></h2>
-      <div class="panel-body">${accountProgress(running)}</div>
+      <div class="panel-body">${accountProgress(running, liveAccount())}</div>
     </div>` : ""}
 
     <div class="grid-2">
@@ -2500,7 +2502,7 @@ async function renderHedge() {
   const rows = [...progress].sort((a, b) =>
     rank(a) - rank(b) || String(a.short_id).localeCompare(String(b.short_id)));
 
-  const flagged = rows.filter((a) => hedgeNotes(a).length);
+  const flagged = rows.filter((a) => hedgeNotes(a, liveAccount).length);
   const shown = state.hedgeFilter === "flagged" ? flagged
     : state.hedgeFilter === "live"
       ? rows.filter((a) => !a.blown && a.hedge_multiplier != null && isCurrentPhase(a))
@@ -2523,7 +2525,7 @@ async function renderHedge() {
       aria-pressed="${(state.hedgeFilter || "all") === id}">${label}</button>`).join("");
 
   const body = shown.map((a) => {
-    const notes = hedgeNotes(a);
+    const notes = hedgeNotes(a, liveAccount);
     const passouPara = supersededBy(a);
     // Numero de conta que ja entregou o bastao convida a digitar o que nao
     // vale mais. Melhor traco e dizer quem assumiu.
@@ -2624,6 +2626,28 @@ async function renderHedge() {
     };
   });
 
+  // Simulacao de aporte: puro calculo na tela, nada e gravado. A pergunta e
+  // "com quanto a mais eu consigo rodar o multiplicador que a regra pede?", e a
+  // resposta muda a cada tecla.
+  view.querySelectorAll("[data-topup]").forEach((input) => {
+    const id = input.dataset.topup;
+    const row = rows.find((x) => String(x.account_id) === id);
+    const out = view.querySelector(`[data-topup-out="${id}"]`);
+    const perLot = Number(Object.values(liveAccount?.margin_per_lot || {})[0]) || 0;
+    const contracts = Number(row?.last_contracts) || 1;
+    const mult = Number(row?.hedge_multiplier) || 0;
+
+    input.onclick = (e) => e.stopPropagation();
+    input.oninput = () => {
+      const extra = Number(input.value) || 0;
+      const free = (Number(liveAccount?.margin_free) || 0) + extra;
+      const teto = Math.floor((free / (perLot * contracts)) * 100) / 100;
+      out.innerHTML = teto >= mult
+        ? `covers <b class="pos">${num(mult, 2)}</b> — enough`
+        : `covers <b class="neg">${num(teto, 2)}</b>, still short of ${num(mult, 2)}`;
+    };
+  });
+
   view.querySelectorAll("[data-save-risk]").forEach((b) => {
     b.onclick = async (e) => {
       e.stopPropagation();   // a linha inteira abre e fecha ao clique
@@ -2667,8 +2691,18 @@ async function renderHedge() {
  * aparece quando a linha abre. Sem o motivo, um 0,00 parece recomendação e não
  * falta de cadastro.
  */
-function hedgeNotes(a) {
+function hedgeNotes(a, liveAccount) {
   const notes = [];
+  const falta = marginShortfall(a, liveAccount);
+  if (falta) {
+    notes.push({
+      short: "no margin",
+      long: `the live account is ${money0(falta.missing)} short of the margin this`
+        + ` hedge needs (${money0(falta.needed)} against ${money0(falta.free)} free).`
+        + ` Add it, or enter at ${num(falta.max, 2)} and leave part of the prop`
+        + ` leg uncovered.`,
+    });
+  }
   if (!a.plan_id) {
     notes.push({
       short: "no plan",
@@ -2808,27 +2842,45 @@ function hedgeDetail(a, notes, liveAccount) {
  * O número que resolve não é o "falta margem": é quanto de multiplicador a
  * margem aguenta. Com ele dá para decidir entrar menor em vez de não entrar.
  */
-function marginLine(a, live) {
+function marginNeed(a, live) {
   const mult = a.hedge_multiplier;
-  if (!live || mult == null) return "";
+  if (!live || mult == null) return null;
 
   // O símbolo do hedge é o que a live opera de fato; sem par medido ainda, o
   // único que ela tem cadastrado serve.
   const perLot = live.margin_per_lot || {};
   const symbol = Object.keys(perLot)[0];
-  if (!symbol) return "";
+  if (!symbol || !Number(perLot[symbol])) return null;
 
   const contracts = Number(a.last_contracts) || 1;
   const lots = Number(mult) * contracts;
   const needed = Number(perLot[symbol]) * lots;
   const free = Number(live.margin_free) || 0;
-  const cabe = needed <= free;
-  // Quanto de multiplicador a margem paga, arredondado para BAIXO: teto é teto.
-  const teto = Math.floor((free / (Number(perLot[symbol]) * contracts)) * 100) / 100;
+  return {
+    symbol, contracts, lots, needed, free,
+    fits: needed <= free,
+    missing: Math.max(0, needed - free),
+    // Quanto de multiplicador a margem paga, arredondado para BAIXO: teto é teto.
+    max: Math.floor((free / (Number(perLot[symbol]) * contracts)) * 100) / 100,
+    // Margem velha não serve para decidir entrada.
+    stale: Date.now() - new Date(live.margin_at).getTime() > 5 * 60 * 1000,
+  };
+}
 
-  // Margem velha não serve para decidir entrada.
-  const idade = Date.now() - new Date(live.margin_at).getTime();
-  const velha = idade > 5 * 60 * 1000;
+/** Só quando falta -- é o que vira aviso. */
+function marginShortfall(a, live) {
+  const need = marginNeed(a, live);
+  return need && !need.fits ? need : null;
+}
+
+function marginLine(a, live) {
+  const need = marginNeed(a, live);
+  if (!need) return "";
+  const { symbol, contracts, lots, needed, free, fits, max, stale } = need;
+  const mult = a.hedge_multiplier;
+  const cabe = fits;
+  const teto = max;
+  const velha = stale;
 
   return `
     <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--color-divider)">
@@ -2842,13 +2894,25 @@ function marginLine(a, live) {
         needs <b style="color:${cabe ? "var(--color-text)" : "var(--loss)"}">${
           money0(needed)}</b> of ${money0(free)} free
       </div>
-      ${cabe ? "" : `<div class="mult-note" style="margin-top:10px">
-        Not enough margin for this hedge. Your free margin covers a multiplier of
-        <b>${num(teto, 2)}</b> at ${num(contracts, 0)} contract${
-          contracts === 1 ? "" : "s"} — entering with less than
-        ${num(mult, 2)} leaves part of the prop leg uncovered, so either add to
-        the live account or size the entry down.
-      </div>`}
+      ${cabe
+        ? `<div class="n" style="margin-top:6px;font-size:11px;color:var(--color-neutral-600)">
+             room for a multiplier of up to ${num(teto, 2)} at this size
+           </div>`
+        : `<div class="mult-note" style="margin-top:10px">
+             Not enough margin. Add <b>${money0(needed - free)}</b> to run
+             ${num(mult, 2)}, or enter at <b>${num(teto, 2)}</b> and leave part
+             of the prop leg uncovered.
+           </div>
+           <div class="row" style="margin-top:10px">
+             <div class="field"><label>If I add</label>
+               <input class="n" type="number" min="0" step="50"
+                      data-topup="${a.account_id}"
+                      placeholder="${Math.ceil(needed - free)}"></div>
+             <div class="field wide"><label>&nbsp;</label>
+               <div class="n" data-topup-out="${a.account_id}"
+                    style="font-size:12px;color:var(--color-neutral-700);
+                           padding-top:8px">—</div></div>
+           </div>`}
     </div>`;
 }
 

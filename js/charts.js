@@ -5,7 +5,7 @@
 // `vector-effect="non-scaling-stroke"` mantém a espessura da linha constante
 // mesmo com a escala distorcida, que é o que quebra SVG esticado.
 
-import { money, money0, monthLabel, signClass, esc } from "./util.js?v=f87f248d38";
+import { money, money0, monthLabel, signClass, esc } from "./util.js?v=0b57a6abb6";
 
 // Cores por token, nunca literais: o painel tem tema claro e escuro, e um hex
 // cravado aqui fica errado em um dos dois. Perda usa o acento da marca -- num
@@ -186,12 +186,12 @@ function meter(pct, color, { warnAt = null } = {}) {
  * mesma base que a mesa usa. Conta sem plano escolhido aparece sem as barras,
  * porque sem alvo e drawdown não há o que medir.
  */
-export function accountProgress(rows) {
+export function accountProgress(rows, liveAccount = null) {
   if (!rows.length) return "";
-  return `<div class="accts">${rows.map(accountCard).join("")}</div>`;
+  return `<div class="accts">${rows.map((a) => accountCard(a, liveAccount)).join("")}</div>`;
 }
 
-function accountCard(a) {
+function accountCard(a, liveAccount) {
   const pnl = Number(a.pnl) || 0;
   const size = a.account_size ? money0(a.account_size) : "";
   const plan = [a.plan_name, size].filter(Boolean).join(" ") || "no plan";
@@ -265,7 +265,7 @@ function accountCard(a) {
   return `<div class="acct">
     ${head}
     ${meters}
-    ${todayBlock(a)}
+    ${todayBlock(a, liveAccount)}
     ${daysLine(a)}
   </div>`;
 }
@@ -278,9 +278,17 @@ function accountCard(a) {
  * perde a cor de acento e ganha o aviso -- é o drawdown do plano que o define,
  * e um plano chutado faz o número mentir por inteiro.
  */
-function todayBlock(a) {
+function todayBlock(a, liveAccount) {
   const mult = a.hedge_multiplier ?? a.rec_multiplier;
   if (mult == null) return "";
+
+  // Margem e restricao dura: ele opera a live com pouca folga e repoe com o
+  // saque da funded. Saber disso DEPOIS de abrir na mesa e ficar descoberto.
+  const perLot = Number(Object.values(liveAccount?.margin_per_lot || {})[0]) || 0;
+  const contracts = Number(a.last_contracts) || 1;
+  const precisa = perLot * Number(mult) * contracts;
+  const livre = Number(liveAccount?.margin_free) || 0;
+  const semMargem = perLot && precisa > livre;
 
   const guessed = a.plan_source === "inferred";
   const chips = Array.isArray(a.rec_schedule) && a.rec_schedule.length > 1
@@ -339,6 +347,10 @@ function todayBlock(a) {
           A funded account has no daily target, so there is no cost-if-today\u2019s-target-lands
           to show. What the hedge costs here scales with what you take.
         </div>` : ""}
+      ${semMargem ? `<div class="mult-note" style="margin-top:14px">
+        The live account is ${money0(precisa - livre)} short of the margin this
+        hedge needs. Add it, or the prop leg goes in partly uncovered.
+      </div>` : ""}
       ${guessed ? `<div class="mult-note" style="margin-top:14px">
         Plan deduced from balance, not chosen. Confirm the model in Setup before
         trusting this number — the drawdown is what sets it.
