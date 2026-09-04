@@ -10,17 +10,17 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=81c37a454d";
+} from "./db.js?v=01d690b744";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=81c37a454d";
+} from "./util.js?v=01d690b744";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=81c37a454d";
-import { cell, locked, wireEditables } from "./editable.js?v=81c37a454d";
-import { exportChallenges } from "./export.js?v=81c37a454d";
+} from "./charts.js?v=01d690b744";
+import { cell, locked, wireEditables } from "./editable.js?v=01d690b744";
+import { exportChallenges } from "./export.js?v=01d690b744";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -3544,8 +3544,13 @@ async function checkForUpdate() {
 checkForUpdate();
 setInterval(checkForUpdate, 5 * 60 * 1000);
 
+// Quem `boot` ja desenhou. `boot` refaz a tela inteira, entao so pode rodar
+// quando muda a PESSOA -- nunca quando muda so o token.
+let bootedFor;
+
 async function boot() {
   const user = await currentUser();
+  bootedFor = user?.id ?? null;
   if (!user) {
     // Zera o estado: sem isto a barra continua mostrando o nome e o PnL de quem
     // acabou de sair, na tela de login.
@@ -3568,5 +3573,17 @@ async function boot() {
   checkPending();
 }
 
-supabase.auth.onAuthStateChange(() => boot());
+// `onAuthStateChange` dispara em TODO evento de auth, nao so login e logout. E
+// o supabase-js, com autoRefreshToken ligado, revalida a sessao quando a aba
+// volta a ficar visivel: sair da aba e voltar emitia TOKEN_REFRESHED, `boot`
+// rodava, `go()` redesenhava a secao e o cadastro que estava sendo preenchido
+// ia junto -- sem nada para salvar, porque formulario aberto nao e estado.
+// Renovar token nao muda nada na tela; o supabase-js ja usa o token novo nas
+// queries seguintes sozinho.
+supabase.auth.onAuthStateChange((_event, session) => {
+  const uid = session?.user?.id ?? null;
+  if (uid === bootedFor) return;
+  bootedFor = uid;
+  boot();
+});
 boot();
