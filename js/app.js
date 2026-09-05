@@ -10,17 +10,17 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=01d690b744";
+} from "./db.js?v=f5327951fd";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=01d690b744";
+} from "./util.js?v=f5327951fd";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=01d690b744";
-import { cell, locked, wireEditables } from "./editable.js?v=01d690b744";
-import { exportChallenges } from "./export.js?v=01d690b744";
+} from "./charts.js?v=f5327951fd";
+import { cell, locked, wireEditables } from "./editable.js?v=f5327951fd";
+import { exportChallenges } from "./export.js?v=f5327951fd";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -2000,9 +2000,18 @@ async function renderConfig() {
             min_trading_days: minDays ?? 0,
             consistency_pct: consistency,
             profit_split: split,
-            // Futuros usa +0,03 como protecao operacional padrao do projeto.
-            // O campo continua livre para sobrescrever por mesa/modelo.
-            buffer_multiplier: bufferMultiplier ?? (platform === "NT8" ? 0.03 : 0),
+            // Zero por padrao, em qualquer plataforma. O +0,03 que ficava aqui
+            // para NT8 era a protecao de slippage da epoca em que o desconto do
+            // spread era chutado; hoje ele e medido dos proprios pares e entra
+            // como divisao pela `delivery`, que escala com o multiplicador. A
+            // migration 0024 zerou o campo em todos os planos justamente por
+            // isso -- e este default o ressuscitava a cada plano NT8 novo.
+            //
+            // Somar constante em cima de um desconto proporcional distorce mais
+            // onde menos se precisa: 0,03 sobre 0,06 e +50%, sobre 0,50 e +6%.
+            // Para proteger de proposito, use `buffer_cash`: entra no gasto
+            // antes da divisao e escala junto.
+            buffer_multiplier: bufferMultiplier ?? 0,
             buffer_cash: bufferCash ?? 0,
             notes,
           });
