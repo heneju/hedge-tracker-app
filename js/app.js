@@ -10,17 +10,17 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=dedcb1e177";
+} from "./db.js?v=038d502bc7";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=dedcb1e177";
+} from "./util.js?v=038d502bc7";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=dedcb1e177";
-import { cell, locked, wireEditables } from "./editable.js?v=dedcb1e177";
-import { exportChallenges } from "./export.js?v=dedcb1e177";
+} from "./charts.js?v=038d502bc7";
+import { cell, locked, wireEditables } from "./editable.js?v=038d502bc7";
+import { exportChallenges } from "./export.js?v=038d502bc7";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -1484,6 +1484,14 @@ async function renderConfig() {
       ${cell(f.default_split, { id: f.id, field: "firm:default_split", type: "number", align: true,
         format: () => (f.default_split == null
           ? `<span class="dim">—</span>` : `${num(f.default_split, 0)}%`) })}
+      ${cell(f.account_pattern, { id: f.id, field: "firm:account_pattern", type: "text",
+        title: "regex do nome da conta, com os grupos (?<funded>) e (?<size>)."
+             + " Com ela preenchida, a conta funded liberada pela mesa se liga"
+             + " sozinha ao challenge aprovado. Sem ela, o painel pergunta.",
+        format: () => (f.account_pattern
+          ? `<code class="muted" style="font-size:11px">${esc(f.account_pattern)}</code>`
+          : `<span class="dim" title="sem padrão: a ligação da conta funded fica manual"
+               >— manual</span>`) })}
       ${cell(f.notes, { id: f.id, field: "firm:notes", type: "text",
         format: () => `<span class="muted">${esc(f.notes || "—")}</span>` })}
       <td class="num muted">${plans.filter((pl) => pl.firm_id === f.id).length}</td>
@@ -1667,8 +1675,10 @@ async function renderConfig() {
       <h2>Prop firms</h2>
       <div class="scroll"><table>
         <thead><tr><th>Name</th><th>Platform</th><th>Phases</th><th class="num">Split</th>
+          <th title="com ela, a conta funded se liga sozinha ao challenge aprovado"
+            >Account name pattern</th>
           <th>Notes</th><th class="num">Plans</th><th></th></tr></thead>
-        <tbody>${firmRows || `<tr><td colspan="7">${empty("no firms yet")}</td></tr>`}</tbody>
+        <tbody>${firmRows || `<tr><td colspan="8">${empty("no firms yet")}</td></tr>`}</tbody>
       </table></div>
       <div class="panel-body row">
         <div class="field"><label>Name</label><input id="firm-name" placeholder="Tradeify"></div>
@@ -2252,6 +2262,22 @@ async function saveSetupField(field, id, raw, accounts) {
   const rowId = Number(id);
   const value = raw === "" ? null : raw;
   const number = () => (value === null ? null : Number(value));
+
+  // Regex quebrada nao daria erro na hora: ela some dentro do coletor, o link
+  // automatico simplesmente para de acontecer, e a pessoa fica esperando uma
+  // ligacao que nunca vem. Conferir aqui custa uma linha.
+  if (field === "firm:account_pattern" && value) {
+    try {
+      // O Python aceita `(?P<x>...)`; o JS so `(?<x>...)`. Traduzir antes de
+      // testar evita reprovar um padrao valido no coletor.
+      new RegExp(value.replace(/\(\?P</g, "(?<"));
+    } catch (err) {
+      return toast(`Padrão inválido: ${err.message}`);
+    }
+    if (!/\(\?P?<(funded|size)>/.test(value)) {
+      return toast("O padrão precisa de ao menos um grupo (?<funded>) ou (?<size>)");
+    }
+  }
 
   await guard(async () => {
     if (table === "firm") {
@@ -3076,11 +3102,14 @@ const FUTURES = new Set(["NT8", "Tradovate"]);
  * e sem ele o multiplicador do hedge sai menor do que devia" diz.
  */
 async function loadPending() {
-  const [journal, progress, accounts, plans, discovered, phases] = await Promise.all([
+  const [journal, progress, accounts, plans, discovered, phases, firms] = await Promise.all([
     load.journal(), load.progress(), load.accounts(), load.plans(),
-    load.discovered(), load.phasesOfPassed()]);
+    load.discovered(), load.phasesOfPassed(), load.firms()]);
 
   const items = [];
+  // Mesa sem padrao de nome nao consegue ligar a conta funded sozinha -- e a
+  // pergunta vai voltar em toda aprovacao dela ate alguem preencher.
+  const firmPattern = new Map(firms.map((f) => [f.name, Boolean(f.account_pattern)]));
   const accountById = new Map(accounts.map((a) => [a.id, a]));
   const claimed = new Set(accounts.map((a) => `${a.platform}:${a.login_or_name}`));
   const inUse = new Set(progress.filter((p) => p.challenge_id).map((p) => p.account_id));
@@ -3112,13 +3141,20 @@ async function loadPending() {
         options: freshAccounts,
         title: `${c.account_ids || "?"} · ${c.firm || "?"}`,
         ask: "Passed. Which account did the firm activate?",
-        why: freshAccounts.length
-          ? "The collector already sees new accounts on this PC, but the funded"
+        why: !freshAccounts.length
+          ? "No unassigned account showed up yet. When the firm activates it, the"
+            + " collector finds it on its own and this question comes back."
+          : "The collector already sees new accounts on this PC, but the funded"
             + " number does not derive from the evaluation one — only you know"
             + " which is which. Pick it and the challenge moves to funded, with"
             + " the new account carrying the funded phase."
-          : "No unassigned account showed up yet. When the firm activates it, the"
-            + " collector finds it on its own and this question comes back.",
+            // Sem padrao a pergunta volta em TODA aprovacao desta mesa. Dizer
+            // isso aqui e o que transforma um clique repetido num conserto.
+            + (firmPattern.get(c.firm) === false
+              ? ` — ${c.firm || "this firm"} has no account name pattern, so this`
+                + " will be asked every time it passes. Fill the pattern in"
+                + " Setup → Firms and the link happens on its own from then on."
+              : ""),
       });
     }
 
