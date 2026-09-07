@@ -10,17 +10,17 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=f5327951fd";
+} from "./db.js?v=dedcb1e177";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=f5327951fd";
+} from "./util.js?v=dedcb1e177";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=f5327951fd";
-import { cell, locked, wireEditables } from "./editable.js?v=f5327951fd";
-import { exportChallenges } from "./export.js?v=f5327951fd";
+} from "./charts.js?v=dedcb1e177";
+import { cell, locked, wireEditables } from "./editable.js?v=dedcb1e177";
+import { exportChallenges } from "./export.js?v=dedcb1e177";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -1404,8 +1404,9 @@ async function renderConfig() {
     const manual = new Set(a.manual_cols || []);
     const mark = (f) => (manual.has(f) ? " ✎" : "");
     return `
-    <tr>
-      <td>${badge(a.kind, a.kind)}</td>
+    <tr${a.is_active === false ? ` style="opacity:.5"` : ""}>
+      <td>${badge(a.kind, a.kind)}${a.is_active === false
+        ? ` <span class="badge">archived</span>` : ""}</td>
       <td><strong class="${blown.has(a.id) ? "blown" : "bright"}">${
         esc(accountShort(a.login_or_name))}</strong></td>
       <td>${esc(a.platform)}</td>
@@ -1436,6 +1437,15 @@ async function renderConfig() {
       <td class="row" style="gap:6px">
         <button class="btn ghost" data-toggle="${a.id}" data-kind="${a.kind}">
           ${a.kind === "live" ? "prop" : "live"}</button>
+        <!-- Trocar de conta live nao pode exigir Delete: a conta antiga carrega
+             o historico, e apagar leva as trades junto por cascade. Arquivar
+             tira ela do coletor -- que so le is_active -- e das listas de
+             escolha, sem encostar em nada gravado. -->
+        <button class="btn ghost" data-archive="${a.id}" data-active="${a.is_active !== false}"
+          title="${a.is_active === false
+            ? "voltar a coletar esta conta"
+            : "parar de coletar, sem apagar o historico"}">
+          ${a.is_active === false ? "unarchive" : "archive"}</button>
         <button class="btn ghost" data-report-account="${a.id}">Report</button>
         <button class="btn ghost danger" data-del-account="${a.id}"
           data-trades="${st?.trade_count || 0}">Delete</button>
@@ -2136,6 +2146,15 @@ async function renderConfig() {
     b.onclick = async () => {
       await guard(() => save.account(Number(b.dataset.toggle),
         { kind: b.dataset.kind === "live" ? "prop" : "live" }), "Account updated");
+      renderConfig();
+    };
+  });
+
+  view.querySelectorAll("[data-archive]").forEach((b) => {
+    b.onclick = async () => {
+      const ativa = b.dataset.active === "true";
+      await guard(() => save.account(Number(b.dataset.archive), { is_active: !ativa }),
+        ativa ? "Account archived" : "Account back");
       renderConfig();
     };
   });
