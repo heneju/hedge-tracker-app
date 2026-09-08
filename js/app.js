@@ -10,17 +10,17 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=1854b0589b";
+} from "./db.js?v=922283020b";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=1854b0589b";
+} from "./util.js?v=922283020b";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=1854b0589b";
-import { cell, locked, wireEditables } from "./editable.js?v=1854b0589b";
-import { exportChallenges } from "./export.js?v=1854b0589b";
+} from "./charts.js?v=922283020b";
+import { cell, locked, wireEditables } from "./editable.js?v=922283020b";
+import { exportChallenges } from "./export.js?v=922283020b";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -108,14 +108,22 @@ function parseAccountName(name, pattern) {
   }
 }
 
-/** Texto do conflito entre dias mínimos e consistência, ou "" quando não há. */
-function ruleConflict(minDays, consistencyPct) {
-  const precisa = daysForConsistency(consistencyPct);
-  const dias = Number(minDays);
-  if (!precisa || !dias || dias >= precisa) return "";
-  return `${num(consistencyPct, 0)}% de consistência exige ao menos ${precisa}`
-       + ` dias operados, e este plano pede ${dias}. Nenhuma conta passa nas duas`
-       + ` regras: ou o mínimo é maior, ou essa consistência não vale na aprovação.`;
+/**
+ * Dias mínimos EFETIVOS: o maior entre o que a mesa pede e o que a
+ * consistência obriga. É a mesma conta que a view faz, e é o que impede o par
+ * contraditório -- mínimo 2 com teto de 40% -- de voltar a existir.
+ */
+function effectiveMinDays(minDays, consistencyPct) {
+  return Math.max(Number(minDays) || 0, daysForConsistency(consistencyPct));
+}
+
+/** Explica o mínimo quando é a consistência que manda, não o campo. */
+function daysNote(minDays, consistencyPct) {
+  const efetivo = effectiveMinDays(minDays, consistencyPct);
+  if (!efetivo || efetivo <= (Number(minDays) || 0)) return "";
+  return `${num(consistencyPct, 0)}% de consistência exige ${efetivo} dias`
+       + ` operados — com menos, o melhor dia passa do teto por divisão.`
+       + ` Este plano pede ${Number(minDays) || 0}, então valem ${efetivo}.`;
 }
 
 /**
@@ -1566,9 +1574,9 @@ async function renderConfig() {
   // planilha mostrava, e comparar tamanhos entre mesas é justamente o que se
   // quer olhar na hora de comprar a próxima conta.
   const planRows = plans.map((pl) => {
-    // Dias mínimos e consistência podem se contradizer, e o sintoma aparece
-    // longe daqui: uma avaliação aprovada que nunca sai de `phase1`.
-    const conflito = ruleConflict(pl.min_trading_days, pl.consistency_pct);
+    // O mínimo que vale é derivado da consistência quando ela é mais exigente.
+    const efetivo = effectiveMinDays(pl.min_trading_days, pl.consistency_pct);
+    const nota = daysNote(pl.min_trading_days, pl.consistency_pct);
     return `
     <tr>
       ${cell(pl.firm_id, { id: pl.id, field: "plan:firm_id", type: "select", options: firmOpts,
@@ -1600,14 +1608,22 @@ async function renderConfig() {
         format: () => (pl.daily_loss_limit == null
           ? `<span class="dim">—</span>` : money0(pl.daily_loss_limit)) })}
       ${cell(pl.min_trading_days, { id: pl.id, field: "plan:min_trading_days", type: "number", align: true,
-        title: conflito || "",
+        title: nota || "mínimo de dias operados que a mesa exige",
         format: () => `${pl.min_trading_days || `<span class="dim">—</span>`}${
-          conflito ? ` <span class="blown">⚠</span>` : ""}` })}
+          nota ? `<div class="sub">valem ${efetivo}</div>` : ""}` })}
       ${cell(pl.consistency_pct, { id: pl.id, field: "plan:consistency_pct", type: "number", align: true,
-        title: conflito || "",
+        title: nota || "nenhum dia pode passar desta fatia do lucro total",
         format: () => (pl.consistency_pct == null
+          ? `<span class="dim">—</span>` : `${num(pl.consistency_pct, 0)}%`) })}
+      ${cell(pl.consistency_addon_pct, { id: pl.id, field: "plan:consistency_addon_pct",
+        type: "number", align: true,
+        title: "teto quando a avaliação é comprada com o add-on. Vazio = a mesa"
+             + " não oferece. Na Tradeify Select o add-on leva 40% para 50%, e"
+             + " é isso que permite passar em 2 dias em vez de 3.",
+        format: () => (pl.consistency_addon_pct == null
           ? `<span class="dim">—</span>`
-          : `${num(pl.consistency_pct, 0)}%${conflito ? ` <span class="blown">⚠</span>` : ""}`) })}
+          : `${num(pl.consistency_addon_pct, 0)}%<div class="sub">${
+              daysForConsistency(pl.consistency_addon_pct)} dias</div>`) })}
       ${cell(pl.profit_split, { id: pl.id, field: "plan:profit_split", type: "number", align: true,
         format: () => (pl.profit_split == null
           ? `<span class="dim">—</span>` : `${num(pl.profit_split, 0)}%`) })}
@@ -1698,6 +1714,13 @@ async function renderConfig() {
             <input id="onboard-cost" type="number" min="0" step="0.01" placeholder="99"></div>
           <div class="field"><label>Opened</label>
             <input id="onboard-date" type="date" value="${new Date().toISOString().slice(0, 10)}"></div>
+          <!-- Do CHALLENGE, não do plano: o add-on é comprado com cada
+               avaliação, e o mesmo modelo tem contas com e sem. -->
+          <div class="field"><label>Bought with add-on</label>
+            <label class="row" style="gap:6px;align-items:center;margin-top:6px">
+              <input id="onboard-addon" type="checkbox">
+              <span class="muted" style="font-size:11px">usa o teto do add-on</span>
+            </label></div>
         </div>
 
         <details style="margin-top:12px">
@@ -1709,6 +1732,9 @@ async function renderConfig() {
               <input id="onboard-min-days" type="number" min="0" step="1"></div>
             <div class="field"><label>Consistency (%)</label>
               <input id="onboard-consistency" type="number" min="0" max="100" step="0.01"></div>
+            <div class="field"><label>Consistency add-on (%)</label>
+              <input id="onboard-consistency-addon" type="number" min="0" max="100" step="0.01"
+                     title="teto quando a avaliação vem com o add-on. Vazio se a mesa não oferece."></div>
             <div class="field"><label>Payout split (%)</label>
               <input id="onboard-split" type="number" min="0" max="100" step="0.01"></div>
             <div class="field"><label>Futures buffer ×</label>
@@ -1791,7 +1817,9 @@ async function renderConfig() {
           <th class="num">Size</th>
           <th class="num">Target</th><th class="num">Target P2</th>
           <th class="num">Drawdown</th><th>DD type</th><th class="num">Daily loss</th>
-          <th class="num">Min days</th><th class="num">Consist.</th><th class="num">Split</th>
+          <th class="num">Min days</th><th class="num">Consist.</th>
+          <th class="num" title="teto com o add-on comprado">Add-on</th>
+          <th class="num">Split</th>
           <th class="num">Buffer &times;</th><th class="num">Buffer $</th>
           <th>Notes</th><th></th></tr></thead>
         <tbody>${planRows || `<tr><td colspan="15">${empty("no plans — add one below")}</td></tr>`}</tbody>
@@ -2036,6 +2064,8 @@ async function renderConfig() {
     const dailyLoss = numberOrNull("onboard-daily-loss");
     const minDays = numberOrNull("onboard-min-days");
     const consistency = numberOrNull("onboard-consistency");
+    const consistencyAddon = numberOrNull("onboard-consistency-addon");
+    const addon = document.getElementById("onboard-addon")?.checked || false;
     const split = numberOrNull("onboard-split");
     const bufferMultiplier = numberOrNull("onboard-buffer-mult");
     const bufferCash = numberOrNull("onboard-buffer-cash");
@@ -2102,6 +2132,7 @@ async function renderConfig() {
             daily_loss_limit: dailyLoss,
             min_trading_days: minDays ?? 0,
             consistency_pct: consistency,
+            consistency_addon_pct: consistencyAddon,
             profit_split: split,
             // Zero por padrao, em qualquer plataforma. O +0,03 que ficava aqui
             // para NT8 era a protecao de slippage da epoca em que o desconto do
@@ -2160,6 +2191,7 @@ async function renderConfig() {
             status,
             target: targetP1,
             split_pct: split,
+            consistency_addon: addon,
             comments: notes,
           });
           created.challengeIds.push(challenge.id);
@@ -2373,13 +2405,12 @@ async function saveSetupField(field, id, raw, accounts, plans = []) {
       const patch = ["drawdown_type", "name", "notes", "product"].includes(column)
         ? { [column]: value } : { [column]: number() };
       const salvo = await save.plan(rowId, patch);
-      // Depois de gravar, não antes: quem está corrigindo as duas regras passa
-      // por um estado inconsistente no meio, e travar ali atrapalharia. O aviso
-      // é para o resultado, e a coluna fica marcada até alguém resolver.
+      // Não é erro, é consequência: dizer na hora evita a pessoa procurar por
+      // que a conta ainda pede dias depois de cumprir o mínimo digitado.
       if (["min_trading_days", "consistency_pct"].includes(column)) {
         const plano = { ...(plans.find((p) => p.id === rowId) || {}), ...patch };
-        const conflito = ruleConflict(plano.min_trading_days, plano.consistency_pct);
-        if (conflito) toast(conflito);
+        const nota = daysNote(plano.min_trading_days, plano.consistency_pct);
+        if (nota) toast(nota);
       }
       return salvo;
     }
@@ -3288,10 +3319,12 @@ async function loadPending() {
             + `${num(travada.best_day_pct, 1)}% and this plan allows `
             + `${num(travada.consistency_pct, 0)}% — so the collector held it back.`
             + ` A funded account from ${c.firm} showed up on this PC anyway.`
-            + (ruleConflict(travada.min_trading_days, travada.consistency_pct)
-              ? " And the plan asks for fewer trading days than that consistency"
-                + " allows, which no account can satisfy — worth fixing in"
-                + " Setup → Plans."
+            // A causa mais provável, e que se conserta de vez: a avaliação veio
+            // com o add-on de consistência e ninguém marcou.
+            + (!travada.consistency_addon && travada.consistency_addon_pct
+              ? ` This plan offers a ${num(travada.consistency_addon_pct, 0)}%`
+                + " add-on and this challenge is not marked as having it —"
+                + " if you bought it, marking that fixes this for good."
               : "")
             + " Confirm and it becomes funded, linked to the account you pick.",
         });
