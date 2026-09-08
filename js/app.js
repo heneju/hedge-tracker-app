@@ -10,17 +10,17 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=038d502bc7";
+} from "./db.js?v=010adec534";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=038d502bc7";
+} from "./util.js?v=010adec534";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=038d502bc7";
-import { cell, locked, wireEditables } from "./editable.js?v=038d502bc7";
-import { exportChallenges } from "./export.js?v=038d502bc7";
+} from "./charts.js?v=010adec534";
+import { cell, locked, wireEditables } from "./editable.js?v=010adec534";
+import { exportChallenges } from "./export.js?v=010adec534";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -69,6 +69,53 @@ function toast(message) {
   el.textContent = message;
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 2600);
+}
+
+/**
+ * Dias operados que uma consistência de `pct` exige, no mínimo.
+ *
+ * Com N dias o melhor dia nunca fica abaixo de 1/N do total -- é divisão, não
+ * é sorte. Um teto de 40% portanto precisa de `ceil(100/40) = 3` dias, e
+ * cadastrar "mínimo 2 dias + 40%" descreve uma conta que ninguém passa nunca.
+ *
+ * Aconteceu: um plano com essas duas regras segurou uma avaliação aprovada em
+ * `phase1` -- melhor dia 50%, limite 40% -- enquanto a mesa já tinha liberado a
+ * conta funded. A mesma conta que o cronograma do coletor usa.
+ */
+function daysForConsistency(pct) {
+  const n = Number(pct);
+  return n > 0 ? Math.ceil(100 / n) : 0;
+}
+
+/**
+ * Lê o nome da conta pelo padrão da mesa. Espelha `core/naming.parse_account_name`.
+ *
+ * O Python aceita `(?P<x>)`, o JS só `(?<x>)`; traduzir antes evita rejeitar um
+ * padrão que funciona no coletor.
+ */
+function parseAccountName(name, pattern) {
+  if (!pattern || !name) return null;
+  try {
+    const m = new RegExp(pattern.replace(/\(\?P</g, "(?<")).exec(name.trim());
+    if (!m) return null;
+    return {
+      funded: Boolean(m.groups?.funded),
+      // O padrão escreve o tamanho em milhares, como a mesa escreve.
+      size: m.groups?.size ? Number(m.groups.size) * 1000 : null,
+    };
+  } catch {
+    return null;   // Padrão inválido não pode derrubar a tela de pendências.
+  }
+}
+
+/** Texto do conflito entre dias mínimos e consistência, ou "" quando não há. */
+function ruleConflict(minDays, consistencyPct) {
+  const precisa = daysForConsistency(consistencyPct);
+  const dias = Number(minDays);
+  if (!precisa || !dias || dias >= precisa) return "";
+  return `${num(consistencyPct, 0)}% de consistência exige ao menos ${precisa}`
+       + ` dias operados, e este plano pede ${dias}. Nenhuma conta passa nas duas`
+       + ` regras: ou o mínimo é maior, ou essa consistência não vale na aprovação.`;
 }
 
 /**
@@ -1501,7 +1548,11 @@ async function renderConfig() {
   // O catálogo inteiro numa tabela só, em vez de uma tabela por mesa: é como a
   // planilha mostrava, e comparar tamanhos entre mesas é justamente o que se
   // quer olhar na hora de comprar a próxima conta.
-  const planRows = plans.map((pl) => `
+  const planRows = plans.map((pl) => {
+    // Dias mínimos e consistência podem se contradizer, e o sintoma aparece
+    // longe daqui: uma avaliação aprovada que nunca sai de `phase1`.
+    const conflito = ruleConflict(pl.min_trading_days, pl.consistency_pct);
+    return `
     <tr>
       ${cell(pl.firm_id, { id: pl.id, field: "plan:firm_id", type: "select", options: firmOpts,
         format: () => `<span class="muted">${esc(pl.prop_firms?.name || "—")}</span>` })}
@@ -1524,10 +1575,14 @@ async function renderConfig() {
         format: () => (pl.daily_loss_limit == null
           ? `<span class="dim">—</span>` : money0(pl.daily_loss_limit)) })}
       ${cell(pl.min_trading_days, { id: pl.id, field: "plan:min_trading_days", type: "number", align: true,
-        format: () => (pl.min_trading_days || `<span class="dim">—</span>`) })}
+        title: conflito || "",
+        format: () => `${pl.min_trading_days || `<span class="dim">—</span>`}${
+          conflito ? ` <span class="blown">⚠</span>` : ""}` })}
       ${cell(pl.consistency_pct, { id: pl.id, field: "plan:consistency_pct", type: "number", align: true,
+        title: conflito || "",
         format: () => (pl.consistency_pct == null
-          ? `<span class="dim">—</span>` : `${num(pl.consistency_pct, 0)}%`) })}
+          ? `<span class="dim">—</span>`
+          : `${num(pl.consistency_pct, 0)}%${conflito ? ` <span class="blown">⚠</span>` : ""}`) })}
       ${cell(pl.profit_split, { id: pl.id, field: "plan:profit_split", type: "number", align: true,
         format: () => (pl.profit_split == null
           ? `<span class="dim">—</span>` : `${num(pl.profit_split, 0)}%`) })}
@@ -1542,7 +1597,8 @@ async function renderConfig() {
       ${cell(pl.notes, { id: pl.id, field: "plan:notes", type: "text",
         format: () => `<span class="muted">${esc(pl.notes || "—")}</span>` })}
       <td><button class="btn ghost danger" data-del-plan="${pl.id}">Delete</button></td>
-    </tr>`).join("");
+    </tr>`;
+  }).join("");
 
   const setupTabs = [
     ["register", "Register"],
@@ -1741,7 +1797,7 @@ async function renderConfig() {
       </div>
     </div>`);
 
-  wireEditables(view, (field, id, value) => saveSetupField(field, id, value, accounts));
+  wireEditables(view, (field, id, value) => saveSetupField(field, id, value, accounts, plans));
 
   // Reabrir o aviso na mao. Ele so aparece sozinho quando surge pendencia
   // NOVA -- e quem clicou em "Later" uma vez ficava sem nenhuma porta para
@@ -2257,7 +2313,7 @@ async function renderConfig() {
  * -- `wireEditables` liga a raiz inteira de uma vez, e a página tem três
  * tabelas editáveis.
  */
-async function saveSetupField(field, id, raw, accounts) {
+async function saveSetupField(field, id, raw, accounts, plans = []) {
   const [table, column] = field.split(":");
   const rowId = Number(id);
   const value = raw === "" ? null : raw;
@@ -2289,7 +2345,16 @@ async function saveSetupField(field, id, raw, accounts) {
     if (table === "plan") {
       const patch = column === "drawdown_type" || column === "name" || column === "notes"
         ? { [column]: value } : { [column]: number() };
-      return save.plan(rowId, patch);
+      const salvo = await save.plan(rowId, patch);
+      // Depois de gravar, não antes: quem está corrigindo as duas regras passa
+      // por um estado inconsistente no meio, e travar ali atrapalharia. O aviso
+      // é para o resultado, e a coluna fica marcada até alguém resolver.
+      if (["min_trading_days", "consistency_pct"].includes(column)) {
+        const plano = { ...(plans.find((p) => p.id === rowId) || {}), ...patch };
+        const conflito = ruleConflict(plano.min_trading_days, plano.consistency_pct);
+        if (conflito) toast(conflito);
+      }
+      return salvo;
     }
 
     // Conta: `cash_value` e `magic_source_part` são medidos/derivados, então a
@@ -3123,14 +3188,64 @@ async function loadPending() {
     ...discovered
       .filter((d) => d.platform !== "MT5" && !claimed.has(`${d.platform}:${d.login_or_name}`))
       .map((d) => ({ value: `source:${d.id}`, platform: d.platform,
+                     name: d.login_or_name,
                      label: `${d.platform} · ${d.login_or_name} · found ${day(d.first_seen)}` })),
     ...accounts
       .filter((a) => a.kind === "prop" && a.is_active !== false && !inUse.has(a.id))
       .map((a) => ({ value: `account:${a.id}`, platform: a.platform,
+                     name: a.login_or_name,
                      label: `${a.platform} · ${a.login_or_name} · registered` })),
   ];
 
   for (const c of journal) {
+    // Bateu o alvo, o coletor NÃO aprovou por causa da consistência, e uma
+    // conta funded daquela mesa apareceu na máquina. Duas evidências
+    // independentes se contradizendo -- e é exatamente aí que vale perguntar
+    // em vez de decidir.
+    //
+    // O caso real: plano cadastrado com mínimo de 2 dias e consistência de 40%,
+    // que é uma combinação que ninguém passa nunca. A mesa aprovou, liberou a
+    // conta funded, e o painel segurou a avaliação em `phase1` sem dizer por
+    // quê. Aprovar sozinho seria pior: em plano cuja consistência é real, isso
+    // daria alvo e multiplicador para uma conta reprovada.
+    const travada = progress.find((p) => p.challenge_id === c.id
+      && Number(p.target_left) <= 0
+      && !p.blown
+      && !Number(p.days_left)
+      && p.consistency_pct != null
+      && Number(p.best_day_pct) > Number(p.consistency_pct));
+
+    if (travada && !fundedPhase.has(c.id)
+        && ["phase1", "phase2"].includes(c.status)) {
+      const firm = firms.find((f) => f.name === c.firm);
+      const tamanho = Number(plans.find((p) => p.id === c.plan_id)?.account_size) || null;
+      const candidatas = freshAccounts.filter((op) => {
+        const lido = parseAccountName(op.name, firm?.account_pattern);
+        return lido?.funded && (!lido.size || !tamanho || lido.size === tamanho);
+      });
+      if (candidatas.length) {
+        items.push({
+          key: `approved:${c.id}`,
+          kind: "activation",
+          id: c.id,
+          options: candidatas,
+          title: `${c.account_ids || "?"} · ${c.firm || "?"}`,
+          ask: "Hit the target, but consistency says no. Did the firm approve it?",
+          why: `Profit is there (${num(travada.pnl, 0)} of `
+            + `${num(travada.profit_target, 0)}), but the best day was `
+            + `${num(travada.best_day_pct, 1)}% and this plan allows `
+            + `${num(travada.consistency_pct, 0)}% — so the collector held it back.`
+            + ` A funded account from ${c.firm} showed up on this PC anyway.`
+            + (ruleConflict(travada.min_trading_days, travada.consistency_pct)
+              ? " And the plan asks for fewer trading days than that consistency"
+                + " allows, which no account can satisfy — worth fixing in"
+                + " Setup → Plans."
+              : "")
+            + " Confirm and it becomes funded, linked to the account you pick.",
+        });
+      }
+    }
+
     // Avaliação aprovada esperando a conta funded. A mesa libera uma conta
     // nova, com outro número, e é essa ligação que ninguém consegue deduzir.
     if (c.status === "passed" && !fundedPhase.has(c.id)) {
@@ -3283,6 +3398,20 @@ async function activateFunded(challengeId, choice) {
       plan_source: challenge.plan_id ? "manual" : null,
     });
     accountId = created.id;
+  }
+
+  // Vindo de uma avaliação que o coletor NÃO conseguiu aprovar -- porque a
+  // regra cadastrada reprovava e a mesa aprovou mesmo assim -- a fase da
+  // avaliação ainda está aberta. Fechar aqui é o que `mark_challenge_passed`
+  // teria feito: sem isso ela fica `active` para sempre e o challenge tem duas
+  // fases vivas ao mesmo tempo.
+  const abertas = await load.phases(challengeId);
+  const avaliacao = abertas.find((p) => p.phase !== "FUNDED" && !p.ended_at);
+  if (avaliacao) {
+    await save.phase(avaliacao.id, {
+      outcome: "passed",
+      ended_at: new Date().toISOString(),
+    });
   }
 
   await save.createPhase({
