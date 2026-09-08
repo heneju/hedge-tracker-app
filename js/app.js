@@ -10,17 +10,17 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=922283020b";
+} from "./db.js?v=6cd269ecc4";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=922283020b";
+} from "./util.js?v=6cd269ecc4";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=922283020b";
-import { cell, locked, wireEditables } from "./editable.js?v=922283020b";
-import { exportChallenges } from "./export.js?v=922283020b";
+} from "./charts.js?v=6cd269ecc4";
+import { cell, locked, wireEditables } from "./editable.js?v=6cd269ecc4";
+import { exportChallenges } from "./export.js?v=6cd269ecc4";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -1454,6 +1454,15 @@ async function renderConfig() {
     return a.kind === "prop" && a.is_active !== false && !st?.in_use;
   });
   const freeDiscovered = discovered.filter((d) => !isDiscoveredClaimed(d));
+  // Planos com regras cadastradas viram atalho: é o que a tela da mesa faz --
+  // escolher produto e tamanho, e o resto vem junto. Digitar alvo, drawdown e
+  // consistência a cada compra foi o que produziu um plano com regra
+  // impossível.
+  const knownPlans = plans
+    .filter((pl) => pl.account_size && pl.profit_target)
+    .sort((a, b) => (a.prop_firms?.name || "").localeCompare(b.prop_firms?.name || "")
+      || String(a.product || "").localeCompare(String(b.product || ""))
+      || Number(a.account_size) - Number(b.account_size));
   const onboardingOptions = [
     ...freeDiscovered.map((d) => ({
       value: `source:${d.id}`,
@@ -1670,6 +1679,26 @@ async function renderConfig() {
           prop firm, model, size, phases, rules, current stage and cost configured
           below. The app creates a separate challenge for each account.
         </p>
+        ${knownPlans.length ? `
+        <div style="margin-bottom:14px">
+          <label style="display:block;margin-bottom:6px">Known plan</label>
+          <div class="row" style="gap:8px;flex-wrap:wrap">
+            ${knownPlans.map((pl) => `
+              <button type="button" class="btn ghost plan-tile" data-plan-tile="${pl.id}"
+                      style="text-align:left;padding:8px 12px">
+                <strong class="bright">${esc(pl.prop_firms?.name || "?")}</strong>
+                ${pl.product ? ` <span class="muted">${esc(pl.product)}</span>` : ""}
+                <span class="bright"> ${money0(pl.account_size)}</span>
+                <div class="sub">${pl.profit_target ? `alvo ${money0(pl.profit_target)}` : ""}${
+                  pl.max_drawdown ? ` · dd ${money0(pl.max_drawdown)}` : ""}${
+                  pl.consistency_pct ? ` · ${num(pl.consistency_pct, 0)}%` : ""}${
+                  pl.price ? ` · ${money0(pl.price)}` : ""}</div>
+              </button>`).join("")}
+          </div>
+          <p class="muted" style="margin:6px 0 0;font-size:11px">
+            Um clique preenche mesa, tamanho, alvo, drawdown, regras, split e custo.
+            Dá para ajustar tudo depois.</p>
+        </div>` : ""}
         <div class="row">
           <div class="field wide"><label>Accounts *</label>
             <button class="btn ghost" id="onboard-open-accounts" type="button"
@@ -1894,6 +1923,60 @@ async function renderConfig() {
   const onboardFirm = document.getElementById("onboard-firm");
   const onboardButton = document.getElementById("register-prop");
   const selectedOnboardingValues = new Set();
+
+  // Um clique traz o plano inteiro. Cada campo continua editável: a mesa muda
+  // preço e regra sem avisar, e o cadastro não pode virar refém do catálogo.
+  view.querySelectorAll("[data-plan-tile]").forEach((tile) => {
+    tile.onclick = () => {
+      const pl = knownPlans.find((p) => p.id === Number(tile.dataset.planTile));
+      if (!pl) return;
+      const set = (id, value) => {
+        const el = document.getElementById(id);
+        if (el && value != null && value !== "") el.value = value;
+      };
+      set("onboard-firm", pl.prop_firms?.name || "");
+      set("onboard-model", pl.name || "");
+      set("onboard-size", pl.account_size);
+      set("onboard-phases", pl.eval_phases || 1);
+      set("onboard-target-p1", pl.profit_target);
+      set("onboard-target-p2", pl.profit_target_p2);
+      set("onboard-drawdown", pl.max_drawdown);
+      set("onboard-dd-type", pl.drawdown_type || "eod");
+      set("onboard-daily-loss", pl.daily_loss_limit);
+      set("onboard-min-days", pl.min_trading_days);
+      set("onboard-consistency", pl.consistency_pct);
+      set("onboard-consistency-addon", pl.consistency_addon_pct);
+      set("onboard-split", pl.profit_split);
+      set("onboard-buffer-mult", pl.buffer_multiplier);
+      set("onboard-buffer-cash", pl.buffer_cash);
+      set("onboard-cost", pl.price);
+
+      // O add-on tem preço próprio: somar no custo só quando marcado, e mostrar
+      // quanto custa na própria etiqueta, como a mesa mostra.
+      const addon = document.getElementById("onboard-addon");
+      const custo = document.getElementById("onboard-cost");
+      if (addon) {
+        addon.onchange = () => {
+          const base = Number(pl.price) || 0;
+          const extra = Number(pl.consistency_addon_price) || 0;
+          if (base && custo) custo.value = addon.checked ? base + extra : base;
+        };
+        addon.disabled = pl.consistency_addon_pct == null;
+        const etiqueta = addon.parentElement?.querySelector("span");
+        if (etiqueta) {
+          etiqueta.textContent = pl.consistency_addon_pct == null
+            ? "esta mesa não oferece"
+            : `${num(pl.consistency_addon_pct, 0)}% · ${
+                daysForConsistency(pl.consistency_addon_pct)} dias${
+                pl.consistency_addon_price ? ` · +${money0(pl.consistency_addon_price)}` : ""}`;
+        }
+      }
+
+      view.querySelectorAll("[data-plan-tile]").forEach((t) => t.classList.remove("active"));
+      tile.classList.add("active");
+      toast(`${pl.prop_firms?.name || "?"} ${money0(pl.account_size)} carregado`);
+    };
+  });
 
   const resolveOnboardingAccount = (value) => {
     const [kind, rawId] = (value || "").split(":");
