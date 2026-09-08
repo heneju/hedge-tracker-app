@@ -5,7 +5,7 @@
 // fica so no coletor, no PC.
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { CONFIG } from "./config.js?v=010adec534";
+import { CONFIG } from "./config.js?v=1854b0589b";
 
 export const supabase = createClient(CONFIG.url, CONFIG.anonKey);
 
@@ -92,6 +92,12 @@ export const load = {
 
   phasesOfPassed: () =>
     supabase.from("challenge_phases").select("challenge_id, phase").then(unwrap),
+
+  // Como cada produto da mesa paga. Catálogo: existe antes de qualquer conta,
+  // e a conta funded aponta para a linha escolhida.
+  payoutPolicies: () =>
+    supabase.from("payout_policies").select("*")
+      .order("account_size").order("policy").then(unwrap),
 
   phases: (challengeId) =>
     supabase.from("challenge_phases")

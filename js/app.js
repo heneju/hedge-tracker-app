@@ -10,17 +10,17 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=010adec534";
+} from "./db.js?v=1854b0589b";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=010adec534";
+} from "./util.js?v=1854b0589b";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=010adec534";
-import { cell, locked, wireEditables } from "./editable.js?v=010adec534";
-import { exportChallenges } from "./export.js?v=010adec534";
+} from "./charts.js?v=1854b0589b";
+import { cell, locked, wireEditables } from "./editable.js?v=1854b0589b";
+import { exportChallenges } from "./export.js?v=1854b0589b";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -472,10 +472,11 @@ async function renderOverview() {
   const cost = sum("cost");
   const payouts = sum("funded_payout");
   // Avaliação é só visualização: dinheiro simulado, que não conta em lugar
-  // nenhum. Funded é diferente -- vira payout -- e o que ainda não foi sacado
-  // já entra no Total.
+  // nenhum. Funded é diferente -- vira payout -- mas só a parte SACÁVEL entra
+  // no Total: o buffer fica preso na conta e some junto se ela estourar.
   const evalProp = sum("eval_prop");
-  const pending = sum("funded_pending");
+  const pending = sum("funded_withdrawable");
+  const locked = sum("funded_locked");
   const withProp = journal.filter((c) => Number(c.prop_trades) > 0).length;
   const open = journal.filter((c) => ["phase1", "phase2", "passed", "funded"].includes(c.status));
 
@@ -562,7 +563,9 @@ async function renderOverview() {
       ${hero}
       ${kpi("Without hedge", money0(noHedge), signClass(noHedge), "costs + payouts")}
       ${kpi("Hedge result", money0(hedge), signClass(hedge), "the three live columns")}
-      ${kpi("Funded pending", money0(pending), signClass(pending), "not withdrawn · in Total")}
+      ${kpi("Withdrawable", money0(pending), signClass(pending),
+        locked ? `in Total · ${money0(locked)} locked out of it`
+               : "what you can request · in Total")}
     </section>
 
     <section class="cards ledger">
@@ -636,7 +639,7 @@ async function renderChallenges() {
 
   const totals = ["cost", "funded_payout", "p1_live", "p2_live", "funded_live",
     "lost_hedging", "total_pnl", "eval_prop", "funded_prop",
-    "funded_pending"].reduce((acc, f) => {
+    "funded_pending", "funded_withdrawable", "funded_locked"].reduce((acc, f) => {
       acc[f] = rows.reduce((a, c) => a + Number(c[f] || 0), 0);
       return acc;
     }, {});
@@ -721,9 +724,19 @@ async function renderChallenges() {
       ${cashCell(c, "payout", c.funded_payout, c.payout_entries)}
       <td class="num" title="${c.split_pct == null
         ? "sem split cadastrado — contando 100% do lucro funded"
-        : `${num(c.split_pct, 0)}% do lucro funded, menos o que já foi pago`}">${
+        : c.payout_policy
+          ? `${esc(c.payout_policy_label || c.payout_policy)}: dá para pedir `
+            + `${money0(c.funded_withdrawable)} hoje. `
+            + `${Number(c.funded_locked) ? `${money0(c.funded_locked)} preso na conta `
+              + `pelo buffer — se ela estourar, some, então fica fora do Total.` : ""}`
+          : "sem política de saque escolhida — contando o lucro inteiro como "
+            + "sacável, que é o comportamento antigo"}">${
         Number(c.funded_pending)
-          ? `${cash(c.funded_pending)}${c.split_pct == null ? " ⚠" : ""}`
+          ? `${cash(c.funded_withdrawable)}${
+              Number(c.funded_locked)
+                ? `<div class="sub">+${money0(c.funded_locked)} preso</div>` : ""}${
+              c.split_pct == null ? " ⚠" : ""}${
+              !c.payout_policy && Number(c.funded_pending) ? " ⚠" : ""}`
           : `<span class="dim">—</span>`}</td>
       <td class="num">${cash(c.lost_hedging)}</td>
       <td class="num"><strong>${cash(c.total_pnl)}</strong></td>
@@ -762,7 +775,7 @@ async function renderChallenges() {
             <th class="num">Prop eval</th><th class="num">Prop funded</th>
             <th class="num">Cost</th><th class="num">Phase 1 live</th>
             ${p2(`<th class="num">Phase 2 live</th>`)}<th class="num">Funded live</th>
-            <th class="num">Payout</th><th class="num">Pending</th>
+            <th class="num">Payout</th><th class="num" title="o que dá para pedir hoje; o preso pelo buffer fica fora do Total">Withdrawable</th>
             <th class="num">Hedge</th>
             <th class="num">Total</th><th>Notes</th><th class="num">Trades</th>
           </tr></thead>
@@ -776,7 +789,9 @@ async function renderChallenges() {
             ${p2(`<td class="num">${cash(totals.p2_live)}</td>`)}
             <td class="num">${cash(totals.funded_live)}</td>
             <td class="num">${cash(totals.funded_payout)}</td>
-            <td class="num">${cash(totals.funded_pending)}</td>
+            <td class="num">${cash(totals.funded_withdrawable)}${
+              totals.funded_locked
+                ? `<div class="sub">+${money0(totals.funded_locked)} preso</div>` : ""}</td>
             <td class="num">${cash(totals.lost_hedging)}</td>
             <td class="num">${cash(totals.total_pnl)}</td>
             <td></td><td></td>
@@ -986,7 +1001,9 @@ async function openChallenge(id, journal, firms) {
           <div class="value ${c.prop_trades ? signClass(c.prop_pnl) : "muted"}">${
             c.prop_trades ? money(c.prop_pnl) : "—"}</div>
           <div class="sub">${Number(c.funded_pending)
-            ? `${money(c.funded_pending)} pending` : "not counted"}</div></div>
+            ? `${money(c.funded_withdrawable)} withdrawable${
+                Number(c.funded_locked) ? ` · ${money0(c.funded_locked)} locked` : ""}`
+            : "not counted"}</div></div>
       </div>
 
       <div class="panel"><h2>Phases</h2><div class="scroll"><table>
@@ -1558,6 +1575,14 @@ async function renderConfig() {
         format: () => `<span class="muted">${esc(pl.prop_firms?.name || "—")}</span>` })}
       ${cell(pl.name, { id: pl.id, field: "plan:name", type: "text",
         format: () => esc(pl.name || "—") })}
+      ${cell(pl.product, { id: pl.id, field: "plan:product", type: "select",
+        options: PRODUCTS,
+        title: "linha de produto da mesa. É ela que decide quais políticas de"
+             + " saque a conta funded pode escolher — o nome do modelo é texto"
+             + " livre e não serve para isso.",
+        format: () => (pl.product
+          ? `<span class="muted">${esc(pl.product)}</span>`
+          : `<span class="dim">—</span>`) })}
       ${cell(pl.account_size, { id: pl.id, field: "plan:account_size", type: "number", align: true,
         format: () => `<strong class="bright">${money0(pl.account_size)}</strong>` })}
       ${cell(pl.profit_target, { id: pl.id, field: "plan:profit_target", type: "number", align: true,
@@ -1761,7 +1786,9 @@ async function renderConfig() {
         </p>
       </div>
       <div class="scroll"><table>
-        <thead><tr><th>Firm</th><th>Model</th><th class="num">Size</th>
+        <thead><tr><th>Firm</th><th>Model</th>
+          <th title="decide as políticas de saque disponíveis">Product</th>
+          <th class="num">Size</th>
           <th class="num">Target</th><th class="num">Target P2</th>
           <th class="num">Drawdown</th><th>DD type</th><th class="num">Daily loss</th>
           <th class="num">Min days</th><th class="num">Consist.</th><th class="num">Split</th>
@@ -2343,7 +2370,7 @@ async function saveSetupField(field, id, raw, accounts, plans = []) {
     }
 
     if (table === "plan") {
-      const patch = column === "drawdown_type" || column === "name" || column === "notes"
+      const patch = ["drawdown_type", "name", "notes", "product"].includes(column)
         ? { [column]: value } : { [column]: number() };
       const salvo = await save.plan(rowId, patch);
       // Depois de gravar, não antes: quem está corrigindo as duas regras passa
@@ -3160,6 +3187,17 @@ const PENDING_SEEN = "tracking:pending-seen";
 // cadastra a mesa como NT8 e o app aceita as duas grafias.
 const FUTURES = new Set(["NT8", "Tradovate"]);
 
+// Linha de produto da mesa. As regras de saque são DELA, não do texto que
+// alguém digitou em `name` -- na base real havia um plano Select chamado
+// "FLEX" e outro "1 Step". Lista curta de propósito: é chave de catálogo.
+const PRODUCTS = [
+  { value: "", label: "—" },
+  { value: "select", label: "select" },
+  { value: "growth", label: "growth" },
+  { value: "lightning", label: "lightning" },
+  { value: "other", label: "other" },
+];
+
 /**
  * Levanta o que só o usuário pode responder.
  *
@@ -3167,9 +3205,22 @@ const FUTURES = new Set(["NT8", "Tradovate"]);
  * e sem ele o multiplicador do hedge sai menor do que devia" diz.
  */
 async function loadPending() {
-  const [journal, progress, accounts, plans, discovered, phases, firms] = await Promise.all([
-    load.journal(), load.progress(), load.accounts(), load.plans(),
-    load.discovered(), load.phasesOfPassed(), load.firms()]);
+  const [journal, progress, accounts, plans, discovered, phases, firms, policies] =
+    await Promise.all([
+      load.journal(), load.progress(), load.accounts(), load.plans(),
+      load.discovered(), load.phasesOfPassed(), load.firms(),
+      load.payoutPolicies().catch(() => [])]);
+
+  // As políticas do plano daquele challenge: mesma mesa, mesmo produto, mesmo
+  // tamanho. Sem `product` no plano não há como saber quais valem -- e chutar
+  // ligaria regra de saque errada numa conta com dinheiro.
+  const policiesFor = (challenge) => {
+    const plano = plans.find((p) => p.id === challenge.plan_id);
+    if (!plano?.product) return [];
+    return policies.filter((pp) => pp.firm_id === plano.firm_id
+      && pp.product === plano.product
+      && Number(pp.account_size) === Number(plano.account_size));
+  };
 
   const items = [];
   // Mesa sem padrao de nome nao consegue ligar a conta funded sozinha -- e a
@@ -3229,6 +3280,7 @@ async function loadPending() {
           kind: "activation",
           id: c.id,
           options: candidatas,
+          policies: policiesFor(c),
           title: `${c.account_ids || "?"} · ${c.firm || "?"}`,
           ask: "Hit the target, but consistency says no. Did the firm approve it?",
           why: `Profit is there (${num(travada.pnl, 0)} of `
@@ -3254,6 +3306,7 @@ async function loadPending() {
         kind: "activation",
         id: c.id,
         options: freshAccounts,
+        policies: policiesFor(c),
         title: `${c.account_ids || "?"} · ${c.firm || "?"}`,
         ask: "Passed. Which account did the firm activate?",
         why: !freshAccounts.length
@@ -3374,7 +3427,7 @@ async function checkPending() {
  * começando agora deixaria essas trades órfãs, e órfã não entra em total
  * nenhum -- é o buraco silencioso que este tracker existe para não ter.
  */
-async function activateFunded(challengeId, choice) {
+async function activateFunded(challengeId, choice, payoutPolicyId = null) {
   const [kind, rawId] = choice.split(":");
   const id = Number(rawId);
   let accountId = id;
@@ -3396,8 +3449,12 @@ async function activateFunded(challengeId, choice) {
       // avaliação seguia, e sem plano ela não teria drawdown para medir.
       plan_id: challenge.plan_id ?? null,
       plan_source: challenge.plan_id ? "manual" : null,
+      payout_policy_id: payoutPolicyId,
     });
     accountId = created.id;
+  } else if (payoutPolicyId) {
+    // Conta que já existia: a política é a única coisa nova que ela ganha aqui.
+    await save.account(accountId, { payout_policy_id: payoutPolicyId });
   }
 
   // Vindo de uma avaliação que o coletor NÃO conseguiu aprovar -- porque a
@@ -3465,6 +3522,11 @@ function openPendingForm(items, plans, accounts, signature) {
     }
     if (item.kind === "activation") {
       if (!item.options.length) return "";
+      // A política de saque é escolha PERMANENTE da conta, feita neste
+      // momento -- é o que a mesa pede ao ativar. E é ela que diz quanto do
+      // lucro pode sair: sem ela o painel volta a contar dinheiro travado
+      // como se fosse sacável.
+      const politicas = item.policies || [];
       return `<div class="row" style="margin-top:8px">
         <div class="field wide"><label>Funded account</label>
           <select data-pending-activation="${item.id}">
@@ -3472,6 +3534,14 @@ function openPendingForm(items, plans, accounts, signature) {
             ${item.options.map((o) => `<option value="${esc(o.value)}">${
               esc(o.label)}</option>`).join("")}
           </select></div>
+        ${politicas.length ? `<div class="field wide">
+          <label>Payout policy · permanent</label>
+          <select data-pending-policy="${item.id}">
+            <option value="">— how it pays —</option>
+            ${politicas.map((p) => `<option value="${p.id}" title="${esc(p.notes || "")}">${
+              esc(`${p.label} · ${p.buffer > 0 ? `buffer ${money0(p.buffer)}` : "sem buffer"}`
+                  + `${p.cap ? ` · teto ${money0(p.cap)}` : ""}`)}</option>`).join("")}
+          </select></div>` : ""}
         <div class="field auto"><label>&nbsp;</label>
           <button class="btn" data-save-activation="${item.id}">Activate</button></div>
       </div>`;
@@ -3569,7 +3639,12 @@ function openPendingForm(items, plans, accounts, signature) {
       const id = Number(b.dataset.saveActivation);
       const select = modal.querySelector(`[data-pending-activation="${id}"]`);
       if (!select.value) return toast("Pick the account");
-      await guard(() => activateFunded(id, select.value), "Funded");
+      // Só cobra a política quando há alguma cadastrada: mesa sem catálogo não
+      // pode travar a ativação, que é o passo que realmente importa.
+      const policy = modal.querySelector(`[data-pending-policy="${id}"]`);
+      if (policy && !policy.value) return toast("Pick the payout policy — it is permanent");
+      await guard(() => activateFunded(id, select.value,
+        policy ? Number(policy.value) : null), "Funded");
       finishPending();
     };
   });
