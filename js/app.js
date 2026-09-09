@@ -10,17 +10,18 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=043ee55f08";
+} from "./db.js?v=d874715244";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=043ee55f08";
+} from "./util.js?v=d874715244";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=043ee55f08";
-import { cell, locked, wireEditables } from "./editable.js?v=043ee55f08";
-import { exportChallenges } from "./export.js?v=043ee55f08";
+} from "./charts.js?v=d874715244";
+import { cell, locked, wireEditables } from "./editable.js?v=d874715244";
+import { exportChallenges } from "./export.js?v=d874715244";
+import { nextLiveLot } from "./next-lot.js?v=d874715244";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -630,7 +631,12 @@ async function renderOverview() {
 // --------------------------------------------------------------- challenges
 
 async function renderChallenges() {
-  const [journal, firms] = await Promise.all([load.journal(), load.firms()]);
+  const [journal, firms, progress] = await Promise.all([load.journal(), load.firms(), load.progress()]);
+  for (const challenge of journal) {
+    const next = nextLiveLot(challenge, progress);
+    challenge.next_live_lot = next.lot;
+    challenge.next_live_lot_reason = next.reason;
+  }
   setTotals(journal);
 
   const months = [...new Set(journal.filter((c) => c.date_open)
@@ -722,9 +728,7 @@ async function renderChallenges() {
         format: () => `${badge(c.status, statusLabel(c.status, c.eval_phases))}${
           c.drawdown_blown && c.status !== "failed"
             ? ` <span class="badge failed">blown</span>` : ""}` })}
-      ${cell(c.multipliers, { id: c.id, field: "multipliers", type: "text", align: true,
-                              format: () => `<span class="muted">${esc(c.multipliers || "—")}</span>`,
-                              title: "multiplier per phase, separated by /" })}
+      <td class="num" title="${esc(c.next_live_lot_reason)}">${c.next_live_lot == null ? "—" : num(c.next_live_lot, 2)}</td>
       ${propCell(c, c.eval_prop)}
       ${propCell(c, c.funded_prop)}
       ${cashCell(c, "cost", c.cost, c.cost_entries)}
@@ -782,7 +786,7 @@ async function renderChallenges() {
         <table class="dt n">
           <thead><tr>
             <th>Acct</th><th>Firm</th><th>Platform</th><th>Opened</th><th>Status</th>
-            <th class="num">Mult.</th>
+            <th class="num" title="Live lot for the next operation, using the last contract quantity">Next lot</th>
             <th class="num">Prop eval</th><th class="num">Prop funded</th>
             <th class="num">Cost</th><th class="num">Phase 1 live</th>
             ${p2(`<th class="num">Phase 2 live</th>`)}<th class="num">Funded live</th>

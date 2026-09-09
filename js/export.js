@@ -12,7 +12,7 @@
 // dele, e os formatos numéricos usados aqui são os que o Sheets importa sem
 // reinterpretar.
 
-import { monthLabel } from "./util.js?v=043ee55f08";
+import { monthLabel } from "./util.js?v=d874715244";
 
 const EXCELJS = "https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js";
 
@@ -57,7 +57,7 @@ function columns(showP2) {
     { key: "platform", header: "Platform", width: 14 },
     { key: "opened", header: "Opened", width: 13, fmt: "yyyy-mm-dd" },
     { key: "status", header: "Status", width: 24 },
-    { key: "mult", header: "Mult.", width: 11, fmt: "0.000" },
+    { key: "mult", header: "Next lot", width: 11, fmt: "0.00" },
     { key: "eval_prop", header: "Prop eval", width: 15, fmt: MONEY, sign: true },
     { key: "funded_prop", header: "Prop funded", width: 17, fmt: MONEY, sign: true },
     { key: "cost", header: "Cost", width: 13, fmt: MONEY, sign: true },
@@ -162,7 +162,7 @@ export async function exportChallenges(rows, { filters = {}, statusLabel, showP2
       platform: r.platform || "—",
       opened: asDate(r.date_open),
       status: statusLabel(r.status, r.eval_phases),
-      mult: num(r.multipliers && !String(r.multipliers).includes("/") ? r.multipliers : null),
+      mult: r.next_live_lot == null ? null : num(r.next_live_lot),
       eval_prop: r.prop_trades ? num(r.eval_prop) : null,
       funded_prop: r.prop_trades ? num(r.funded_prop) : null,
       cost: num(r.cost),
