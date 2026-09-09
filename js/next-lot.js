@@ -4,6 +4,18 @@ export function nextLiveLot(challenge, progress) {
   if (!phase || challenge.drawdown_blown) return { lot: null, reason: "No next operation" };
   const account = progress.find((a) => Number(a.challenge_id) === Number(challenge.id) && a.phase === phase);
   if (!account || account.blown) return { lot: null, reason: "No active account for this phase" };
+  if (phase !== "FUNDED") {
+    const cost = Number(account.spent);
+    const drawdown = Number(account.drawdown_total);
+    if (account.spent == null || !Number.isFinite(cost) || cost < 0
+        || !Number.isFinite(drawdown) || drawdown <= 0) {
+      return { lot: null, reason: "Recovery cost or drawdown unavailable" };
+    }
+    return {
+      lot: Math.round(cost / drawdown * 100) / 100,
+      reason: `Evaluation: total cost to recover ${cost.toFixed(2)} / drawdown ${drawdown.toFixed(2)}. No extra buffer or contract scaling.`,
+    };
+  }
   const contracts = Number(account.last_contracts);
   if (!(contracts > 0)) return { lot: null, reason: "Contract quantity unavailable" };
   const bufferedDaily = phase === "FUNDED"

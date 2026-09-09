@@ -10,18 +10,18 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=d874715244";
+} from "./db.js?v=5e377a31bd";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=d874715244";
+} from "./util.js?v=5e377a31bd";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=d874715244";
-import { cell, locked, wireEditables } from "./editable.js?v=d874715244";
-import { exportChallenges } from "./export.js?v=d874715244";
-import { nextLiveLot } from "./next-lot.js?v=d874715244";
+} from "./charts.js?v=5e377a31bd";
+import { cell, locked, wireEditables } from "./editable.js?v=5e377a31bd";
+import { exportChallenges } from "./export.js?v=5e377a31bd";
+import { nextLiveLot } from "./next-lot.js?v=5e377a31bd";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -786,7 +786,7 @@ async function renderChallenges() {
         <table class="dt n">
           <thead><tr>
             <th>Acct</th><th>Firm</th><th>Platform</th><th>Opened</th><th>Status</th>
-            <th class="num" title="Live lot for the next operation, using the last contract quantity">Next lot</th>
+            <th class="num" title="Live lot for the next operation. Evaluation: total recovery cost / drawdown.">Next lot</th>
             <th class="num">Prop eval</th><th class="num">Prop funded</th>
             <th class="num">Cost</th><th class="num">Phase 1 live</th>
             ${p2(`<th class="num">Phase 2 live</th>`)}<th class="num">Funded live</th>
