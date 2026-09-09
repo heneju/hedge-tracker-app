@@ -10,17 +10,17 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=0042ad3005";
+} from "./db.js?v=06ce1b1d6a";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=0042ad3005";
+} from "./util.js?v=06ce1b1d6a";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=0042ad3005";
-import { cell, locked, wireEditables } from "./editable.js?v=0042ad3005";
-import { exportChallenges } from "./export.js?v=0042ad3005";
+} from "./charts.js?v=06ce1b1d6a";
+import { cell, locked, wireEditables } from "./editable.js?v=06ce1b1d6a";
+import { exportChallenges } from "./export.js?v=06ce1b1d6a";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -798,9 +798,10 @@ async function renderChallenges() {
             ${p2(`<td class="num">${cash(totals.p2_live)}</td>`)}
             <td class="num">${cash(totals.funded_live)}</td>
             <td class="num">${cash(totals.funded_payout)}</td>
-            <td class="num">${cash(totals.funded_withdrawable)}${
-              totals.funded_locked
-                ? `<div class="sub">+${money0(totals.funded_locked)} buffer</div>` : ""}</td>
+            <!-- O buffer fica so na linha da conta. Somado no rodape ele
+                 sugeria um agregado sacavel, e ele nao sai nunca: fica no
+                 saldo enquanto a conta viver e vai junto se ela estourar. -->
+            <td class="num">${cash(totals.funded_withdrawable)}</td>
             <td class="num">${cash(totals.lost_hedging)}</td>
             <td class="num">${cash(totals.total_pnl)}</td>
             <td></td><td></td>
