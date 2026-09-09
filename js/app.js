@@ -10,17 +10,17 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=06ce1b1d6a";
+} from "./db.js?v=043ee55f08";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=06ce1b1d6a";
+} from "./util.js?v=043ee55f08";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=06ce1b1d6a";
-import { cell, locked, wireEditables } from "./editable.js?v=06ce1b1d6a";
-import { exportChallenges } from "./export.js?v=06ce1b1d6a";
+} from "./charts.js?v=043ee55f08";
+import { cell, locked, wireEditables } from "./editable.js?v=043ee55f08";
+import { exportChallenges } from "./export.js?v=043ee55f08";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -696,7 +696,9 @@ async function renderChallenges() {
     : cell(value, { id: c.id, field, type: "number", align: true,
                     format: () => cash(value), title: "importado — clique para corrigir" });
 
-  const cashCell = (c, field, value, entries) => entries > 1
+  const cashCell = (c, field, value, entries) => field === "payout"
+    ? `<td class="num"><button class="btn ghost" title="Open challenge to record payout">${cash(value)} ✎</button></td>`
+    : entries > 1
     ? locked(cash(value), `${entries} lançamentos — abra a linha para editar`)
     : cell(value, { id: c.id, field, type: "number", align: true,
                     format: () => cash(value) });
@@ -981,8 +983,10 @@ async function openChallenge(id, journal, firms) {
       <td>${day(e.occurred_on)}</td>
       <td>${esc({ cost: "Cost", payout: "Payout", refund: "Refund" }[e.kind] || e.kind)}</td>
       <td class="num">${cash(e.amount)}</td>
+      <td class="num">${e.kind === "payout" && e.gross_amount != null ? cash(e.gross_amount) : "—"}</td>
+      <td class="num">${e.kind === "payout" ? cash(e.redeposit_amount || 0) : "—"}</td>
       <td class="muted">${esc(e.source)}</td>
-      <td><button class="btn ghost" data-del-cash="${e.id}">Remove</button></td>
+      <td>${e.kind === "payout" ? `<button class="btn ghost" data-edit-payout="${e.id}">Edit</button>` : ""}<button class="btn ghost" data-del-cash="${e.id}">Remove</button></td>
     </tr>`).join("");
 
   modal.innerHTML = `
@@ -1022,12 +1026,24 @@ async function openChallenge(id, journal, firms) {
       </table></div></div>
 
       <div class="panel"><h2>Costs &amp; payouts</h2><div class="scroll"><table>
-        <thead><tr><th>Date</th><th>Kind</th><th class="num">Amount</th><th>Source</th><th></th></tr></thead>
-        <tbody>${cashRows || `<tr><td colspan="5">${empty("nothing recorded")}</td></tr>`}</tbody>
+        <thead><tr><th>Date</th><th>Kind</th><th class="num">Net / amount</th><th class="num">Gross payout</th><th class="num">Plexy redeposit</th><th>Source</th><th></th></tr></thead>
+        <tbody>${cashRows || `<tr><td colspan="7">${empty("nothing recorded")}</td></tr>`}</tbody>
       </table></div>
+      <form id="payout-form" class="panel-body">
+        <h3>Record received payout</h3>
+        <div class="row">
+          <div class="field"><label for="payout-net">Net received ($)</label><input id="payout-net" type="number" min="0.01" step="0.01" required></div>
+          <div class="field"><label for="payout-gross">Gross withdrawn ($)</label><input id="payout-gross" type="number" min="0.01" step="0.01" required></div>
+          <div class="field"><label for="payout-redeposit">Redeposited to Plexy ($)</label><input id="payout-redeposit" type="number" min="0" step="0.01" value="0" required></div>
+          <div class="field"><label for="payout-date">Received on</label><input id="payout-date" type="date" required value="${new Date().toISOString().slice(0, 10)}"></div>
+          <div class="field auto"><label>&nbsp;</label><button class="btn" type="submit" id="save-payout">Save payout</button></div>
+          <button class="btn ghost" type="button" id="cancel-payout" hidden>Cancel edit</button>
+        </div>
+        <p class="muted" id="payout-help">Gross is suggested from the profit split; check the amount debited by the firm. Redeposit is a transfer, not additional profit. Plexy balance comes from the collector.</p>
+      </form>
       <div class="panel-body row">
         <div class="field"><label>Kind</label><select id="cash-kind">
-          <option value="cost">Cost</option><option value="payout">Payout</option>
+          <option value="cost">Cost</option>
           <option value="refund">Refund</option></select></div>
         <div class="field"><label>Amount</label><input id="cash-amount" type="number" step="0.01" placeholder="-99.00"></div>
         <div class="field"><label>Date</label><input id="cash-date" type="date" value="${new Date().toISOString().slice(0, 10)}"></div>
@@ -1050,6 +1066,69 @@ async function openChallenge(id, journal, firms) {
     </div>`;
 
   modal.showModal();
+  const payoutForm = modal.querySelector("#payout-form");
+  const payoutNet = modal.querySelector("#payout-net");
+  const payoutGross = modal.querySelector("#payout-gross");
+  const payoutRedeposit = modal.querySelector("#payout-redeposit");
+  const payoutDate = modal.querySelector("#payout-date");
+  const payoutButton = modal.querySelector("#save-payout");
+  const payoutCancel = modal.querySelector("#cancel-payout");
+  let payoutId = null;
+  let grossEdited = false;
+  let payoutRequestId = crypto.randomUUID();
+  payoutGross.oninput = () => { grossEdited = true; };
+  payoutNet.oninput = () => {
+    if (!grossEdited && Number(c.split_pct) > 0) {
+      payoutGross.value = payoutNet.value ? (Number(payoutNet.value) * 100 / Number(c.split_pct)).toFixed(2) : "";
+    }
+  };
+  payoutCancel.onclick = () => {
+    payoutForm.reset();
+    payoutId = null;
+    grossEdited = false;
+    payoutRequestId = crypto.randomUUID();
+    payoutButton.textContent = "Save payout";
+    payoutCancel.hidden = true;
+  };
+  modal.querySelectorAll("[data-edit-payout]").forEach((button) => {
+    button.onclick = () => {
+      const event = cashEvents.find((entry) => String(entry.id) === button.dataset.editPayout);
+      payoutId = event.id;
+      payoutNet.value = event.amount;
+      payoutGross.value = event.gross_amount ?? "";
+      grossEdited = event.gross_amount != null;
+      if (!grossEdited) payoutNet.oninput();
+      payoutRedeposit.value = event.redeposit_amount || 0;
+      payoutDate.value = event.occurred_on;
+      payoutButton.textContent = "Update payout";
+      payoutCancel.hidden = false;
+      payoutNet.focus();
+    };
+  });
+  payoutForm.onsubmit = async (event) => {
+    event.preventDefault();
+    if (payoutButton.disabled || !payoutForm.reportValidity()) return;
+    const amount = Number(payoutNet.value);
+    const gross = Number(payoutGross.value);
+    const redeposit = Number(payoutRedeposit.value);
+    if (![amount, gross, redeposit].every(Number.isFinite) || amount <= 0 || gross < amount || redeposit < 0 || redeposit > amount) {
+      return toast("Gross must cover net received. Redeposit must be between zero and net received.");
+    }
+    payoutButton.disabled = true;
+    try {
+      const row = { challenge_id: id, kind: "payout", amount, gross_amount: gross,
+        redeposit_amount: redeposit, occurred_on: payoutDate.value, source: "manual" };
+      if (payoutId) await save.updateCashEvent(payoutId, row);
+      else await save.createCashEvent({ ...row, request_id: payoutRequestId });
+      toast("Payout saved");
+      modal.close();
+      await renderChallenges();
+    } catch (err) {
+      toast(err.code === "23505" ? "This payout was already saved. Reopen the challenge to check it." : `Error: ${err.message}`);
+    } finally {
+      payoutButton.disabled = false;
+    }
+  };
   modal.querySelector("#close-modal").onclick = () => modal.close();
   modal.querySelector("#edit-challenge").onclick = () => {
     modal.close();
