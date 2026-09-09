@@ -10,17 +10,17 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=6cd269ecc4";
+} from "./db.js?v=0042ad3005";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=6cd269ecc4";
+} from "./util.js?v=0042ad3005";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=6cd269ecc4";
-import { cell, locked, wireEditables } from "./editable.js?v=6cd269ecc4";
-import { exportChallenges } from "./export.js?v=6cd269ecc4";
+} from "./charts.js?v=0042ad3005";
+import { cell, locked, wireEditables } from "./editable.js?v=0042ad3005";
+import { exportChallenges } from "./export.js?v=0042ad3005";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -121,9 +121,9 @@ function effectiveMinDays(minDays, consistencyPct) {
 function daysNote(minDays, consistencyPct) {
   const efetivo = effectiveMinDays(minDays, consistencyPct);
   if (!efetivo || efetivo <= (Number(minDays) || 0)) return "";
-  return `${num(consistencyPct, 0)}% de consistência exige ${efetivo} dias`
-       + ` operados — com menos, o melhor dia passa do teto por divisão.`
-       + ` Este plano pede ${Number(minDays) || 0}, então valem ${efetivo}.`;
+  return `${num(consistencyPct, 0)}% consistency needs at least ${efetivo}`
+       + ` trading days — with fewer, the best day passes the cap by division.`
+       + ` This plan asks for ${Number(minDays) || 0}, so ${efetivo} apply.`;
 }
 
 /**
@@ -692,7 +692,7 @@ async function renderChallenges() {
   // mesmo. As linhas importadas da planilha nao tem trade, entao continuam
   // abertas para correcao.
   const liveCell = (c, field, value, trades) => trades > 0
-    ? locked(cash(value), `${trades} trade(s) pareada(s) — valor medido, não editável`)
+    ? locked(cash(value), `${trades} paired trade(s) — measured, not editable`)
     : cell(value, { id: c.id, field, type: "number", align: true,
                     format: () => cash(value), title: "importado — clique para corrigir" });
 
@@ -722,7 +722,7 @@ async function renderChallenges() {
             ? ` <span class="badge failed">blown</span>` : ""}` })}
       ${cell(c.multipliers, { id: c.id, field: "multipliers", type: "text", align: true,
                               format: () => `<span class="muted">${esc(c.multipliers || "—")}</span>`,
-                              title: "multiplicador por fase, separado por /" })}
+                              title: "multiplier per phase, separated by /" })}
       ${propCell(c, c.eval_prop)}
       ${propCell(c, c.funded_prop)}
       ${cashCell(c, "cost", c.cost, c.cost_entries)}
@@ -731,18 +731,19 @@ async function renderChallenges() {
       ${liveCell(c, "import_funded_live", c.funded_live, c.funded_trades)}
       ${cashCell(c, "payout", c.funded_payout, c.payout_entries)}
       <td class="num" title="${c.split_pct == null
-        ? "sem split cadastrado — contando 100% do lucro funded"
+        ? "no split set — counting 100% of the funded profit"
         : c.payout_policy
-          ? `${esc(c.payout_policy_label || c.payout_policy)}: dá para pedir `
-            + `${money0(c.funded_withdrawable)} hoje. `
-            + `${Number(c.funded_locked) ? `${money0(c.funded_locked)} preso na conta `
-              + `pelo buffer — se ela estourar, some, então fica fora do Total.` : ""}`
-          : "sem política de saque escolhida — contando o lucro inteiro como "
-            + "sacável, que é o comportamento antigo"}">${
+          ? `${esc(c.payout_policy_label || c.payout_policy)}: ${money0(c.funded_withdrawable)} `
+            + `can be requested today. `
+            + `${Number(c.funded_locked) ? `${money0(c.funded_locked)} must stay in the `
+              + `account as buffer — it goes if the account breaches, so it is not `
+              + `counted in Total.` : ""}`
+          : "no payout policy picked — counting the whole profit as withdrawable, "
+            + "which is the old behaviour"}">${
         Number(c.funded_pending)
           ? `${cash(c.funded_withdrawable)}${
               Number(c.funded_locked)
-                ? `<div class="sub">+${money0(c.funded_locked)} preso</div>` : ""}${
+                ? `<div class="sub">+${money0(c.funded_locked)} buffer</div>` : ""}${
               c.split_pct == null ? " ⚠" : ""}${
               !c.payout_policy && Number(c.funded_pending) ? " ⚠" : ""}`
           : `<span class="dim">—</span>`}</td>
@@ -783,7 +784,7 @@ async function renderChallenges() {
             <th class="num">Prop eval</th><th class="num">Prop funded</th>
             <th class="num">Cost</th><th class="num">Phase 1 live</th>
             ${p2(`<th class="num">Phase 2 live</th>`)}<th class="num">Funded live</th>
-            <th class="num">Payout</th><th class="num" title="o que dá para pedir hoje; o preso pelo buffer fica fora do Total">Withdrawable</th>
+            <th class="num">Payout</th><th class="num" title="what you can request today. The buffer stays in the account and is not in Total">Withdrawable</th>
             <th class="num">Hedge</th>
             <th class="num">Total</th><th>Notes</th><th class="num">Trades</th>
           </tr></thead>
@@ -799,7 +800,7 @@ async function renderChallenges() {
             <td class="num">${cash(totals.funded_payout)}</td>
             <td class="num">${cash(totals.funded_withdrawable)}${
               totals.funded_locked
-                ? `<div class="sub">+${money0(totals.funded_locked)} preso</div>` : ""}</td>
+                ? `<div class="sub">+${money0(totals.funded_locked)} buffer</div>` : ""}</td>
             <td class="num">${cash(totals.lost_hedging)}</td>
             <td class="num">${cash(totals.total_pnl)}</td>
             <td></td><td></td>
@@ -926,7 +927,7 @@ async function openChallenge(id, journal, firms) {
   // para de sobrescrever aquele trade. A marca aparece como ✎ ao lado.
   const pnlCell = (t) => cell(t.net_pnl, {
     id: t.id, field: "trade:net_pnl", type: "number", align: true,
-    title: "medido — ao editar, o coletor para de sobrescrever este valor",
+    title: "measured — editing stops the collector from overwriting this value",
     format: () => `${cash(t.net_pnl)}${(t.manual_cols || []).includes("net_pnl") ? " ✎" : ""}`,
   });
 
@@ -1492,13 +1493,13 @@ async function renderConfig() {
         esc(accountShort(a.login_or_name))}</strong></td>
       <td>${esc(a.platform)}</td>
       ${cell(a.login_or_name, { id: a.id, field: "account:login_or_name", type: "text",
-        title: "número/nome da conta na plataforma — é ele que gera o magic",
+        title: "account number/name on the platform — it is what generates the magic",
         format: () => `<span class="${blown.has(a.id) ? "blown" : "muted"}">${
           esc(a.login_or_name)}</span>` })}
       <td class="num">${st && st.trade_count ? cash(st.net_pnl) : `<span class="dim">—</span>`}</td>
       <td class="num muted">${st?.trade_count || "—"}</td>
       ${cell(a.cash_value, { id: a.id, field: "account:cash_value", type: "number", align: true,
-        title: "medido pelo AddOn — ao editar, o coletor para de sobrescrever",
+        title: "measured by the AddOn — editing stops the collector from overwriting",
         format: () => (a.cash_value != null
           ? `<span class="bright">${money0(a.cash_value)}${mark("cash_value")}</span>`
           : `<span class="dim">—</span>`) })}
@@ -1513,7 +1514,7 @@ async function renderConfig() {
         format: () => `<span class="muted">${esc(a.label || a.terminal_path || "—")}</span>` })}
       ${cell(a.magic_source_part, { id: a.id, field: "account:magic_source_part",
         type: "number", align: true,
-        title: "chave que liga esta conta ao hedge no live — só mexa se souber",
+        title: "key linking this account to the live hedge — only touch if you know",
         format: () => `<span class="muted">${a.magic_source_part ?? "—"}</span>` })}
       <td class="row" style="gap:6px">
         <button class="btn ghost" data-toggle="${a.id}" data-kind="${a.kind}">
@@ -1524,8 +1525,8 @@ async function renderConfig() {
              escolha, sem encostar em nada gravado. -->
         <button class="btn ghost" data-archive="${a.id}" data-active="${a.is_active !== false}"
           title="${a.is_active === false
-            ? "voltar a coletar esta conta"
-            : "parar de coletar, sem apagar o historico"}">
+            ? "collect this account again"
+            : "stop collecting, without deleting the history"}">
           ${a.is_active === false ? "unarchive" : "archive"}</button>
         <button class="btn ghost" data-report-account="${a.id}">Report</button>
         <button class="btn ghost danger" data-del-account="${a.id}"
@@ -1566,12 +1567,12 @@ async function renderConfig() {
         format: () => (f.default_split == null
           ? `<span class="dim">—</span>` : `${num(f.default_split, 0)}%`) })}
       ${cell(f.account_pattern, { id: f.id, field: "firm:account_pattern", type: "text",
-        title: "regex do nome da conta, com os grupos (?<funded>) e (?<size>)."
-             + " Com ela preenchida, a conta funded liberada pela mesa se liga"
-             + " sozinha ao challenge aprovado. Sem ela, o painel pergunta.",
+        title: "regex for the account name, with the (?<funded>) and (?<size>) "
+             + "groups. With it filled in, the funded account the firm releases "
+             + "links itself to the passed challenge. Without it, the panel asks.",
         format: () => (f.account_pattern
           ? `<code class="muted" style="font-size:11px">${esc(f.account_pattern)}</code>`
-          : `<span class="dim" title="sem padrão: a ligação da conta funded fica manual"
+          : `<span class="dim" title="no pattern: linking the funded account stays manual"
                >— manual</span>`) })}
       ${cell(f.notes, { id: f.id, field: "firm:notes", type: "text",
         format: () => `<span class="muted">${esc(f.notes || "—")}</span>` })}
@@ -1594,9 +1595,8 @@ async function renderConfig() {
         format: () => esc(pl.name || "—") })}
       ${cell(pl.product, { id: pl.id, field: "plan:product", type: "select",
         options: PRODUCTS,
-        title: "linha de produto da mesa. É ela que decide quais políticas de"
-             + " saque a conta funded pode escolher — o nome do modelo é texto"
-             + " livre e não serve para isso.",
+        title: "the firm's product line. It decides which payout policies the funded "
+             + "account can choose — the model name is free text and cannot.",
         format: () => (pl.product
           ? `<span class="muted">${esc(pl.product)}</span>`
           : `<span class="dim">—</span>`) })}
@@ -1617,31 +1617,31 @@ async function renderConfig() {
         format: () => (pl.daily_loss_limit == null
           ? `<span class="dim">—</span>` : money0(pl.daily_loss_limit)) })}
       ${cell(pl.min_trading_days, { id: pl.id, field: "plan:min_trading_days", type: "number", align: true,
-        title: nota || "mínimo de dias operados que a mesa exige",
+        title: nota || "trading days the firm requires",
         format: () => `${pl.min_trading_days || `<span class="dim">—</span>`}${
-          nota ? `<div class="sub">valem ${efetivo}</div>` : ""}` })}
+          nota ? `<div class="sub">${efetivo} apply</div>` : ""}` })}
       ${cell(pl.consistency_pct, { id: pl.id, field: "plan:consistency_pct", type: "number", align: true,
-        title: nota || "nenhum dia pode passar desta fatia do lucro total",
+        title: nota || "no single day may exceed this share of total profit",
         format: () => (pl.consistency_pct == null
           ? `<span class="dim">—</span>` : `${num(pl.consistency_pct, 0)}%`) })}
       ${cell(pl.consistency_addon_pct, { id: pl.id, field: "plan:consistency_addon_pct",
         type: "number", align: true,
-        title: "teto quando a avaliação é comprada com o add-on. Vazio = a mesa"
-             + " não oferece. Na Tradeify Select o add-on leva 40% para 50%, e"
-             + " é isso que permite passar em 2 dias em vez de 3.",
+        title: "consistency cap when the evaluation is bought with the add-on. Empty "
+             + "= the firm does not offer one. On Tradeify Select it takes 40% "
+             + "to 50%, which is what allows passing in 2 days instead of 3.",
         format: () => (pl.consistency_addon_pct == null
           ? `<span class="dim">—</span>`
           : `${num(pl.consistency_addon_pct, 0)}%<div class="sub">${
-              daysForConsistency(pl.consistency_addon_pct)} dias</div>`) })}
+              daysForConsistency(pl.consistency_addon_pct)} days</div>`) })}
       ${cell(pl.profit_split, { id: pl.id, field: "plan:profit_split", type: "number", align: true,
         format: () => (pl.profit_split == null
           ? `<span class="dim">—</span>` : `${num(pl.profit_split, 0)}%`) })}
       ${cell(pl.buffer_multiplier, { id: pl.id, field: "plan:buffer_multiplier", type: "number", align: true,
-        title: "somado ao multiplicador do hedge (futuros)",
+        title: "added to the hedge multiplier (futures)",
         format: () => (Number(pl.buffer_multiplier)
           ? `+${pl.buffer_multiplier}` : `<span class="dim">—</span>`) })}
       ${cell(pl.buffer_cash, { id: pl.id, field: "plan:buffer_cash", type: "number", align: true,
-        title: "somado ao gasto antes de dividir (CFD)",
+        title: "added to spend before dividing (CFD)",
         format: () => (Number(pl.buffer_cash)
           ? `+${money0(pl.buffer_cash)}` : `<span class="dim">—</span>`) })}
       ${cell(pl.notes, { id: pl.id, field: "plan:notes", type: "text",
@@ -1696,8 +1696,8 @@ async function renderConfig() {
               </button>`).join("")}
           </div>
           <p class="muted" style="margin:6px 0 0;font-size:11px">
-            Um clique preenche mesa, tamanho, alvo, drawdown, regras, split e custo.
-            Dá para ajustar tudo depois.</p>
+            One click fills firm, size, target, drawdown, rules, split and cost.
+            Everything stays editable.</p>
         </div>` : ""}
         <div class="row">
           <div class="field wide"><label>Accounts *</label>
@@ -1748,7 +1748,7 @@ async function renderConfig() {
           <div class="field"><label>Bought with add-on</label>
             <label class="row" style="gap:6px;align-items:center;margin-top:6px">
               <input id="onboard-addon" type="checkbox">
-              <span class="muted" style="font-size:11px">usa o teto do add-on</span>
+              <span class="muted" style="font-size:11px">uses the add-on cap</span>
             </label></div>
         </div>
 
@@ -1763,7 +1763,7 @@ async function renderConfig() {
               <input id="onboard-consistency" type="number" min="0" max="100" step="0.01"></div>
             <div class="field"><label>Consistency add-on (%)</label>
               <input id="onboard-consistency-addon" type="number" min="0" max="100" step="0.01"
-                     title="teto quando a avaliação vem com o add-on. Vazio se a mesa não oferece."></div>
+                     title="cap when the evaluation comes with the add-on. Empty if the firm offers none."></div>
             <div class="field"><label>Payout split (%)</label>
               <input id="onboard-split" type="number" min="0" max="100" step="0.01"></div>
             <div class="field"><label>Futures buffer ×</label>
@@ -1811,7 +1811,7 @@ async function renderConfig() {
       <h2>Prop firms</h2>
       <div class="scroll"><table>
         <thead><tr><th>Name</th><th>Platform</th><th>Phases</th><th class="num">Split</th>
-          <th title="com ela, a conta funded se liga sozinha ao challenge aprovado"
+          <th title="with it, the funded account links itself to the passed challenge"
             >Account name pattern</th>
           <th>Notes</th><th class="num">Plans</th><th></th></tr></thead>
         <tbody>${firmRows || `<tr><td colspan="8">${empty("no firms yet")}</td></tr>`}</tbody>
@@ -1842,12 +1842,12 @@ async function renderConfig() {
       </div>
       <div class="scroll"><table>
         <thead><tr><th>Firm</th><th>Model</th>
-          <th title="decide as políticas de saque disponíveis">Product</th>
+          <th title="decides which payout policies are available">Product</th>
           <th class="num">Size</th>
           <th class="num">Target</th><th class="num">Target P2</th>
           <th class="num">Drawdown</th><th>DD type</th><th class="num">Daily loss</th>
           <th class="num">Min days</th><th class="num">Consist.</th>
-          <th class="num" title="teto com o add-on comprado">Add-on</th>
+          <th class="num" title="cap with the add-on bought">Add-on</th>
           <th class="num">Split</th>
           <th class="num">Buffer &times;</th><th class="num">Buffer $</th>
           <th>Notes</th><th></th></tr></thead>
@@ -1965,7 +1965,7 @@ async function renderConfig() {
         const etiqueta = addon.parentElement?.querySelector("span");
         if (etiqueta) {
           etiqueta.textContent = pl.consistency_addon_pct == null
-            ? "esta mesa não oferece"
+            ? "this firm offers none"
             : `${num(pl.consistency_addon_pct, 0)}% · ${
                 daysForConsistency(pl.consistency_addon_pct)} dias${
                 pl.consistency_addon_price ? ` · +${money0(pl.consistency_addon_price)}` : ""}`;
@@ -1974,7 +1974,7 @@ async function renderConfig() {
 
       view.querySelectorAll("[data-plan-tile]").forEach((t) => t.classList.remove("active"));
       tile.classList.add("active");
-      toast(`${pl.prop_firms?.name || "?"} ${money0(pl.account_size)} carregado`);
+      toast(`${pl.prop_firms?.name || "?"} ${money0(pl.account_size)} loaded`);
     };
   });
 
@@ -2470,10 +2470,10 @@ async function saveSetupField(field, id, raw, accounts, plans = []) {
       // testar evita reprovar um padrao valido no coletor.
       new RegExp(value.replace(/\(\?P</g, "(?<"));
     } catch (err) {
-      return toast(`Padrão inválido: ${err.message}`);
+      return toast(`Invalid pattern: ${err.message}`);
     }
     if (!/\(\?P?<(funded|size)>/.test(value)) {
-      return toast("O padrão precisa de ao menos um grupo (?<funded>) ou (?<size>)");
+      return toast("The pattern needs at least a (?<funded>) or (?<size>) group");
     }
   }
 
@@ -3655,8 +3655,8 @@ function openPendingForm(items, plans, accounts, signature) {
           <select data-pending-policy="${item.id}">
             <option value="">— how it pays —</option>
             ${politicas.map((p) => `<option value="${p.id}" title="${esc(p.notes || "")}">${
-              esc(`${p.label} · ${p.buffer > 0 ? `buffer ${money0(p.buffer)}` : "sem buffer"}`
-                  + `${p.cap ? ` · teto ${money0(p.cap)}` : ""}`)}</option>`).join("")}
+              esc(`${p.label} · ${p.buffer > 0 ? `buffer ${money0(p.buffer)}` : "no buffer"}`
+                  + `${p.cap ? ` · cap ${money0(p.cap)}` : ""}`)}</option>`).join("")}
           </select></div>` : ""}
         <div class="field auto"><label>&nbsp;</label>
           <button class="btn" data-save-activation="${item.id}">Activate</button></div>
