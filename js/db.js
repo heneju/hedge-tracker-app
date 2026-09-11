@@ -5,7 +5,7 @@
 // fica so no coletor, no PC.
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { CONFIG } from "./config.js?v=4f999fef8b";
+import { CONFIG } from "./config.js?v=7b60df4171";
 
 export const supabase = createClient(CONFIG.url, CONFIG.anonKey);
 
@@ -189,6 +189,9 @@ export const save = {
 
   createCashEvent: (row) =>
     supabase.from("cash_events").insert(row).select().single().then(unwrap),
+
+  updateCashEvent: (id, row) =>
+    supabase.from("cash_events").update(row).eq("id", id).select().single().then(unwrap),
 
   deleteCashEvent: (id) =>
     supabase.from("cash_events").delete().eq("id", id).then(unwrap),
