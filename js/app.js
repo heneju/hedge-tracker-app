@@ -10,18 +10,18 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=5e377a31bd";
+} from "./db.js?v=fa53c9b3ea";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=5e377a31bd";
+} from "./util.js?v=fa53c9b3ea";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=5e377a31bd";
-import { cell, locked, wireEditables } from "./editable.js?v=5e377a31bd";
-import { exportChallenges } from "./export.js?v=5e377a31bd";
-import { nextLiveLot } from "./next-lot.js?v=5e377a31bd";
+} from "./charts.js?v=fa53c9b3ea";
+import { cell, locked, wireEditables } from "./editable.js?v=fa53c9b3ea";
+import { exportChallenges } from "./export.js?v=fa53c9b3ea";
+import { mountPlanPicker } from "./plan-picker.js?v=fa53c9b3ea";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -631,12 +631,7 @@ async function renderOverview() {
 // --------------------------------------------------------------- challenges
 
 async function renderChallenges() {
-  const [journal, firms, progress] = await Promise.all([load.journal(), load.firms(), load.progress()]);
-  for (const challenge of journal) {
-    const next = nextLiveLot(challenge, progress);
-    challenge.next_live_lot = next.lot;
-    challenge.next_live_lot_reason = next.reason;
-  }
+  const [journal, firms] = await Promise.all([load.journal(), load.firms()]);
   setTotals(journal);
 
   const months = [...new Set(journal.filter((c) => c.date_open)
@@ -702,9 +697,7 @@ async function renderChallenges() {
     : cell(value, { id: c.id, field, type: "number", align: true,
                     format: () => cash(value), title: "importado — clique para corrigir" });
 
-  const cashCell = (c, field, value, entries) => field === "payout"
-    ? `<td class="num"><button class="btn ghost" title="Open challenge to record payout">${cash(value)} ✎</button></td>`
-    : entries > 1
+  const cashCell = (c, field, value, entries) => entries > 1
     ? locked(cash(value), `${entries} lançamentos — abra a linha para editar`)
     : cell(value, { id: c.id, field, type: "number", align: true,
                     format: () => cash(value) });
@@ -728,7 +721,9 @@ async function renderChallenges() {
         format: () => `${badge(c.status, statusLabel(c.status, c.eval_phases))}${
           c.drawdown_blown && c.status !== "failed"
             ? ` <span class="badge failed">blown</span>` : ""}` })}
-      <td class="num" title="${esc(c.next_live_lot_reason)}">${c.next_live_lot == null ? "—" : num(c.next_live_lot, 2)}</td>
+      ${cell(c.multipliers, { id: c.id, field: "multipliers", type: "text", align: true,
+                              format: () => `<span class="muted">${esc(c.multipliers || "—")}</span>`,
+                              title: "multiplier per phase, separated by /" })}
       ${propCell(c, c.eval_prop)}
       ${propCell(c, c.funded_prop)}
       ${cashCell(c, "cost", c.cost, c.cost_entries)}
@@ -786,7 +781,7 @@ async function renderChallenges() {
         <table class="dt n">
           <thead><tr>
             <th>Acct</th><th>Firm</th><th>Platform</th><th>Opened</th><th>Status</th>
-            <th class="num" title="Live lot for the next operation. Evaluation: total recovery cost / drawdown.">Next lot</th>
+            <th class="num">Mult.</th>
             <th class="num">Prop eval</th><th class="num">Prop funded</th>
             <th class="num">Cost</th><th class="num">Phase 1 live</th>
             ${p2(`<th class="num">Phase 2 live</th>`)}<th class="num">Funded live</th>
@@ -987,10 +982,8 @@ async function openChallenge(id, journal, firms) {
       <td>${day(e.occurred_on)}</td>
       <td>${esc({ cost: "Cost", payout: "Payout", refund: "Refund" }[e.kind] || e.kind)}</td>
       <td class="num">${cash(e.amount)}</td>
-      <td class="num">${e.kind === "payout" && e.gross_amount != null ? cash(e.gross_amount) : "—"}</td>
-      <td class="num">${e.kind === "payout" ? cash(e.redeposit_amount || 0) : "—"}</td>
       <td class="muted">${esc(e.source)}</td>
-      <td>${e.kind === "payout" ? `<button class="btn ghost" data-edit-payout="${e.id}">Edit</button>` : ""}<button class="btn ghost" data-del-cash="${e.id}">Remove</button></td>
+      <td><button class="btn ghost" data-del-cash="${e.id}">Remove</button></td>
     </tr>`).join("");
 
   modal.innerHTML = `
@@ -1030,24 +1023,12 @@ async function openChallenge(id, journal, firms) {
       </table></div></div>
 
       <div class="panel"><h2>Costs &amp; payouts</h2><div class="scroll"><table>
-        <thead><tr><th>Date</th><th>Kind</th><th class="num">Net / amount</th><th class="num">Gross payout</th><th class="num">Plexy redeposit</th><th>Source</th><th></th></tr></thead>
-        <tbody>${cashRows || `<tr><td colspan="7">${empty("nothing recorded")}</td></tr>`}</tbody>
+        <thead><tr><th>Date</th><th>Kind</th><th class="num">Amount</th><th>Source</th><th></th></tr></thead>
+        <tbody>${cashRows || `<tr><td colspan="5">${empty("nothing recorded")}</td></tr>`}</tbody>
       </table></div>
-      <form id="payout-form" class="panel-body">
-        <h3>Record received payout</h3>
-        <div class="row">
-          <div class="field"><label for="payout-net">Net received ($)</label><input id="payout-net" type="number" min="0.01" step="0.01" required></div>
-          <div class="field"><label for="payout-gross">Gross withdrawn ($)</label><input id="payout-gross" type="number" min="0.01" step="0.01" required></div>
-          <div class="field"><label for="payout-redeposit">Redeposited to Plexy ($)</label><input id="payout-redeposit" type="number" min="0" step="0.01" value="0" required></div>
-          <div class="field"><label for="payout-date">Received on</label><input id="payout-date" type="date" required value="${new Date().toISOString().slice(0, 10)}"></div>
-          <div class="field auto"><label>&nbsp;</label><button class="btn" type="submit" id="save-payout">Save payout</button></div>
-          <button class="btn ghost" type="button" id="cancel-payout" hidden>Cancel edit</button>
-        </div>
-        <p class="muted" id="payout-help">Gross is suggested from the profit split; check the amount debited by the firm. Redeposit is a transfer, not additional profit. Plexy balance comes from the collector.</p>
-      </form>
       <div class="panel-body row">
         <div class="field"><label>Kind</label><select id="cash-kind">
-          <option value="cost">Cost</option>
+          <option value="cost">Cost</option><option value="payout">Payout</option>
           <option value="refund">Refund</option></select></div>
         <div class="field"><label>Amount</label><input id="cash-amount" type="number" step="0.01" placeholder="-99.00"></div>
         <div class="field"><label>Date</label><input id="cash-date" type="date" value="${new Date().toISOString().slice(0, 10)}"></div>
@@ -1070,69 +1051,6 @@ async function openChallenge(id, journal, firms) {
     </div>`;
 
   modal.showModal();
-  const payoutForm = modal.querySelector("#payout-form");
-  const payoutNet = modal.querySelector("#payout-net");
-  const payoutGross = modal.querySelector("#payout-gross");
-  const payoutRedeposit = modal.querySelector("#payout-redeposit");
-  const payoutDate = modal.querySelector("#payout-date");
-  const payoutButton = modal.querySelector("#save-payout");
-  const payoutCancel = modal.querySelector("#cancel-payout");
-  let payoutId = null;
-  let grossEdited = false;
-  let payoutRequestId = crypto.randomUUID();
-  payoutGross.oninput = () => { grossEdited = true; };
-  payoutNet.oninput = () => {
-    if (!grossEdited && Number(c.split_pct) > 0) {
-      payoutGross.value = payoutNet.value ? (Number(payoutNet.value) * 100 / Number(c.split_pct)).toFixed(2) : "";
-    }
-  };
-  payoutCancel.onclick = () => {
-    payoutForm.reset();
-    payoutId = null;
-    grossEdited = false;
-    payoutRequestId = crypto.randomUUID();
-    payoutButton.textContent = "Save payout";
-    payoutCancel.hidden = true;
-  };
-  modal.querySelectorAll("[data-edit-payout]").forEach((button) => {
-    button.onclick = () => {
-      const event = cashEvents.find((entry) => String(entry.id) === button.dataset.editPayout);
-      payoutId = event.id;
-      payoutNet.value = event.amount;
-      payoutGross.value = event.gross_amount ?? "";
-      grossEdited = event.gross_amount != null;
-      if (!grossEdited) payoutNet.oninput();
-      payoutRedeposit.value = event.redeposit_amount || 0;
-      payoutDate.value = event.occurred_on;
-      payoutButton.textContent = "Update payout";
-      payoutCancel.hidden = false;
-      payoutNet.focus();
-    };
-  });
-  payoutForm.onsubmit = async (event) => {
-    event.preventDefault();
-    if (payoutButton.disabled || !payoutForm.reportValidity()) return;
-    const amount = Number(payoutNet.value);
-    const gross = Number(payoutGross.value);
-    const redeposit = Number(payoutRedeposit.value);
-    if (![amount, gross, redeposit].every(Number.isFinite) || amount <= 0 || gross < amount || redeposit < 0 || redeposit > amount) {
-      return toast("Gross must cover net received. Redeposit must be between zero and net received.");
-    }
-    payoutButton.disabled = true;
-    try {
-      const row = { challenge_id: id, kind: "payout", amount, gross_amount: gross,
-        redeposit_amount: redeposit, occurred_on: payoutDate.value, source: "manual" };
-      if (payoutId) await save.updateCashEvent(payoutId, row);
-      else await save.createCashEvent({ ...row, request_id: payoutRequestId });
-      toast("Payout saved");
-      modal.close();
-      await renderChallenges();
-    } catch (err) {
-      toast(err.code === "23505" ? "This payout was already saved. Reopen the challenge to check it." : `Error: ${err.message}`);
-    } finally {
-      payoutButton.disabled = false;
-    }
-  };
   modal.querySelector("#close-modal").onclick = () => modal.close();
   modal.querySelector("#edit-challenge").onclick = () => {
     modal.close();
@@ -1766,21 +1684,9 @@ async function renderConfig() {
         ${knownPlans.length ? `
         <div style="margin-bottom:14px">
           <label style="display:block;margin-bottom:6px">Known plan</label>
-          <div class="row" style="gap:8px;flex-wrap:wrap">
-            ${knownPlans.map((pl) => `
-              <button type="button" class="btn ghost plan-tile" data-plan-tile="${pl.id}"
-                      style="text-align:left;padding:8px 12px">
-                <strong class="bright">${esc(pl.prop_firms?.name || "?")}</strong>
-                ${pl.product ? ` <span class="muted">${esc(pl.product)}</span>` : ""}
-                <span class="bright"> ${money0(pl.account_size)}</span>
-                <div class="sub">${pl.profit_target ? `alvo ${money0(pl.profit_target)}` : ""}${
-                  pl.max_drawdown ? ` · dd ${money0(pl.max_drawdown)}` : ""}${
-                  pl.consistency_pct ? ` · ${num(pl.consistency_pct, 0)}%` : ""}${
-                  pl.price ? ` · ${money0(pl.price)}` : ""}</div>
-              </button>`).join("")}
-          </div>
+          <div id="plan-picker" class="plan-picker"></div>
           <p class="muted" style="margin:6px 0 0;font-size:11px">
-            One click fills firm, size, target, drawdown, rules, split and cost.
+            The plan fills firm, size, target, drawdown, rules, split and cost.
             Everything stays editable.</p>
         </div>` : ""}
         <div class="row">
@@ -2008,59 +1914,87 @@ async function renderConfig() {
   const onboardButton = document.getElementById("register-prop");
   const selectedOnboardingValues = new Set();
 
-  // Um clique traz o plano inteiro. Cada campo continua editável: a mesa muda
-  // preço e regra sem avisar, e o cadastro não pode virar refém do catálogo.
-  view.querySelectorAll("[data-plan-tile]").forEach((tile) => {
-    tile.onclick = () => {
-      const pl = knownPlans.find((p) => p.id === Number(tile.dataset.planTile));
-      if (!pl) return;
-      const set = (id, value) => {
-        const el = document.getElementById(id);
-        if (el && value != null && value !== "") el.value = value;
-      };
-      set("onboard-firm", pl.prop_firms?.name || "");
-      set("onboard-model", pl.name || "");
-      set("onboard-size", pl.account_size);
-      set("onboard-phases", pl.eval_phases || 1);
-      set("onboard-target-p1", pl.profit_target);
-      set("onboard-target-p2", pl.profit_target_p2);
-      set("onboard-drawdown", pl.max_drawdown);
-      set("onboard-dd-type", pl.drawdown_type || "eod");
-      set("onboard-daily-loss", pl.daily_loss_limit);
-      set("onboard-min-days", pl.min_trading_days);
-      set("onboard-consistency", pl.consistency_pct);
-      set("onboard-consistency-addon", pl.consistency_addon_pct);
-      set("onboard-split", pl.profit_split);
-      set("onboard-buffer-mult", pl.buffer_multiplier);
-      set("onboard-buffer-cash", pl.buffer_cash);
-      set("onboard-cost", pl.price);
+  // O seletor pergunta o plano na ordem em que a mesa vende -- ver
+  // `plan-picker.js`. Aqui fica o que o plano escolhido faz no formulário:
+  // preenche tudo, e cada campo continua editável, porque a mesa muda preço e
+  // regra sem avisar e o cadastro não pode virar refém do catálogo.
+  const addonField = document.getElementById("onboard-addon");
+  let chosenPlan = null;
 
-      // O add-on tem preço próprio: somar no custo só quando marcado, e mostrar
-      // quanto custa na própria etiqueta, como a mesa mostra.
-      const addon = document.getElementById("onboard-addon");
-      const custo = document.getElementById("onboard-cost");
-      if (addon) {
-        addon.onchange = () => {
-          const base = Number(pl.price) || 0;
-          const extra = Number(pl.consistency_addon_price) || 0;
-          if (base && custo) custo.value = addon.checked ? base + extra : base;
-        };
-        addon.disabled = pl.consistency_addon_pct == null;
-        const etiqueta = addon.parentElement?.querySelector("span");
-        if (etiqueta) {
-          etiqueta.textContent = pl.consistency_addon_pct == null
-            ? "this firm offers none"
-            : `${num(pl.consistency_addon_pct, 0)}% · ${
-                daysForConsistency(pl.consistency_addon_pct)} dias${
-                pl.consistency_addon_price ? ` · +${money0(pl.consistency_addon_price)}` : ""}`;
-        }
-      }
+  // O add-on tem preço próprio: soma no custo só quando marcado.
+  const syncAddonCost = () => {
+    const custo = document.getElementById("onboard-cost");
+    const base = Number(chosenPlan?.price) || 0;
+    if (!base || !custo) return;
+    const extra = Number(chosenPlan.consistency_addon_price) || 0;
+    custo.value = addonField?.checked ? base + extra : base;
+  };
 
-      view.querySelectorAll("[data-plan-tile]").forEach((t) => t.classList.remove("active"));
-      tile.classList.add("active");
-      toast(`${pl.prop_firms?.name || "?"} ${money0(pl.account_size)} loaded`);
+  const applyPlan = (pl) => {
+    chosenPlan = pl;
+    // Escreve MESMO vazio. Pular o que o plano nao tem deixava o valor do
+    // plano anterior no campo: escolher Tradeify e trocar para Fundingpips
+    // salvava o challenge com os 40% de consistencia e o preco da Tradeify.
+    const set = (id, value) => {
+      const el = document.getElementById(id);
+      if (el) el.value = value ?? "";
     };
-  });
+    set("onboard-firm", pl.prop_firms?.name || "");
+    set("onboard-model", pl.name || "");
+    set("onboard-size", pl.account_size);
+    set("onboard-phases", pl.eval_phases || 1);
+    set("onboard-target-p1", pl.profit_target);
+    set("onboard-target-p2", pl.profit_target_p2);
+    set("onboard-drawdown", pl.max_drawdown);
+    set("onboard-dd-type", pl.drawdown_type || "eod");
+    set("onboard-daily-loss", pl.daily_loss_limit);
+    set("onboard-min-days", pl.min_trading_days);
+    set("onboard-consistency", pl.consistency_pct);
+    set("onboard-consistency-addon", pl.consistency_addon_pct);
+    set("onboard-split", pl.profit_split);
+    set("onboard-buffer-mult", pl.buffer_multiplier);
+    set("onboard-buffer-cash", pl.buffer_cash);
+    set("onboard-cost", pl.price);
+
+    // Trocar de tamanho no mesmo produto mantém o upgrade marcado, como na
+    // tela da mesa; ir para um plano sem add-on desmarca, senão o challenge
+    // sairia com uma regra que o plano não tem.
+    if (addonField) {
+      addonField.disabled = pl.consistency_addon_pct == null;
+      if (addonField.disabled) addonField.checked = false;
+      const etiqueta = addonField.parentElement?.querySelector("span");
+      if (etiqueta) {
+        etiqueta.textContent = pl.consistency_addon_pct == null
+          ? "this firm offers none"
+          : `${num(pl.consistency_addon_pct, 0)}% · ${
+              daysForConsistency(pl.consistency_addon_pct)} days${
+              pl.consistency_addon_price ? ` · +${money0(pl.consistency_addon_price)}` : ""}`;
+      }
+    }
+    syncAddonCost();
+    toast(`${pl.prop_firms?.name || "?"} ${pl.name || ""} ${money0(pl.account_size)} loaded`);
+  };
+
+  const pickerBox = document.getElementById("plan-picker");
+  const planPicker = pickerBox
+    ? mountPlanPicker(pickerBox, knownPlans, {
+        daysFor: daysForConsistency,
+        addonChecked: () => Boolean(addonField?.checked),
+        onPlan: applyPlan,
+        onAddon: (checked) => {
+          if (addonField) addonField.checked = checked;
+          syncAddonCost();
+        },
+      })
+    : null;
+  // O campo do formulário e o botão do seletor são o mesmo add-on: mexer num
+  // tem que aparecer no outro.
+  if (addonField) {
+    addonField.onchange = () => {
+      syncAddonCost();
+      planPicker?.redraw();
+    };
+  }
 
   const resolveOnboardingAccount = (value) => {
     const [kind, rawId] = (value || "").split(":");
