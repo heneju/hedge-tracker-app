@@ -10,18 +10,18 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=fa53c9b3ea";
+} from "./db.js?v=4f999fef8b";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=fa53c9b3ea";
+} from "./util.js?v=4f999fef8b";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=fa53c9b3ea";
-import { cell, locked, wireEditables } from "./editable.js?v=fa53c9b3ea";
-import { exportChallenges } from "./export.js?v=fa53c9b3ea";
-import { mountPlanPicker } from "./plan-picker.js?v=fa53c9b3ea";
+} from "./charts.js?v=4f999fef8b";
+import { cell, locked, wireEditables } from "./editable.js?v=4f999fef8b";
+import { exportChallenges } from "./export.js?v=4f999fef8b";
+import { mountPlanPicker } from "./plan-picker.js?v=4f999fef8b";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -60,6 +60,8 @@ const state = {
   // Fica no menu pelo mesmo motivo dos reportes: buraco esquecido vira número
   // errado que ninguém questiona.
   pendingSetup: 0,
+  // Linha das contas estouradas na aba Challenges: fechada por padrão.
+  failedOpen: false,
 };
 
 // ------------------------------------------------------------------- helpers
@@ -702,8 +704,9 @@ async function renderChallenges() {
     : cell(value, { id: c.id, field, type: "number", align: true,
                     format: () => cash(value) });
 
-  const body = rows.map((c) => `
-    <tr class="clickable" data-id="${c.id}">
+  const rowHtml = (c, { failedRow = false, hidden = false } = {}) => `
+    <tr class="clickable${failedRow ? " failed-row" : ""}" data-id="${c.id}"${
+      hidden ? " hidden" : ""}>
       <td><strong class="${c.status === "failed" || c.drawdown_blown
         ? "blown" : "bright"}">${esc(c.account_ids || "—")}</strong></td>
       ${cell(c.firm_id, { id: c.id, field: "firm_id", type: "select", options: firmOpts,
@@ -754,7 +757,40 @@ async function renderChallenges() {
                            cls: "note", title: c.comments || "",
                            format: () => `<span class="muted">${esc(c.comments || "—")}</span>` })}
       <td class="num muted">${c.trade_count || (c.import_source ? "imp." : "0")}</td>
-    </tr>`).join("");
+    </tr>`;
+
+  // Conta estourada é histórico: não tem mais o que acompanhar, e empurrava
+  // as vivas para baixo -- na tela real eram 6 de 11 linhas. Ela sai da frente
+  // numa linha só, com o subtotal de cada coluna, e continua no Total do
+  // rodapé: esconder não é tirar da conta. Com o filtro Failed ligado a pessoa
+  // pediu para vê-las, e aí elas voltam a ser linhas normais.
+  const collapseFailed = status !== "failed";
+  const failedRows = collapseFailed ? rows.filter((c) => c.status === "failed") : [];
+  const liveRows = collapseFailed ? rows.filter((c) => c.status !== "failed") : rows;
+  const failedOpen = Boolean(state.failedOpen);
+  const failedSum = (f) => failedRows.reduce((a, c) => a + Number(c[f] || 0), 0);
+  const failedSummary = !failedRows.length ? "" : `
+    <tr class="failed-sum" data-failed-toggle tabindex="0" role="button"
+        aria-expanded="${failedOpen}"
+        title="Blown accounts, folded. They still count in Total.">
+      <td colspan="6"><span class="chev" aria-hidden="true">›</span><span
+        class="failed-label">${failedRows.length} failed</span></td>
+      <td class="num">${cash(failedSum("eval_prop"))}</td>
+      <td class="num">${cash(failedSum("funded_prop"))}</td>
+      <td class="num">${cash(failedSum("cost"))}</td>
+      <td class="num">${cash(failedSum("p1_live"))}</td>
+      ${p2(`<td class="num">${cash(failedSum("p2_live"))}</td>`)}
+      <td class="num">${cash(failedSum("funded_live"))}</td>
+      <td class="num">${cash(failedSum("funded_payout"))}</td>
+      <td class="num">${Number(failedSum("funded_withdrawable"))
+        ? cash(failedSum("funded_withdrawable")) : `<span class="dim">—</span>`}</td>
+      <td class="num">${cash(failedSum("lost_hedging"))}</td>
+      <td class="num"><strong>${cash(failedSum("total_pnl"))}</strong></td>
+      <td></td>
+      <td class="num">${failedRows.reduce((a, c) => a + Number(c.trade_count || 0), 0)}</td>
+    </tr>`;
+  const body = liveRows.map((c) => rowHtml(c)).join("") + failedSummary
+    + failedRows.map((c) => rowHtml(c, { failedRow: true, hidden: !failedOpen })).join("");
 
   render(`
     <div class="tool">
@@ -856,6 +892,20 @@ async function renderChallenges() {
       exportBtn.textContent = label;
     }
   };
+  // Abre e fecha sem ir ao banco nem redesenhar: as linhas já estão na
+  // página, só escondidas. Redesenhar refaria a consulta a cada clique.
+  const failedToggle = view.querySelector("[data-failed-toggle]");
+  if (failedToggle) {
+    const flip = () => {
+      state.failedOpen = !state.failedOpen;
+      failedToggle.setAttribute("aria-expanded", String(state.failedOpen));
+      view.querySelectorAll("tr.failed-row").forEach((tr) => { tr.hidden = !state.failedOpen; });
+    };
+    failedToggle.onclick = flip;
+    failedToggle.onkeydown = (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(); }
+    };
+  }
   view.querySelectorAll("tr.clickable").forEach((tr) => {
     tr.onclick = () => openChallenge(Number(tr.dataset.id), journal, firms);
   });

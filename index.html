@@ -521,6 +521,30 @@ dialog th{background:var(--color-bg)}
 .dt tbody tr.pick{cursor:pointer}
 .dt tbody tr.pick:hover > td{background:var(--color-neutral-100)}
 .dt tfoot td{background:var(--color-bg)}
+/* Contas estouradas recolhidas numa linha no fim da tabela. Continuam no
+   Total do rodape -- so saem da frente, porque sao historico e empurravam as
+   vivas para baixo. A linha e discreta de proposito: tracejada, fonte menor,
+   valores apagados; ganha cor quando o mouse passa. */
+.dt tr.failed-sum > td{
+  cursor:pointer;font-size:12px;color:var(--color-neutral-600);
+  border-top:1px dashed var(--color-divider);
+  background:color-mix(in srgb, var(--color-text) 3%, transparent);
+}
+.dt tr.failed-sum:hover > td{color:var(--color-text);background:var(--color-neutral-100)}
+.dt tr.failed-sum:focus-visible{outline:1px solid var(--color-accent);outline-offset:-1px}
+.dt tr.failed-sum .pos,.dt tr.failed-sum .neg{opacity:.7}
+.dt tr.failed-sum:hover .pos,.dt tr.failed-sum:hover .neg{opacity:1}
+.failed-sum .chev{
+  display:inline-block;width:12px;margin-right:6px;
+  color:var(--color-neutral-500);transition:transform .15s ease;
+}
+.failed-sum[aria-expanded="true"] .chev{transform:rotate(90deg)}
+.failed-sum .failed-label{
+  font-family:var(--font-heading);font-weight:800;font-size:10.5px;
+  letter-spacing:.08em;text-transform:uppercase;
+}
+.dt tr.failed-row > td{opacity:.55}
+.dt tr.failed-row:hover > td{opacity:1}
 /* Coluna que so existe em mesa de duas fases. */
 .noP2 th.p2,.noP2 td.p2{display:none}
 /* Nota livre e o que estoura a largura das tabelas: ela corta com reticencias
@@ -671,6 +695,6 @@ dialog th{background:var(--color-bg)}
     if (t === "dark" || t === "light") document.documentElement.setAttribute("data-theme", t);
   } catch (e) {}
 </script>
-<script type="module" src="./js/app.js?v=fa53c9b3ea"></script>
+<script type="module" src="./js/app.js?v=4f999fef8b"></script>
 </body>
 </html>
