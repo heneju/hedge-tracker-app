@@ -10,19 +10,19 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=7b60df4171";
+} from "./db.js?v=ef5b4a7fd6";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=7b60df4171";
+} from "./util.js?v=ef5b4a7fd6";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=7b60df4171";
-import { cell, locked, wireEditables } from "./editable.js?v=7b60df4171";
-import { exportChallenges } from "./export.js?v=7b60df4171";
-import { mountPlanPicker } from "./plan-picker.js?v=7b60df4171";
-import { nextLiveLot } from "./next-lot.js?v=7b60df4171";
+} from "./charts.js?v=ef5b4a7fd6";
+import { cell, locked, wireEditables } from "./editable.js?v=ef5b4a7fd6";
+import { exportChallenges } from "./export.js?v=ef5b4a7fd6";
+import { mountPlanPicker } from "./plan-picker.js?v=ef5b4a7fd6";
+import { nextLiveLot } from "./next-lot.js?v=ef5b4a7fd6";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -89,6 +89,47 @@ function toast(message) {
 function daysForConsistency(pct) {
   const n = Number(pct);
   return n > 0 ? Math.ceil(100 / n) : 0;
+}
+
+/**
+ * Por que a conta funded pode, ou não pode, sacar hoje.
+ *
+ * As duas políticas da mesa contam coisas diferentes: a Daily prende um
+ * colchão e libera o que passa dele todo dia; a Flex não prende nada e só
+ * paga a cada 5 dias vencedores, com piso por dia. Mostrar "$0,00" nas duas
+ * esconde justamente o que falta para o dinheiro sair.
+ */
+function withdrawableWhy(c) {
+  if (c.split_pct == null) return "no split set — counting 100% of the funded profit";
+  if (!c.payout_policy) {
+    return "no payout policy picked — counting the whole profit as withdrawable, "
+      + "which is the old behaviour";
+  }
+  const policy = c.payout_policy_label || c.payout_policy;
+  if (Number(c.winning_days_left) > 0) {
+    const total = Number(c.winning_days) + Number(c.winning_days_left);
+    return `${policy}: ${c.winning_days} of ${total} winning days done`
+      + `${c.payout_winning_day_min
+          ? ` — a day counts from ${money0(c.payout_winning_day_min)} up` : ""}.`
+      + ` Nothing can be requested before that. Then`
+      + `${c.payout_pct ? ` ${num(c.payout_pct, 0)}% of total profit` : ""}`
+      + `${c.payout_cap ? `, up to ${money0(c.payout_cap)} per payout` : ""}.`;
+  }
+  return `${policy}: ${money0(c.funded_withdrawable)} can be requested today.`
+    + `${Number(c.funded_locked)
+        ? ` ${money0(c.funded_locked)} must stay in the account as buffer — it goes`
+          + ` if the account breaches, so it is not counted in Total.`
+        : ""}`;
+}
+
+/** A linha fina embaixo do valor: o que segura o saque. */
+function withdrawableNote(c) {
+  if (Number(c.winning_days_left) > 0) {
+    const total = Number(c.winning_days) + Number(c.winning_days_left);
+    return `<div class="sub">${c.winning_days}/${total} winning days</div>`;
+  }
+  return Number(c.funded_locked)
+    ? `<div class="sub">+${money0(c.funded_locked)} buffer</div>` : "";
 }
 
 /**
@@ -740,20 +781,9 @@ async function renderChallenges() {
       ${p2(liveCell(c, "import_p2_live", c.p2_live, c.p2_trades))}
       ${liveCell(c, "import_funded_live", c.funded_live, c.funded_trades)}
       ${cashCell(c, "payout", c.funded_payout, c.payout_entries)}
-      <td class="num" title="${c.split_pct == null
-        ? "no split set — counting 100% of the funded profit"
-        : c.payout_policy
-          ? `${esc(c.payout_policy_label || c.payout_policy)}: ${money0(c.funded_withdrawable)} `
-            + `can be requested today. `
-            + `${Number(c.funded_locked) ? `${money0(c.funded_locked)} must stay in the `
-              + `account as buffer — it goes if the account breaches, so it is not `
-              + `counted in Total.` : ""}`
-          : "no payout policy picked — counting the whole profit as withdrawable, "
-            + "which is the old behaviour"}">${
+      <td class="num" title="${esc(withdrawableWhy(c))}">${
         Number(c.funded_pending)
-          ? `${cash(c.funded_withdrawable)}${
-              Number(c.funded_locked)
-                ? `<div class="sub">+${money0(c.funded_locked)} buffer</div>` : ""}${
+          ? `${cash(c.funded_withdrawable)}${withdrawableNote(c)}${
               c.split_pct == null ? " ⚠" : ""}${
               !c.payout_policy && Number(c.funded_pending) ? " ⚠" : ""}`
           : `<span class="dim">—</span>`}</td>
@@ -1071,7 +1101,10 @@ async function openChallenge(id, journal, firms) {
             c.prop_trades ? money(c.prop_pnl) : "—"}</div>
           <div class="sub">${Number(c.funded_pending)
             ? `${money(c.funded_withdrawable)} withdrawable${
-                Number(c.funded_locked) ? ` · ${money0(c.funded_locked)} locked` : ""}`
+                Number(c.winning_days_left) > 0
+                  ? ` · ${c.winning_days}/${Number(c.winning_days)
+                      + Number(c.winning_days_left)} winning days`
+                  : Number(c.funded_locked) ? ` · ${money0(c.funded_locked)} locked` : ""}`
             : "not counted"}</div></div>
       </div>
 
@@ -3807,6 +3840,9 @@ function openPendingForm(items, plans, accounts, signature) {
             <option value="">— how it pays —</option>
             ${politicas.map((p) => `<option value="${p.id}" title="${esc(p.notes || "")}">${
               esc(`${p.label} · ${p.buffer > 0 ? `buffer ${money0(p.buffer)}` : "no buffer"}`
+                  + `${p.winning_days_required
+                      ? ` · ${p.winning_days_required} winning days` : " · pays daily"}`
+                  + `${p.pct_of_total ? ` · ${num(p.pct_of_total, 0)}% of total` : ""}`
                   + `${p.cap ? ` · cap ${money0(p.cap)}` : ""}`)}</option>`).join("")}
           </select></div>` : ""}
         <div class="field auto"><label>&nbsp;</label>
