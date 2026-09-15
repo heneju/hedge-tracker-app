@@ -10,19 +10,20 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=ef5b4a7fd6";
+} from "./db.js?v=febef4b072";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=ef5b4a7fd6";
+} from "./util.js?v=febef4b072";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=ef5b4a7fd6";
-import { cell, locked, wireEditables } from "./editable.js?v=ef5b4a7fd6";
-import { exportChallenges } from "./export.js?v=ef5b4a7fd6";
-import { mountPlanPicker } from "./plan-picker.js?v=ef5b4a7fd6";
-import { nextLiveLot } from "./next-lot.js?v=ef5b4a7fd6";
+} from "./charts.js?v=febef4b072";
+import { cell, locked, wireEditables } from "./editable.js?v=febef4b072";
+import { exportChallenges } from "./export.js?v=febef4b072";
+import { mountPlanPicker } from "./plan-picker.js?v=febef4b072";
+import { nextLiveLot } from "./next-lot.js?v=febef4b072";
+import { filterForFirm } from "./firm-accounts.js?v=febef4b072";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -1636,11 +1637,13 @@ async function renderConfig() {
     ...freeDiscovered.map((d) => ({
       value: `source:${d.id}`,
       platform: d.platform,
+      name: d.login_or_name,
       label: `${d.platform} · ${accountShort(d.login_or_name)} · ${d.label} · found`,
     })),
     ...freeRegistered.map((a) => ({
       value: `account:${a.id}`,
       platform: a.platform,
+      name: a.login_or_name,
       label: `${a.platform} · ${accountShort(a.login_or_name)} · ${a.label || a.login_or_name} · registered`,
     })),
   ];
@@ -1735,9 +1738,11 @@ async function renderConfig() {
         format: () => (f.default_split == null
           ? `<span class="dim">—</span>` : `${num(f.default_split, 0)}%`) })}
       ${cell(f.account_pattern, { id: f.id, field: "firm:account_pattern", type: "text",
-        title: "regex for the account name, with the (?<funded>) and (?<size>) "
-             + "groups. With it filled in, the funded account the firm releases "
-             + "links itself to the passed challenge. Without it, the panel asks.",
+        title: "regex for the account name. It limits the account selector on "
+             + "Register to this firm. With the (?<funded>) and (?<size>) groups, "
+             + "the funded account the firm releases also links itself to the "
+             + "passed challenge. Without a pattern the selector shows every "
+             + "account of the platform, and the panel asks for the link.",
         format: () => (f.account_pattern
           ? `<code class="muted" style="font-size:11px">${esc(f.account_pattern)}</code>`
           : `<span class="dim" title="no pattern: linking the funded account stays manual"
@@ -2146,6 +2151,10 @@ async function renderConfig() {
     ? mountPlanPicker(pickerBox, knownPlans, {
         daysFor: daysForConsistency,
         addonChecked: () => Boolean(addonField?.checked),
+        onFirm: (name) => {
+          pickerFirmName = name;
+          pruneForFirm();
+        },
         onPlan: applyPlan,
         onAddon: (checked) => {
           if (addonField) addonField.checked = checked;
@@ -2190,8 +2199,11 @@ async function renderConfig() {
       ? `<strong class="bright">${selected.length} account${selected.length === 1 ? "" : "s"} selected</strong><br>
          ${esc(shown.join(" · "))}${esc(extra)}`
       : "No accounts selected. Open the selector to choose one or more accounts.";
+    const firm = accountsFirm();
+    const livres = filterForFirm(onboardingOptions, firm).shown.length;
     onboardOpenAccounts.textContent = selected.length
-      ? `Change accounts (${selected.length})` : "Select accounts";
+      ? `Change accounts (${selected.length})`
+      : firm ? `Select ${firm.name} accounts · ${livres} free` : "Select accounts";
     onboardMt5Fields.hidden = mt5Sources.length === 0;
     onboardMt5Fields.innerHTML = mt5Sources.map((selected) => `
       <div class="field" style="margin-bottom:6px">
@@ -2203,6 +2215,18 @@ async function renderConfig() {
 
   const openAccountPicker = () => {
     const draft = new Set(selectedOnboardingValues);
+    const firm = accountsFirm();
+    const { shown, hidden, rule } = filterForFirm(onboardingOptions, firm);
+    // Filtro com saída: conta nova cujo nome o padrão ainda não cobre não pode
+    // ficar sem cadastro.
+    let showAll = false;
+    const filtered = () => rule !== null && !showAll;
+    const visible = () => (filtered() ? shown : onboardingOptions);
+    // Em massa, só o que está na tela. Sem mesa continua "todas do NinjaTrader":
+    // misturar plataformas o cadastro recusa de qualquer jeito.
+    const bulk = () => (filtered() ? shown
+      : onboardingOptions.filter((o) => o.platform === "NT8"));
+
     modal.innerHTML = `
       <header><h1>Select accounts</h1><span class="spacer"></span>
         <span class="muted" id="picker-count"></span>
@@ -2213,53 +2237,87 @@ async function renderConfig() {
           model, account size, phase rules, current stage and purchase cost</strong> configured
           on the Setup screen. The app creates one separate challenge per account.
         </p>
-        <p class="warn" style="font-size:10px;line-height:1.6">
-          Do not mix accounts from different firms, models or sizes. Finish this group,
-          then repeat the registration for the next configuration.
-        </p>
-        <div class="account-picker-list">
-          ${onboardingOptions.map((o) => `
-            <label class="account-picker-option">
-              <input type="checkbox" data-picker-account value="${esc(o.value)}"
-                     ${draft.has(o.value) ? "checked" : ""}>
-              <span>${esc(o.label)}</span>
-            </label>`).join("")}
-        </div>
+        <div class="account-picker-filter" id="picker-filter"></div>
+        <div class="account-picker-list" id="picker-list"></div>
         <div class="row" style="margin-top:12px">
-          <button class="btn ghost" id="picker-all-nt8" type="button"
-                  ${onboardingOptions.some((o) => o.platform === "NT8") ? "" : "disabled"}>
-            Select all NT8</button>
+          <button class="btn ghost" id="picker-all" type="button"></button>
           <button class="btn ghost" id="picker-clear" type="button">Clear</button>
           <span style="flex:1"></span>
           <button class="btn" id="picker-apply" type="button">Use selected accounts</button>
         </div>
       </div>`;
 
-    const inputs = [...modal.querySelectorAll("[data-picker-account]")];
+    const q = (id) => modal.querySelector(`#${id}`);
+    const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+    const draw = () => {
+      let aviso;
+      if (!firm) {
+        aviso = `<span class="muted">Pick the prop firm above to see only its accounts.</span>
+          <span class="warn">Do not mix accounts from different firms, models or sizes.</span>`;
+      } else if (showAll) {
+        aviso = `<span><strong class="bright">All ${onboardingOptions.length} free accounts</strong>
+          <span class="muted">— filter off. Pick only ${esc(firm.name)} accounts.</span></span>`;
+      } else if (rule === "pattern") {
+        aviso = `<span><strong class="bright">${esc(plural(shown.length, `${firm.name} account`))}</strong>
+          <span class="muted">— names matching <code>${esc(firm.account_pattern)}</code></span></span>`;
+      } else {
+        const plataforma = firm.platform && firm.platform !== "Other" ? `${firm.platform} ` : "";
+        aviso = `<span><strong class="bright">${esc(plural(shown.length, `${plataforma}account`))}</strong>
+          <span class="muted">— ${esc(firm.name)} has no account name pattern.
+          Add one under Firms to list only its accounts.</span></span>`;
+      }
+      if (firm && hidden.length) {
+        aviso += `<button class="btn ghost" type="button" id="picker-toggle">${
+          showAll ? `Only ${esc(firm.name)}` : `Show all ${onboardingOptions.length}`}</button>`;
+      }
+      q("picker-filter").innerHTML = aviso;
+
+      const lista = visible();
+      q("picker-list").innerHTML = lista.length
+        ? lista.map((o) => `
+          <label class="account-picker-option">
+            <input type="checkbox" data-picker-account value="${esc(o.value)}"
+                   ${draft.has(o.value) ? "checked" : ""}>
+            <span>${esc(o.label)}</span>
+          </label>`).join("")
+        : `<div class="account-picker-empty muted">No free ${esc(firm?.name || "")} account found.${
+            hidden.length ? " Show all to pick one the pattern missed." : ""}</div>`;
+
+      modal.querySelectorAll("[data-picker-account]").forEach((input) => {
+        input.onchange = () => {
+          if (input.checked) draft.add(input.value);
+          else draft.delete(input.value);
+          refreshCount();
+        };
+      });
+      const toggle = q("picker-toggle");
+      if (toggle) toggle.onclick = () => { showAll = !showAll; draw(); };
+      q("picker-all").textContent = filtered() ? `Select all ${firm.name}` : "Select all NT8";
+      q("picker-all").disabled = !bulk().length;
+      refreshCount();
+    };
     const refreshCount = () => {
-      const count = inputs.filter((input) => input.checked).length;
-      modal.querySelector("#picker-count").textContent = `${count} selected`;
+      q("picker-count").textContent = `${draft.size} selected`;
     };
-    inputs.forEach((input) => { input.onchange = refreshCount; });
-    modal.querySelector("#picker-cancel").onclick = () => modal.close();
-    modal.querySelector("#picker-all-nt8").onclick = () => {
-      const nt8 = new Set(onboardingOptions.filter((o) => o.platform === "NT8")
-        .map((o) => o.value));
-      inputs.forEach((input) => { input.checked = nt8.has(input.value); });
-      refreshCount();
+
+    q("picker-cancel").onclick = () => modal.close();
+    q("picker-all").onclick = () => {
+      draft.clear();
+      bulk().forEach((o) => draft.add(o.value));
+      draw();
     };
-    modal.querySelector("#picker-clear").onclick = () => {
-      inputs.forEach((input) => { input.checked = false; });
-      refreshCount();
+    q("picker-clear").onclick = () => {
+      draft.clear();
+      draw();
     };
-    modal.querySelector("#picker-apply").onclick = () => {
+    q("picker-apply").onclick = () => {
       selectedOnboardingValues.clear();
-      inputs.filter((input) => input.checked)
-        .forEach((input) => selectedOnboardingValues.add(input.value));
+      draft.forEach((value) => selectedOnboardingValues.add(value));
       modal.close();
       refreshOnboardingAccounts();
     };
-    refreshCount();
+    draw();
     modal.showModal();
   };
 
@@ -2281,7 +2339,38 @@ async function renderConfig() {
 
   onboardOpenAccounts.onclick = openAccountPicker;
   onboardPhases.onchange = refreshOnboardingStages;
+  // A mesa que decide quais contas o seletor mostra. O clique no seletor de
+  // plano vale antes do campo: na Fundingpips a mesa está escolhida muitos
+  // cliques antes de o plano fechar e preencher o formulário. O clique NÃO
+  // escreve no campo, porque o campo é o que vai para o cadastro -- a mesa
+  // nova sairia com as regras do plano anterior ainda nos outros campos.
+  let pickerFirmName = null;
+  const accountsFirm = () => {
+    const wanted = (pickerFirmName || "").trim().toLocaleLowerCase();
+    return (wanted && firms.find((f) => f.name.trim().toLocaleLowerCase() === wanted))
+      || existingOnboardingFirm();
+  };
+
+  // Trocar de mesa depois de marcar contas: as que não são da mesa nova
+  // sairiam cadastradas com o plano dela.
+  const pruneForFirm = () => {
+    const firm = accountsFirm();
+    if (firm && selectedOnboardingValues.size) {
+      const daMesa = new Set(filterForFirm(onboardingOptions, firm).shown.map((o) => o.value));
+      const fora = [...selectedOnboardingValues].filter((value) => !daMesa.has(value));
+      fora.forEach((value) => selectedOnboardingValues.delete(value));
+      if (fora.length) {
+        toast(`${fora.length} selected account${fora.length === 1 ? " is" : "s are"} `
+          + `not ${firm.name} — removed`);
+      }
+    }
+    refreshOnboardingAccounts();
+  };
+
   onboardFirm.onchange = () => {
+    // Digitar a mesa é escolha mais recente que o clique no seletor.
+    pickerFirmName = null;
+    pruneForFirm();
     const firm = existingOnboardingFirm();
     if (!firm) return;
     onboardPhases.value = String(firm.eval_phases || 2);
@@ -2307,6 +2396,15 @@ async function renderConfig() {
 
     if (!selected.length) return toast("Choose at least one account");
     if (!firmName) return toast("Enter the prop firm name");
+    // Clicou numa mesa no seletor e não fechou modelo e tamanho: as contas
+    // escolhidas são da mesa nova, mas o formulário ainda tem a mesa e as
+    // regras do plano anterior. Cadastrar assim grava conta da Tradeify com o
+    // drawdown da FFF.
+    const mesaDoSeletor = accountsFirm();
+    if (pickerFirmName && mesaDoSeletor
+        && mesaDoSeletor.name.trim().toLocaleLowerCase() !== firmName.toLocaleLowerCase()) {
+      return toast(`Finish picking the ${mesaDoSeletor.name} plan — the form still has ${firmName}`);
+    }
     if (!(size > 0)) return toast("Enter the account size");
     if (!(drawdown > 0)) return toast("Enter the max drawdown");
 
@@ -2656,9 +2754,10 @@ async function saveSetupField(field, id, raw, accounts, plans = []) {
     } catch (err) {
       return toast(`Invalid pattern: ${err.message}`);
     }
-    if (!/\(\?P?<(funded|size)>/.test(value)) {
-      return toast("The pattern needs at least a (?<funded>) or (?<size>) group");
-    }
+    // Padrão sem grupo também serve: ele separa as contas da mesa no
+    // cadastro. Os grupos (?<funded>) e (?<size>) só acrescentam o link
+    // automático da conta funded e o plano pelo nome -- a Blue Guardian não
+    // escreve nenhum dos dois no nome da conta.
   }
 
   await guard(async () => {

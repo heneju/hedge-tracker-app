@@ -8,7 +8,7 @@
 // O modulo so escolhe. O que o plano faz no formulario fica em quem monta o
 // seletor (`onPlan`), porque e o formulario que sabe quais campos existem.
 
-import { esc, money0, num } from "./util.js?v=ef5b4a7fd6";
+import { esc, money0, num } from "./util.js?v=febef4b072";
 
 const firmOf = (pl) => pl.prop_firms?.name || "?";
 
@@ -55,13 +55,16 @@ export function rulesLine(pl) {
  * - `daysFor(pct)`: dias que uma consistencia exige (vem do app, para haver
  *   uma conta so desse numero no painel inteiro).
  * - `addonChecked()`: estado atual do add-on no formulario.
+ * - `onFirm(nome)`: a mesa mudou. Vem antes do plano porque, na Fundingpips,
+ *   a mesa ja esta escolhida muitos cliques antes de o plano fechar.
  * - `onPlan(plano)`: chamado quando um plano fica escolhido -- uma vez por
  *   plano, para nao reescrever por cima do que a pessoa editou a mao.
  * - `onAddon(marcado)`: o botao de upgrade do seletor mudou.
  *
  * Devolve `{ redraw }`, para o formulario avisar quando o add-on mudou por la.
  */
-export function mountPlanPicker(container, plans, { daysFor, addonChecked, onPlan, onAddon }) {
+export function mountPlanPicker(container, plans,
+                                { daysFor, addonChecked, onFirm, onPlan, onAddon }) {
   const pick = { firm: null, model: null, size: null, planId: null };
   let applied = null;
 
@@ -169,8 +172,10 @@ export function mountPlanPicker(container, plans, { daysFor, addonChecked, onPla
   }
 
   function select(patch) {
+    const firmChanged = "firm" in patch && patch.firm !== pick.firm;
     Object.assign(pick, patch);
     settle();
+    if (firmChanged) onFirm?.(pick.firm);
     const pl = chosen();
     if (pl && pl.id !== applied) {
       applied = pl.id;

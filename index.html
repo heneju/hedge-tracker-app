@@ -474,6 +474,12 @@ dialog th{background:var(--color-bg)}
 }
 .account-picker-option:hover{background:var(--color-neutral-100)}
 .account-picker-option input{width:auto;flex:0 0 auto}
+.account-picker-filter{
+  display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;margin:0 0 10px;
+  font-size:12px;line-height:1.5;
+}
+.account-picker-filter code{font-size:11px}
+.account-picker-empty{grid-column:1/-1;padding:14px 11px;font-size:12px}
 
 /* Barra de ferramentas de uma tela: titulo, uma linha de contexto e os
    controles, tudo assentado na mesma regua. Substitui o cabecalho de painel
@@ -695,6 +701,6 @@ dialog th{background:var(--color-bg)}
     if (t === "dark" || t === "light") document.documentElement.setAttribute("data-theme", t);
   } catch (e) {}
 </script>
-<script type="module" src="./js/app.js?v=ef5b4a7fd6"></script>
+<script type="module" src="./js/app.js?v=febef4b072"></script>
 </body>
 </html>
