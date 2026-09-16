@@ -10,20 +10,21 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=febef4b072";
+} from "./db.js?v=5ed12bf1e4";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=febef4b072";
+} from "./util.js?v=5ed12bf1e4";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=febef4b072";
-import { cell, locked, wireEditables } from "./editable.js?v=febef4b072";
-import { exportChallenges } from "./export.js?v=febef4b072";
-import { mountPlanPicker } from "./plan-picker.js?v=febef4b072";
-import { nextLiveLot } from "./next-lot.js?v=febef4b072";
-import { filterForFirm } from "./firm-accounts.js?v=febef4b072";
+} from "./charts.js?v=5ed12bf1e4";
+import { cell, locked, wireEditables } from "./editable.js?v=5ed12bf1e4";
+import { exportChallenges } from "./export.js?v=5ed12bf1e4";
+import { mountPlanPicker } from "./plan-picker.js?v=5ed12bf1e4";
+import { nextLiveLot } from "./next-lot.js?v=5ed12bf1e4";
+import { filterForFirm } from "./firm-accounts.js?v=5ed12bf1e4";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=5ed12bf1e4";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -1082,6 +1083,11 @@ async function openChallenge(id, journal, firms) {
       ${badge(c.status, STATUS_LABEL[c.status] || c.status)}
       ${c.drawdown_blown && c.status !== "failed"
         ? `<span class="badge failed" title="bateu o chão do drawdown">blown</span>` : ""}
+      ${c.status === "failed" || c.drawdown_blown
+        ? `<button class="btn ghost" id="reset-account"
+             title="the firm gave this account back — start a new attempt on it"
+             >Reset account</button>`
+        : ""}
       <button class="btn ghost" id="edit-challenge">Edit</button>
       <button class="btn ghost" id="report-challenge">Report</button>
       <button class="btn ghost" id="close-modal">Close</button>
@@ -1223,6 +1229,13 @@ async function openChallenge(id, journal, firms) {
     modal.close();
     openChallengeEditor(c, firms);
   };
+  const resetButton = modal.querySelector("#reset-account");
+  if (resetButton) {
+    resetButton.onclick = () => {
+      modal.close();
+      openResetDialog(c, journal, firms);
+    };
+  }
   // O reporte sai daqui já sabendo qual linha é. Ao fechar, este drill-down
   // volta -- quem reportou não perde o lugar onde estava olhando.
   modal.querySelector("#report-challenge").onclick = () => {
@@ -1281,6 +1294,109 @@ async function openChallenge(id, journal, firms) {
 }
 
 // ------------------------------------------------- editor de um challenge
+
+/**
+ * Reset da conta estourada.
+ *
+ * A mesa devolve a MESMA conta, com o mesmo numero, e o painel abre outra
+ * tentativa nela. O QUE escrever fica em `reset-account.js`; aqui e a tela e a
+ * ORDEM das escritas -- fechar a tentativa velha antes de abrir a nova.
+ *
+ * A linha crua de `challenges` e lida de novo de proposito: o journal entrega
+ * `split_pct` ja resolvido pelo plano e nao entrega `consistency_addon`.
+ */
+async function openResetDialog(c, journal, firms) {
+  const [phases, row] = await Promise.all([load.phases(c.id), load.challengeRow(c.id)]);
+  const alvo = currentPhase(phases);
+  if (!alvo) return toast("This challenge has no account to reset");
+  const conta = alvo.accounts?.login_or_name || alvo.account_ref || "?";
+  const maisNova = newerAttempt(await load.phasesOfAccount(alvo.account_id), alvo.id);
+  if (maisNova) {
+    return toast(`${accountShort(conta)} already has a newer attempt — `
+      + `open challenge ${maisNova.challenge_id} to reset that one`);
+  }
+  const hoje = new Date().toISOString().slice(0, 10);
+  const etapas = statusOptions(c.eval_phases)
+    .filter((o) => ["phase1", "phase2", "funded"].includes(o.value));
+
+  modal.innerHTML = `
+    <header><h1>Reset ${esc(accountShort(conta))}</h1><span class="spacer"></span>
+      <button class="btn ghost" id="cancel-reset">Cancel</button></header>
+    <div style="padding:16px;max-width:620px">
+      <p class="muted" style="margin-top:0;line-height:1.7">
+        The firm hands the account back with the <strong class="bright">same number</strong>,
+        so the panel opens a new attempt on <strong class="bright">${esc(conta)}</strong>:
+        P&amp;L, trading days, best day and drawdown all count from now.
+      </p>
+      <p class="muted" style="line-height:1.7">
+        Nothing is deleted. The trades of the failed attempt stay on this challenge
+        (${esc(c.account_ids || "?")} · ${day(c.date_open)}), which keeps showing what it cost.
+      </p>
+      <div class="row">
+        <div class="field"><label for="reset-stage">Restart as</label>
+          <select id="reset-stage">${etapas.map((o) =>
+            `<option value="${o.value}">${esc(o.label)}</option>`).join("")}</select></div>
+        <div class="field"><label for="reset-cost">Reset cost ($)</label>
+          <input id="reset-cost" type="number" min="0" step="0.01" placeholder="0.00"></div>
+        <div class="field"><label for="reset-date">Opened on</label>
+          <input id="reset-date" type="date" value="${hoje}"></div>
+        <div class="field auto"><label>&nbsp;</label>
+          <button class="btn" id="do-reset" type="button">Reset account</button></div>
+      </div>
+      <p class="muted" style="font-size:11px;line-height:1.6">
+        The cost is what this attempt has to earn back, and it drives the hedge
+        multiplier. Leave it empty when the reset is free. Trades already imported
+        stay where they are; the collector can take up to a minute to notice the
+        new attempt.
+      </p>
+    </div>`;
+
+  modal.querySelector("#cancel-reset").onclick = () => {
+    modal.close();
+    openChallenge(c.id, journal, firms);
+  };
+  modal.querySelector("#do-reset").onclick = async () => {
+    const botao = modal.querySelector("#do-reset");
+    botao.disabled = true;
+    let plano;
+    try {
+      plano = planReset(row, phases, {
+        at: new Date().toISOString(),
+        restartAs: modal.querySelector("#reset-stage").value,
+        cost: modal.querySelector("#reset-cost").value,
+        date: modal.querySelector("#reset-date").value || hoje,
+      });
+    } catch (err) {
+      botao.disabled = false;
+      return toast(err.message);
+    }
+    let criado = null;
+    try {
+      await guard(async () => {
+        for (const fase of plano.close) await save.phase(fase.id, fase.patch);
+        if (plano.challengePatch) await save.challenge(c.id, plano.challengePatch);
+        criado = await save.createChallenge(plano.challenge);
+        await save.createPhase({ ...plano.phase, challenge_id: criado.id });
+        if (plano.cash) await save.createCashEvent({ ...plano.cash, challenge_id: criado.id });
+      }, `${accountShort(conta)} reset — new attempt started`);
+    } catch {
+      // Challenge sem fase nao aparece na tela e ainda prende a conta: desfaz
+      // o que entrou antes do erro. O aviso ja saiu no `guard`.
+      if (criado) {
+        try {
+          await save.deleteChallenge(criado.id);
+        } catch (falha) {
+          toast(`Could not undo challenge ${criado.id}: ${falha.message}`);
+        }
+      }
+      botao.disabled = false;
+      return;
+    }
+    modal.close();
+    renderChallenges();
+  };
+  modal.showModal();
+}
 
 async function openChallengeEditor(c, firms) {
   const [stats, plans, discovered] = await Promise.all([

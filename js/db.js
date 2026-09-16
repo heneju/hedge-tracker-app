@@ -5,7 +5,7 @@
 // fica so no coletor, no PC.
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { CONFIG } from "./config.js?v=febef4b072";
+import { CONFIG } from "./config.js?v=5ed12bf1e4";
 
 export const supabase = createClient(CONFIG.url, CONFIG.anonKey);
 
@@ -98,6 +98,18 @@ export const load = {
   payoutPolicies: () =>
     supabase.from("payout_policies").select("*")
       .order("account_size").order("policy").then(unwrap),
+
+  // A linha crua do challenge. O journal entrega `split_pct` ja coalescido com
+  // plano e mesa, e nao entrega `consistency_addon`: copiar de la, num reset,
+  // gravaria o challenge novo com regra que ninguem escolheu.
+  // Todas as tentativas de uma conta. O reset usa para saber se ESTE challenge
+  // ainda e o que roda nela -- conta ja resetada tem fase mais nova.
+  phasesOfAccount: (accountId) =>
+    supabase.from("challenge_phases").select("id, challenge_id, started_at, ended_at")
+      .eq("account_id", accountId).order("id").then(unwrap),
+
+  challengeRow: (id) =>
+    supabase.from("challenges").select("*").eq("id", id).single().then(unwrap),
 
   phases: (challengeId) =>
     supabase.from("challenge_phases")
