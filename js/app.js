@@ -10,21 +10,21 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=e08c75dc18";
+} from "./db.js?v=90a5027f92";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=e08c75dc18";
+} from "./util.js?v=90a5027f92";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=e08c75dc18";
-import { cell, locked, wireEditables } from "./editable.js?v=e08c75dc18";
-import { exportChallenges } from "./export.js?v=e08c75dc18";
-import { mountPlanPicker } from "./plan-picker.js?v=e08c75dc18";
-import { nextLiveLot } from "./next-lot.js?v=e08c75dc18";
-import { filterForFirm } from "./firm-accounts.js?v=e08c75dc18";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=e08c75dc18";
+} from "./charts.js?v=90a5027f92";
+import { cell, locked, wireEditables } from "./editable.js?v=90a5027f92";
+import { exportChallenges } from "./export.js?v=90a5027f92";
+import { mountPlanPicker } from "./plan-picker.js?v=90a5027f92";
+import { nextLiveLot } from "./next-lot.js?v=90a5027f92";
+import { filterForFirm } from "./firm-accounts.js?v=90a5027f92";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=90a5027f92";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -142,6 +142,24 @@ function withdrawableNote(c) {
  * disso, e é por isso que existem as duas colunas: uma responde "quanto esta
  * conta já me deu", a outra "quanto ela vale se tudo correr bem".
  */
+/**
+ * A conta desta linha, com quanto ela ainda pode perder antes de estourar.
+ *
+ * O número sai de `account_progress`, que já desconta o que foi sacado: sacar
+ * tira dinheiro do saldo e aproxima do chão, mesmo que o P&L das trades não
+ * mude. Na conta funded do Adil dá $2.619,94, e o saldo medido pelo
+ * NinjaTrader confirma em 46 centavos -- $52.720,40 contra o chão em $50.100.
+ *
+ * Um challenge pode ter duas contas (avaliação e funded). A que importa é a da
+ * ETAPA corrente; conta estourada não tem folga nenhuma a mostrar.
+ */
+function accountToBlow(challenge, progress) {
+  const doChallenge = progress.filter((p) => p.challenge_id === challenge.id);
+  const alvo = doChallenge.find((p) => p.phase === PHASE_OF_STATUS[challenge.status])
+    || doChallenge[0];
+  return alvo && !alvo.blown && alvo.drawdown_room != null ? alvo : null;
+}
+
 function cashWhy(c) {
   const naMesa = Number(c.funded_withdrawable) || 0;
   return "money already settled: cost, hedge and payouts received."
@@ -751,7 +769,7 @@ async function renderChallenges() {
   // vista usa duas fases, a coluna some em vez de exibir zeros para sempre.
   const showP2 = rows.some((c) => Number(c.eval_phases) === 2);
   const p2 = (html) => (showP2 ? html : "");
-  const cols = showP2 ? 19 : 18;
+  const cols = showP2 ? 20 : 19;
 
   // Resultado da conta da mesa. Em avaliação é só visualização: dinheiro
   // simulado, fora de qualquer soma. Quando a conta vira funded ele passa a
@@ -762,6 +780,13 @@ async function renderChallenges() {
   // zero ali seria um número inventado.
   const propCell = (c, value) => `<td class="num">${
     c.prop_trades ? cash(value) : `<span class="dim">—</span>`}</td>`;
+
+  const roomOf = (c) => accountToBlow(c, progress)?.drawdown_room ?? null;
+  const roomCell = (c) => {
+    const room = roomOf(c);
+    return `<td class="num muted">${room == null
+      ? `<span class="dim">—</span>` : money0(room)}</td>`;
+  };
 
   const firmOpts = [{ value: "", label: "—" }]
     .concat(firms.map((f) => ({ value: f.id, label: f.name })));
@@ -805,6 +830,7 @@ async function renderChallenges() {
       <td class="num" title="${esc(c.next_live_lot_reason)}">${c.next_live_lot == null ? "—" : num(c.next_live_lot, 2)}</td>
       ${propCell(c, c.eval_prop)}
       ${propCell(c, c.funded_prop)}
+      ${roomCell(c)}
       ${cashCell(c, "cost", c.cost, c.cost_entries)}
       ${liveCell(c, "import_p1_live", c.p1_live, c.p1_trades)}
       ${p2(liveCell(c, "import_p2_live", c.p2_live, c.p2_trades))}
@@ -843,6 +869,7 @@ async function renderChallenges() {
         class="failed-label">${failedRows.length} failed</span></td>
       <td class="num">${cash(failedSum("eval_prop"))}</td>
       <td class="num">${cash(failedSum("funded_prop"))}</td>
+      <td class="num"><span class="dim">—</span></td>
       <td class="num">${cash(failedSum("cost"))}</td>
       <td class="num">${cash(failedSum("p1_live"))}</td>
       ${p2(`<td class="num">${cash(failedSum("p2_live"))}</td>`)}
@@ -886,6 +913,7 @@ async function renderChallenges() {
             <th>Acct</th><th>Firm</th><th>Platform</th><th>Opened</th><th>Status</th>
             <th class="num" title="Live lot for the next operation. Evaluation: total recovery cost / drawdown.">Next lot</th>
             <th class="num">Prop eval</th><th class="num">Prop funded</th>
+            <th class="num" title="how much this account can still lose before it breaches. What was already withdrawn is discounted.">To blow</th>
             <th class="num">Cost</th><th class="num">Phase 1 live</th>
             ${p2(`<th class="num">Phase 2 live</th>`)}<th class="num">Funded live</th>
             <th class="num">Payout</th><th class="num" title="what you can request today. The buffer stays in the account and is not in Total">Withdrawable</th>
@@ -898,6 +926,7 @@ async function renderChallenges() {
             <td colspan="6">Total</td>
             <td class="num">${cash(totals.eval_prop)}</td>
             <td class="num">${cash(totals.funded_prop)}</td>
+            <td class="num">${money0(rows.reduce((a, c) => a + (Number(roomOf(c)) || 0), 0))}</td>
             <td class="num">${cash(totals.cost)}</td>
             <td class="num">${cash(totals.p1_live)}</td>
             ${p2(`<td class="num">${cash(totals.p2_live)}</td>`)}
@@ -952,7 +981,8 @@ async function renderChallenges() {
     exportBtn.disabled = true;
     exportBtn.textContent = "Building…";
     try {
-      await exportChallenges(rows, { filters: state.filters, statusLabel, showP2 });
+      await exportChallenges(rows.map((c) => ({ ...c, to_blow: roomOf(c) })),
+        { filters: state.filters, statusLabel, showP2 });
       toast(`${rows.length} rows exported`);
     } catch (err) {
       toast(`Error: ${err.message}`);
@@ -976,7 +1006,7 @@ async function renderChallenges() {
     };
   }
   view.querySelectorAll("tr.clickable").forEach((tr) => {
-    tr.onclick = () => openChallenge(Number(tr.dataset.id), journal, firms);
+    tr.onclick = () => openChallenge(Number(tr.dataset.id), journal, firms, progress);
   });
 }
 
@@ -1028,7 +1058,7 @@ async function saveChallengeField(field, id, raw) {
 
 // ------------------------------------------------- detalhe de um challenge
 
-async function openChallenge(id, journal, firms) {
+async function openChallenge(id, journal, firms, progress = []) {
   const c = journal.find((x) => x.id === id);
   if (!c) return;
 
@@ -1137,6 +1167,15 @@ async function openChallenge(id, journal, firms) {
           <div class="value pos">${money(c.funded_payout)}</div></div>
         <div class="card"><div class="label">Hedge</div>
           <div class="value ${signClass(c.lost_hedging)}">${money(c.lost_hedging)}</div></div>
+        ${(() => {
+          const conta = accountToBlow(c, progress);
+          if (!conta) return "";
+          return `<div class="card"><div class="label">To blow</div>
+            <div class="value">${money(conta.drawdown_room)}</div>
+            <div class="sub">${conta.drawdown_locked
+              ? `floor locked at +${money0(conta.drawdown_lock_at)}`
+              : `peak ${money0(conta.peak_eod)} − ${money0(conta.max_drawdown)} drawdown`}</div></div>`;
+        })()}
         <div class="card"><div class="label">${
           c.status === "funded" ? "Funded acct" : "Eval acct"}</div>
           <div class="value ${c.prop_trades ? signClass(c.prop_pnl) : "muted"}">${
@@ -1280,7 +1319,7 @@ async function openChallenge(id, journal, firms) {
       targetTable: "challenges",
       targetId: c.id,
       targetLabel: `${c.account_ids || "?"} · ${c.firm || "?"} · ${day(c.date_open)}`,
-    }, () => openChallenge(id, journal, firms));
+    }, () => openChallenge(id, journal, firms, progress));
   };
   modal.querySelector("#add-cash").onclick = async () => {
     const amount = Number(modal.querySelector("#cash-amount").value);

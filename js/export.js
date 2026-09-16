@@ -12,7 +12,7 @@
 // dele, e os formatos numéricos usados aqui são os que o Sheets importa sem
 // reinterpretar.
 
-import { monthLabel } from "./util.js?v=e08c75dc18";
+import { monthLabel } from "./util.js?v=90a5027f92";
 
 const EXCELJS = "https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js";
 
@@ -60,6 +60,7 @@ function columns(showP2) {
     { key: "mult", header: "Next lot", width: 11, fmt: "0.00" },
     { key: "eval_prop", header: "Prop eval", width: 15, fmt: MONEY, sign: true },
     { key: "funded_prop", header: "Prop funded", width: 17, fmt: MONEY, sign: true },
+    { key: "to_blow", header: "To blow", width: 13, fmt: MONEY },
     { key: "cost", header: "Cost", width: 13, fmt: MONEY, sign: true },
     { key: "p1_live", header: "Phase 1 live", width: 18, fmt: MONEY, sign: true },
     ...(showP2
@@ -166,6 +167,7 @@ export async function exportChallenges(rows, { filters = {}, statusLabel, showP2
       mult: r.next_live_lot == null ? null : num(r.next_live_lot),
       eval_prop: r.prop_trades ? num(r.eval_prop) : null,
       funded_prop: r.prop_trades ? num(r.funded_prop) : null,
+      to_blow: num(r.to_blow),
       cost: num(r.cost),
       p1_live: num(r.p1_live),
       ...(showP2 ? { p2_live: num(r.p2_live) } : {}),
@@ -219,6 +221,7 @@ export async function exportChallenges(rows, { filters = {}, statusLabel, showP2
     acct: "TOTAL",
     eval_prop: sum("eval_prop"),
     funded_prop: sum("funded_prop"),
+    to_blow: sum("to_blow"),
     cost: sum("cost"),
     p1_live: sum("p1_live"),
     ...(showP2 ? { p2_live: sum("p2_live") } : {}),
