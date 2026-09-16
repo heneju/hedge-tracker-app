@@ -12,7 +12,7 @@
 // dele, e os formatos numéricos usados aqui são os que o Sheets importa sem
 // reinterpretar.
 
-import { monthLabel } from "./util.js?v=165cde470d";
+import { monthLabel } from "./util.js?v=538159236c";
 
 const EXCELJS = "https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js";
 
@@ -69,7 +69,7 @@ function columns(showP2) {
     { key: "payout", header: "Payout", width: 13, fmt: MONEY, sign: true },
     { key: "pending", header: "Pending", width: 14, fmt: MONEY, sign: true },
     { key: "hedge", header: "Hedge", width: 14, fmt: MONEY, sign: true },
-    { key: "cash", header: "In hand", width: 15, fmt: MONEY, sign: true },
+    { key: "cash", header: "Total PnL", width: 15, fmt: MONEY, sign: true },
     { key: "total", header: "Total", width: 16, fmt: MONEY, sign: true, strong: true },
     { key: "notes", header: "Notes", width: 34 },
     { key: "trades", header: "Trades", width: 12, fmt: "0" },

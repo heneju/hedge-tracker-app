@@ -10,21 +10,21 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=165cde470d";
+} from "./db.js?v=538159236c";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=165cde470d";
+} from "./util.js?v=538159236c";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=165cde470d";
-import { cell, locked, wireEditables } from "./editable.js?v=165cde470d";
-import { exportChallenges } from "./export.js?v=165cde470d";
-import { mountPlanPicker } from "./plan-picker.js?v=165cde470d";
-import { nextLiveLot } from "./next-lot.js?v=165cde470d";
-import { filterForFirm } from "./firm-accounts.js?v=165cde470d";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=165cde470d";
+} from "./charts.js?v=538159236c";
+import { cell, locked, wireEditables } from "./editable.js?v=538159236c";
+import { exportChallenges } from "./export.js?v=538159236c";
+import { mountPlanPicker } from "./plan-picker.js?v=538159236c";
+import { nextLiveLot } from "./next-lot.js?v=538159236c";
+import { filterForFirm } from "./firm-accounts.js?v=538159236c";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=538159236c";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -135,7 +135,7 @@ function withdrawableNote(c) {
 }
 
 /**
- * Por que "In hand" e "Total" diferem.
+ * Por que "Total PnL" e "Total" diferem.
  *
  * O Total conta o lucro funded que a mesa ainda não pagou, porque ele vira
  * payout no saque seguinte. Mas ele some junto se a conta estourar antes
@@ -583,7 +583,7 @@ async function renderOverview() {
         <div style="margin-top:14px;font-size:12px;opacity:.78">${
           journal.length} challenges · ${esc(span)}${
           Math.round(total) !== Math.round(cashTotal)
-            ? ` · ${money0(cashTotal)} already in hand` : ""}</div>
+            ? ` · ${money0(cashTotal)} in total PnL` : ""}</div>
       </div>
     </div>`;
 
@@ -883,8 +883,8 @@ async function renderChallenges() {
             ${p2(`<th class="num">Phase 2 live</th>`)}<th class="num">Funded live</th>
             <th class="num">Payout</th><th class="num" title="what you can request today. The buffer stays in the account and is not in Total">Withdrawable</th>
             <th class="num">Hedge</th>
-            <th class="num" title="what this account has already given you: cost, hedge and payouts received">In hand</th>
-            <th class="num" title="In hand plus the funded profit still at the firm">Total</th><th>Notes</th><th class="num">Trades</th>
+            <th class="num" title="what this account has already given you: cost, hedge and payouts received">Total PnL</th>
+            <th class="num" title="Total PnL plus the funded profit still at the firm">Total</th><th>Notes</th><th class="num">Trades</th>
           </tr></thead>
           <tbody>${body || `<tr><td colspan="${cols}">${empty("no challenges match these filters")}</td></tr>`}</tbody>
           <tfoot><tr style="font-weight:640">
@@ -1121,7 +1121,7 @@ async function openChallenge(id, journal, firms) {
         <div class="card"><div class="label">Total</div>
           <div class="value ${signClass(c.total_pnl)}">${money(c.total_pnl)}</div>
           ${Number(c.funded_withdrawable)
-            ? `<div class="sub">${money(c.cash_pnl)} in hand · ${
+            ? `<div class="sub">${money(c.cash_pnl)} total PnL · ${
                 money0(c.funded_withdrawable)} still at the firm</div>`
             : ""}</div>
         <div class="card"><div class="label">Cost</div>
@@ -2956,7 +2956,7 @@ const REPORT_FIELDS = {
     ["p2_live", "Phase 2 live"],
     ["funded_live", "Funded live"],
     ["funded_payout", "Payout"],
-    ["cash_pnl", "In hand"],
+    ["cash_pnl", "Total PnL"],
     ["total_pnl", "Total"],
     ["multipliers", "Multiplier"],
     ["status", "Status"],
