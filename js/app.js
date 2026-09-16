@@ -10,21 +10,21 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=5ed12bf1e4";
+} from "./db.js?v=165cde470d";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=5ed12bf1e4";
+} from "./util.js?v=165cde470d";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=5ed12bf1e4";
-import { cell, locked, wireEditables } from "./editable.js?v=5ed12bf1e4";
-import { exportChallenges } from "./export.js?v=5ed12bf1e4";
-import { mountPlanPicker } from "./plan-picker.js?v=5ed12bf1e4";
-import { nextLiveLot } from "./next-lot.js?v=5ed12bf1e4";
-import { filterForFirm } from "./firm-accounts.js?v=5ed12bf1e4";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=5ed12bf1e4";
+} from "./charts.js?v=165cde470d";
+import { cell, locked, wireEditables } from "./editable.js?v=165cde470d";
+import { exportChallenges } from "./export.js?v=165cde470d";
+import { mountPlanPicker } from "./plan-picker.js?v=165cde470d";
+import { nextLiveLot } from "./next-lot.js?v=165cde470d";
+import { filterForFirm } from "./firm-accounts.js?v=165cde470d";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=165cde470d";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -132,6 +132,23 @@ function withdrawableNote(c) {
   }
   return Number(c.funded_locked)
     ? `<div class="sub">+${money0(c.funded_locked)} buffer</div>` : "";
+}
+
+/**
+ * Por que "In hand" e "Total" diferem.
+ *
+ * O Total conta o lucro funded que a mesa ainda não pagou, porque ele vira
+ * payout no saque seguinte. Mas ele some junto se a conta estourar antes
+ * disso, e é por isso que existem as duas colunas: uma responde "quanto esta
+ * conta já me deu", a outra "quanto ela vale se tudo correr bem".
+ */
+function cashWhy(c) {
+  const naMesa = Number(c.funded_withdrawable) || 0;
+  return "money already settled: cost, hedge and payouts received."
+    + (naMesa
+      ? ` ${money0(naMesa)} of funded profit is still at the firm — that is in`
+        + ` Total, not here, and it goes if the account breaches.`
+      : " Nothing pending at the firm, so it matches Total.");
 }
 
 /**
@@ -522,6 +539,7 @@ async function renderOverview() {
 
   const sum = (f) => journal.reduce((a, c) => a + Number(c[f] || 0), 0);
   const total = sum("total_pnl");
+  const cashTotal = sum("cash_pnl");
   const noHedge = sum("no_hedge_pnl");
   const hedge = sum("lost_hedging");
   const cost = sum("cost");
@@ -563,7 +581,9 @@ async function renderOverview() {
         <div class="n" style="font-family:var(--font-heading);font-weight:800;font-size:72px;
               line-height:.9;letter-spacing:-.03em">${money0(total)}</div>
         <div style="margin-top:14px;font-size:12px;opacity:.78">${
-          journal.length} challenges · ${esc(span)}</div>
+          journal.length} challenges · ${esc(span)}${
+          Math.round(total) !== Math.round(cashTotal)
+            ? ` · ${money0(cashTotal)} already in hand` : ""}</div>
       </div>
     </div>`;
 
@@ -698,7 +718,7 @@ async function renderChallenges() {
       .toLocaleLowerCase().includes(needle)));
 
   const totals = ["cost", "funded_payout", "p1_live", "p2_live", "funded_live",
-    "lost_hedging", "total_pnl", "eval_prop", "funded_prop",
+    "lost_hedging", "cash_pnl", "total_pnl", "eval_prop", "funded_prop",
     "funded_pending", "funded_withdrawable", "funded_locked"].reduce((acc, f) => {
       acc[f] = rows.reduce((a, c) => a + Number(c[f] || 0), 0);
       return acc;
@@ -724,7 +744,7 @@ async function renderChallenges() {
   // vista usa duas fases, a coluna some em vez de exibir zeros para sempre.
   const showP2 = rows.some((c) => Number(c.eval_phases) === 2);
   const p2 = (html) => (showP2 ? html : "");
-  const cols = showP2 ? 18 : 17;
+  const cols = showP2 ? 19 : 18;
 
   // Resultado da conta da mesa. Em avaliação é só visualização: dinheiro
   // simulado, fora de qualquer soma. Quando a conta vira funded ele passa a
@@ -790,6 +810,7 @@ async function renderChallenges() {
               !c.payout_policy && Number(c.funded_pending) ? " ⚠" : ""}`
           : `<span class="dim">—</span>`}</td>
       <td class="num">${cash(c.lost_hedging)}</td>
+      <td class="num" title="${esc(cashWhy(c))}">${cash(c.cash_pnl)}</td>
       <td class="num"><strong>${cash(c.total_pnl)}</strong></td>
       ${cell(c.comments, { id: c.id, field: "comments", type: "text",
                            cls: "note", title: c.comments || "",
@@ -823,6 +844,7 @@ async function renderChallenges() {
       <td class="num">${Number(failedSum("funded_withdrawable"))
         ? cash(failedSum("funded_withdrawable")) : `<span class="dim">—</span>`}</td>
       <td class="num">${cash(failedSum("lost_hedging"))}</td>
+      <td class="num">${cash(failedSum("cash_pnl"))}</td>
       <td class="num"><strong>${cash(failedSum("total_pnl"))}</strong></td>
       <td></td>
       <td class="num">${failedRows.reduce((a, c) => a + Number(c.trade_count || 0), 0)}</td>
@@ -861,7 +883,8 @@ async function renderChallenges() {
             ${p2(`<th class="num">Phase 2 live</th>`)}<th class="num">Funded live</th>
             <th class="num">Payout</th><th class="num" title="what you can request today. The buffer stays in the account and is not in Total">Withdrawable</th>
             <th class="num">Hedge</th>
-            <th class="num">Total</th><th>Notes</th><th class="num">Trades</th>
+            <th class="num" title="what this account has already given you: cost, hedge and payouts received">In hand</th>
+            <th class="num" title="In hand plus the funded profit still at the firm">Total</th><th>Notes</th><th class="num">Trades</th>
           </tr></thead>
           <tbody>${body || `<tr><td colspan="${cols}">${empty("no challenges match these filters")}</td></tr>`}</tbody>
           <tfoot><tr style="font-weight:640">
@@ -878,6 +901,7 @@ async function renderChallenges() {
                  saldo enquanto a conta viver e vai junto se ela estourar. -->
             <td class="num">${cash(totals.funded_withdrawable)}</td>
             <td class="num">${cash(totals.lost_hedging)}</td>
+            <td class="num">${cash(totals.cash_pnl)}</td>
             <td class="num">${cash(totals.total_pnl)}</td>
             <td></td><td></td>
           </tr></tfoot>
@@ -1095,7 +1119,11 @@ async function openChallenge(id, journal, firms) {
     <div style="padding:16px;max-height:74vh;overflow:auto">
       <div class="cards">
         <div class="card"><div class="label">Total</div>
-          <div class="value ${signClass(c.total_pnl)}">${money(c.total_pnl)}</div></div>
+          <div class="value ${signClass(c.total_pnl)}">${money(c.total_pnl)}</div>
+          ${Number(c.funded_withdrawable)
+            ? `<div class="sub">${money(c.cash_pnl)} in hand · ${
+                money0(c.funded_withdrawable)} still at the firm</div>`
+            : ""}</div>
         <div class="card"><div class="label">Cost</div>
           <div class="value neg">${money(c.cost)}</div></div>
         <div class="card"><div class="label">Payout</div>
@@ -2928,6 +2956,7 @@ const REPORT_FIELDS = {
     ["p2_live", "Phase 2 live"],
     ["funded_live", "Funded live"],
     ["funded_payout", "Payout"],
+    ["cash_pnl", "In hand"],
     ["total_pnl", "Total"],
     ["multipliers", "Multiplier"],
     ["status", "Status"],

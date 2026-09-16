@@ -12,7 +12,7 @@
 // dele, e os formatos numéricos usados aqui são os que o Sheets importa sem
 // reinterpretar.
 
-import { monthLabel } from "./util.js?v=5ed12bf1e4";
+import { monthLabel } from "./util.js?v=165cde470d";
 
 const EXCELJS = "https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js";
 
@@ -69,6 +69,7 @@ function columns(showP2) {
     { key: "payout", header: "Payout", width: 13, fmt: MONEY, sign: true },
     { key: "pending", header: "Pending", width: 14, fmt: MONEY, sign: true },
     { key: "hedge", header: "Hedge", width: 14, fmt: MONEY, sign: true },
+    { key: "cash", header: "In hand", width: 15, fmt: MONEY, sign: true },
     { key: "total", header: "Total", width: 16, fmt: MONEY, sign: true, strong: true },
     { key: "notes", header: "Notes", width: 34 },
     { key: "trades", header: "Trades", width: 12, fmt: "0" },
@@ -172,6 +173,7 @@ export async function exportChallenges(rows, { filters = {}, statusLabel, showP2
       payout: num(r.funded_payout),
       pending: num(r.funded_pending) || null,
       hedge: num(r.lost_hedging),
+      cash: num(r.cash_pnl),
       total: num(r.total_pnl),
       notes: r.comments || "",
       trades: num(r.trade_count) ?? 0,
@@ -224,6 +226,7 @@ export async function exportChallenges(rows, { filters = {}, statusLabel, showP2
     payout: sum("funded_payout"),
     pending: sum("funded_pending"),
     hedge: sum("lost_hedging"),
+    cash: sum("cash_pnl"),
     total: sum("total_pnl"),
   });
   totals.height = 22;
