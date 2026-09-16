@@ -10,21 +10,21 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=538159236c";
+} from "./db.js?v=e08c75dc18";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=538159236c";
+} from "./util.js?v=e08c75dc18";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=538159236c";
-import { cell, locked, wireEditables } from "./editable.js?v=538159236c";
-import { exportChallenges } from "./export.js?v=538159236c";
-import { mountPlanPicker } from "./plan-picker.js?v=538159236c";
-import { nextLiveLot } from "./next-lot.js?v=538159236c";
-import { filterForFirm } from "./firm-accounts.js?v=538159236c";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=538159236c";
+} from "./charts.js?v=e08c75dc18";
+import { cell, locked, wireEditables } from "./editable.js?v=e08c75dc18";
+import { exportChallenges } from "./export.js?v=e08c75dc18";
+import { mountPlanPicker } from "./plan-picker.js?v=e08c75dc18";
+import { nextLiveLot } from "./next-lot.js?v=e08c75dc18";
+import { filterForFirm } from "./firm-accounts.js?v=e08c75dc18";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=e08c75dc18";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -157,6 +157,12 @@ function cashWhy(c) {
  * O Python aceita `(?P<x>)`, o JS só `(?<x>)`; traduzir antes evita rejeitar um
  * padrão que funciona no coletor.
  */
+// As letras que a mesa escreve no nome dizem como a conta PAGA: FTDFYSL**D**
+// paga todo dia, FTDFYSL**X** paga a cada cinco dias vencedores. Espelha
+// `core/naming.POLICY_GROUPS` -- o nome do grupo é a própria política, então
+// mesa nova precisa só de regex, sem tabela de tradução de letra.
+const POLICY_GROUPS = ["daily", "flex"];
+
 function parseAccountName(name, pattern) {
   if (!pattern || !name) return null;
   try {
@@ -166,6 +172,7 @@ function parseAccountName(name, pattern) {
       funded: Boolean(m.groups?.funded),
       // O padrão escreve o tamanho em milhares, como a mesa escreve.
       size: m.groups?.size ? Number(m.groups.size) * 1000 : null,
+      policy: POLICY_GROUPS.find((nome) => m.groups?.[nome]) || null,
     };
   } catch {
     return null;   // Padrão inválido não pode derrubar a tela de pendências.
@@ -3791,6 +3798,14 @@ async function loadPending() {
   ];
 
   for (const c of journal) {
+    const firmDaLinha = firms.find((f) => f.name === c.firm);
+    // A conta que a mesa liberou já diz no nome como ela paga. Levar isso
+    // junto na opção é o que permite preencher a política sozinho lá embaixo.
+    const comPolitica = (lista) => lista.map((o) => ({
+      ...o,
+      policy: parseAccountName(o.name, firmDaLinha?.account_pattern)?.policy || null,
+    }));
+
     // Bateu o alvo, o coletor NÃO aprovou por causa da consistência, e uma
     // conta funded daquela mesa apareceu na máquina. Duas evidências
     // independentes se contradizendo -- e é exatamente aí que vale perguntar
@@ -3810,10 +3825,9 @@ async function loadPending() {
 
     if (travada && !fundedPhase.has(c.id)
         && ["phase1", "phase2"].includes(c.status)) {
-      const firm = firms.find((f) => f.name === c.firm);
       const tamanho = Number(plans.find((p) => p.id === c.plan_id)?.account_size) || null;
       const candidatas = freshAccounts.filter((op) => {
-        const lido = parseAccountName(op.name, firm?.account_pattern);
+        const lido = parseAccountName(op.name, firmDaLinha?.account_pattern);
         return lido?.funded && (!lido.size || !tamanho || lido.size === tamanho);
       });
       if (candidatas.length) {
@@ -3821,7 +3835,7 @@ async function loadPending() {
           key: `approved:${c.id}`,
           kind: "activation",
           id: c.id,
-          options: candidatas,
+          options: comPolitica(candidatas),
           policies: policiesFor(c),
           title: `${c.account_ids || "?"} · ${c.firm || "?"}`,
           ask: "Hit the target, but consistency says no. Did the firm approve it?",
@@ -3849,7 +3863,7 @@ async function loadPending() {
         key: `activation:${c.id}`,
         kind: "activation",
         id: c.id,
-        options: freshAccounts,
+        options: comPolitica(freshAccounts),
         policies: policiesFor(c),
         title: `${c.account_ids || "?"} · ${c.firm || "?"}`,
         ask: "Passed. Which account did the firm activate?",
@@ -4075,14 +4089,15 @@ function openPendingForm(items, plans, accounts, signature) {
         <div class="field wide"><label>Funded account</label>
           <select data-pending-activation="${item.id}">
             <option value="">— which one —</option>
-            ${item.options.map((o) => `<option value="${esc(o.value)}">${
-              esc(o.label)}</option>`).join("")}
+            ${item.options.map((o) => `<option value="${esc(o.value)}" data-policy="${
+              esc(o.policy || "")}">${esc(o.label)}</option>`).join("")}
           </select></div>
         ${politicas.length ? `<div class="field wide">
           <label>Payout policy · permanent</label>
           <select data-pending-policy="${item.id}">
             <option value="">— how it pays —</option>
-            ${politicas.map((p) => `<option value="${p.id}" title="${esc(p.notes || "")}">${
+            ${politicas.map((p) => `<option value="${p.id}" data-policy="${
+              esc(p.policy || "")}" title="${esc(p.notes || "")}">${
               esc(`${p.label} · ${p.buffer > 0 ? `buffer ${money0(p.buffer)}` : "no buffer"}`
                   + `${p.winning_days_required
                       ? ` · ${p.winning_days_required} winning days` : " · pays daily"}`
@@ -4178,6 +4193,23 @@ function openPendingForm(items, plans, accounts, signature) {
         plan_source: "manual",
       }), "Model confirmed");
       finishPending();
+    };
+  });
+
+  // Escolher a conta preenche a política que o NOME dela declara. Sem travar:
+  // é sugestão, e quem já escolheu na mão manda. Era o passo que ficava em
+  // branco -- e conta sem política faz o painel mostrar como sacável o lucro
+  // inteiro, inclusive o que a mesa só libera no fim do ciclo.
+  modal.querySelectorAll("[data-pending-activation]").forEach((select) => {
+    select.onchange = () => {
+      const politica = select.selectedOptions[0]?.dataset.policy;
+      const campo = modal.querySelector(
+        `[data-pending-policy="${select.dataset.pendingActivation}"]`);
+      if (!politica || !campo || campo.value) return;
+      const achou = [...campo.options].find((o) => o.dataset.policy === politica);
+      if (!achou) return;
+      campo.value = achou.value;
+      toast(`The account name says ${politica} — payout policy filled in`);
     };
   });
 
