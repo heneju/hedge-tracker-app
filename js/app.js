@@ -10,21 +10,21 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=501dd984bb";
+} from "./db.js?v=7eab68ff4b";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=501dd984bb";
+} from "./util.js?v=7eab68ff4b";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=501dd984bb";
-import { cell, locked, wireEditables } from "./editable.js?v=501dd984bb";
-import { exportChallenges } from "./export.js?v=501dd984bb";
-import { mountPlanPicker } from "./plan-picker.js?v=501dd984bb";
-import { nextLiveLot } from "./next-lot.js?v=501dd984bb";
-import { filterForFirm } from "./firm-accounts.js?v=501dd984bb";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=501dd984bb";
+} from "./charts.js?v=7eab68ff4b";
+import { cell, locked, wireEditables } from "./editable.js?v=7eab68ff4b";
+import { exportChallenges } from "./export.js?v=7eab68ff4b";
+import { mountPlanPicker } from "./plan-picker.js?v=7eab68ff4b";
+import { nextLiveLot } from "./next-lot.js?v=7eab68ff4b";
+import { filterForFirm } from "./firm-accounts.js?v=7eab68ff4b";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=7eab68ff4b";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -1060,13 +1060,6 @@ async function saveChallengeField(field, id, raw) {
 }
 
 // ------------------------------------------------- detalhe de um challenge
-
-/** Abre o drill-down de fora da aba Challenges, buscando o que ele precisa. */
-async function openChallengeById(id) {
-  const [journal, firms, progress] = await Promise.all([
-    load.journal(), load.firms(), load.progress()]);
-  return openChallenge(id, journal, firms, progress);
-}
 
 async function openChallenge(id, journal, firms, progress = []) {
   const c = journal.find((x) => x.id === id);
@@ -3961,13 +3954,17 @@ async function loadPending() {
         kind: "payout",
         id: c.id,
         title: `${c.account_ids || "?"} · ${c.firm || "?"}`,
-        ask: "Did this payout land?",
-        why: `The ${c.payout_winning_days} winning days closed on `
-          + `${day(c.cycle_closed_on)}, and the account traded again after that.`
-          + " You only go back to trading once the money is in, so it probably"
-          + " landed. Until it is recorded the cycle does not restart, the"
-          + " withdrawable shows money that already left, and the room to blow"
-          + " looks bigger than it is.",
+        ask: "Did this account pay out?",
+        why: `${c.payout_winning_days} winning days closed on `
+          + `${day(c.cycle_closed_on)}, and it traded again on `
+          + `${day(c.resumed_on)}.`,
+        // Os tres campos ja vem preenchidos com o que a mesa liberava: o
+        // normal e confirmar e salvar. A data e o dia em que voltou a operar,
+        // porque e o primeiro dia em que o dinheiro comprovadamente ja tinha
+        // caido -- e e ela que reinicia o ciclo.
+        net: c.funded_withdrawable,
+        gross: c.funded_gross_request,
+        date: c.resumed_on,
       });
     }
 
@@ -4180,8 +4177,17 @@ function openPendingForm(items, plans, accounts, signature) {
     }
     if (item.kind === "payout") {
       return `<div class="row" style="margin-top:8px">
-        <div class="field auto"><button class="btn" data-go-payout="${item.id}">
-          Record the payout</button></div>
+        <div class="field"><label>Net received</label>
+          <input type="number" min="0.01" step="0.01" inputmode="decimal"
+                 data-pending-payout="${item.id}" value="${esc(item.net ?? "")}"></div>
+        <div class="field"><label>Gross withdrawn</label>
+          <input type="number" min="0.01" step="0.01" inputmode="decimal"
+                 data-pending-gross="${item.id}" value="${esc(item.gross ?? "")}"></div>
+        <div class="field"><label>Received on</label>
+          <input type="date" data-pending-payout-date="${item.id}"
+                 value="${esc(item.date || "")}"></div>
+        <div class="field auto"><label>&nbsp;</label>
+          <button class="btn" data-save-payout="${item.id}">Save</button></div>
       </div>`;
     }
     if (item.kind === "failed") {
@@ -4202,13 +4208,8 @@ function openPendingForm(items, plans, accounts, signature) {
       <button class="btn ghost" id="pending-later">Later</button></header>
     <div style="padding:16px;max-height:74vh;overflow:auto">
       <p class="muted" style="margin-top:0;line-height:1.8">
-        The collector reads the platforms, so it knows every trade, every balance
-        and every result on its own. <strong class="bright">These it cannot
-        know</strong> — the purchase cost lives in the firm's email, and when two
-        models share an account size the balance cannot tell them apart. Until
-        they are filled the panel is doing the maths over a hole: the hedge
-        multiplier comes out smaller than it should, and a cost that was really
-        paid never reaches the total.
+        The collector reads the platforms on its own.
+        <strong class="bright">This it cannot read.</strong>
       </p>
       ${items.map((item) => `
         <div class="pending-item">
@@ -4304,10 +4305,28 @@ function openPendingForm(items, plans, accounts, signature) {
     };
   });
 
-  modal.querySelectorAll("[data-go-payout]").forEach((b) => {
-    b.onclick = () => {
-      modal.close();
-      openChallengeById(Number(b.dataset.goPayout));
+  modal.querySelectorAll("[data-save-payout]").forEach((b) => {
+    b.onclick = async () => {
+      const id = Number(b.dataset.savePayout);
+      const valor = (attr) => Number(modal.querySelector(`[${attr}="${id}"]`).value);
+      const net = valor("data-pending-payout");
+      const gross = valor("data-pending-gross");
+      const date = modal.querySelector(`[data-pending-payout-date="${id}"]`).value;
+      if (!(net > 0)) return toast("Enter what you received");
+      if (!(gross >= net)) return toast("Gross must cover what you received");
+      if (!date) return toast("Enter the date you received it");
+      // Sem redeposito aqui: é o caso raro, e ele se corrige na linha do
+      // challenge. Perguntar tudo de uma vez é o que faz ninguém responder.
+      await guard(() => save.createCashEvent({
+        challenge_id: id,
+        kind: "payout",
+        amount: net,
+        gross_amount: gross,
+        redeposit_amount: 0,
+        occurred_on: date,
+        source: "manual",
+      }), "Payout saved");
+      finishPending();
     };
   });
 
