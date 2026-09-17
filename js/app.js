@@ -10,32 +10,30 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=d7ffb9f2b6";
+} from "./db.js?v=08de1bfe5b";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=d7ffb9f2b6";
+} from "./util.js?v=08de1bfe5b";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=d7ffb9f2b6";
-import { cell, locked, wireEditables } from "./editable.js?v=d7ffb9f2b6";
-import { exportChallenges } from "./export.js?v=d7ffb9f2b6";
-import { mountPlanPicker } from "./plan-picker.js?v=d7ffb9f2b6";
-import { nextLiveLot } from "./next-lot.js?v=d7ffb9f2b6";
-import { filterForFirm } from "./firm-accounts.js?v=d7ffb9f2b6";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=d7ffb9f2b6";
+} from "./charts.js?v=08de1bfe5b";
+import { cell, locked, wireEditables } from "./editable.js?v=08de1bfe5b";
+import { exportChallenges } from "./export.js?v=08de1bfe5b";
+import { mountPlanPicker } from "./plan-picker.js?v=08de1bfe5b";
+import { nextLiveLot } from "./next-lot.js?v=08de1bfe5b";
+import { filterForFirm } from "./firm-accounts.js?v=08de1bfe5b";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=08de1bfe5b";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
 
 const PAGES = [
   { id: "overview",   label: "Overview" },
-  { id: "hedge",      label: "Hedge" },
   { id: "challenges", label: "Challenges" },
   { id: "unassigned", label: "Unassigned" },
   { id: "config",     label: "Setup" },
-  { id: "calc",       label: "Calculator" },
   { id: "issues",     label: "Report" },
 ];
 
@@ -53,8 +51,6 @@ const state = {
   isAdmin: false,
   // Linha aberta na tela Hedge e filtro da lista. Ficam no estado para a
   // escolha sobreviver ao redesenho da tela a cada clique.
-  hedgeOpen: null,
-  hedgeFilter: "all",
   // O grupo das encerradas comeca fechado: elas sao historico, nao decisao.
   hedgeClosed: false,
   // Sub-aba aberta no Setup.
@@ -3024,13 +3020,15 @@ const REPORT_FIELDS = {
   ],
 };
 
+// Telas que ja existiram: o reporte antigo continua mostrando o nome certo,
+// mas ninguem escolhe elas de novo.
+const AREAS_ANTIGAS = [["hedge", "Hedge"], ["calculator", "Calculator"]];
+
 const AREAS = [
   ["challenges", "Challenges"],
   ["overview", "Overview"],
   ["unassigned", "Unassigned"],
-  ["hedge", "Hedge"],
   ["setup", "Setup"],
-  ["calculator", "Calculator"],
   ["collector", "Collector on the PC"],
   ["other", "Something else"],
 ];
@@ -3118,7 +3116,7 @@ async function renderIssues() {
   const open = issues.filter((i) => i.status === "open");
   const closed = issues.filter((i) => i.status !== "open");
 
-  const areaLabel = (v) => (AREAS.find(([id]) => id === v) || [null, v])[1];
+  const areaLabel = (v) => ([...AREAS, ...AREAS_ANTIGAS].find(([id]) => id === v) || [null, v])[1];
   const fieldLabel = (i) => {
     const list = REPORT_FIELDS[i.target_table] || [];
     return (list.find(([v]) => v === i.field) || [null, i.field])[1];
@@ -3200,563 +3198,6 @@ async function renderIssues() {
       renderIssues();
     };
   });
-}
-
-// ------------------------------------------------------------------- hedge
-//
-// A tela operacional: que número digitar no Receiver do Copyator, conta a
-// conta. É a única pergunta que precisa de resposta antes de abrir posição.
-//
-//     multiplicador = gasto acumulado ÷ drawdown restante
-//
-// O gasto é o custo do challenge mais tudo que a perna live já afundou. Assim,
-// se a conta da mesa estourar o drawdown inteiro, a perna live devolve
-// exatamente o que foi gasto até ali: conta estourada volta no zero a zero, e
-// daí para cima é lucro. Como o gasto só cresce e o drawdown só encolhe, o
-// número sobe -- por isso a tela mostra o de agora, e não o de quando começou.
-//
-// O número sai da view, não do coletor: ele muda a cada trade da perna live, e
-// a view continua certa com o PC desligado. Só o cronograma dos dias vem do
-// coletor, porque a divisão pela regra de consistência é mais cara.
-
-async function renderHedge() {
-  const [progress, accounts] = await Promise.all([load.progress(), load.accounts()]);
-  // A conta live e uma so, e e nela que o hedge entra -- por isso a margem dela
-  // vale para todas as linhas.
-  const liveAccount = accounts.find((a) => a.kind === "live" && a.margin_at) ?? null;
-
-  // Quem substituiu quem: um challenge passa por mais de uma conta, e a da
-  // fase anterior aparece aqui com `spent` e multiplicador só porque a linha
-  // de `account_progress` é por conta. Ela já entregou o bastão.
-  const currentOf = new Map(progress
-    .filter((a) => a.challenge_id && isCurrentPhase(a))
-    .map((a) => [a.challenge_id, accountShort(a.login_or_name)]));
-  const supersededBy = (a) =>
-    (isCurrentPhase(a) ? null : currentOf.get(a.challenge_id) ?? null);
-
-  // Estourada e substituída por último: continuam na tela porque o gasto delas
-  // ainda conta história, mas não é o que se olha antes de operar.
-  const rank = (a) => (a.blown ? 3 : supersededBy(a) ? 2
-    : a.hedge_multiplier == null ? 1 : 0);
-  const rows = [...progress].sort((a, b) =>
-    rank(a) - rank(b) || String(a.short_id).localeCompare(String(b.short_id)));
-
-  // Em jogo x encerrada. Estourada e a que entregou o bastao nao voltam a
-  // operar: elas contam historia, nao decisao, e ficavam ocupando a tela toda
-  // com "blown" repetido enquanto a conta ativa se perdia no meio.
-  const emJogo = rows.filter((a) => !a.blown && isCurrentPhase(a));
-  const encerradas = rows.filter((a) => a.blown || !isCurrentPhase(a));
-  const flagged = emJogo.filter((a) => hedgeNotes(a, liveAccount).length);
-  const shown = state.hedgeFilter === "flagged" ? flagged : emJogo;
-
-  // Razao agregada: quanto o conjunto todo gastou dividido pelo que o conjunto
-  // todo ainda pode perder. NAO e um numero para digitar em lugar nenhum -- o
-  // Receiver e por conta, e cada uma tem o seu na tabela. Serve para dizer o
-  // tamanho do buraco antes de abrir a sessao.
-  // `spent` e do CHALLENGE, e as duas contas dele carregam o mesmo numero --
-  // somar as duas contava o mesmo buraco duas vezes. So a conta da fase
-  // corrente entra.
-  const live = rows.filter((a) => !a.blown && a.drawdown_room > 0 && isCurrentPhase(a));
-  const spent = live.reduce((t, a) => t + Number(a.spent || 0), 0);
-  const room = live.reduce((t, a) => t + Number(a.drawdown_room || 0), 0);
-  const pooled = room ? (spent / room) : null;
-
-  const chips = [["all", "In play"], ["flagged", `Flagged · ${flagged.length}`]]
-    .map(([id, label]) => `<button type="button" data-hedge-filter="${id}"
-      aria-pressed="${(state.hedgeFilter || "all") === id}">${label}</button>`).join("");
-
-  // Uma funcao so: a tabela em jogo e o grupo das encerradas desenham a
-  // mesma linha.
-  const linha = (a) => {
-    const notes = hedgeNotes(a, liveAccount);
-    const passouPara = supersededBy(a);
-    // Numero de conta que ja entregou o bastao convida a digitar o que nao
-    // vale mais. Melhor traco e dizer quem assumiu.
-    const mult = passouPara ? null : a.hedge_multiplier;
-    // A barra le contra 0,50: acima disso o hedge ja custa metade do drawdown
-    // e a conta esta cara de segurar.
-    const barW = mult == null ? 0 : Math.min(100, (Number(mult) / 0.5) * 100);
-    const open = state.hedgeOpen === a.account_id;
-
-    return `
-    <tr class="pick" data-hedge-row="${a.account_id}" ${
-      passouPara ? 'style="opacity:.55"' : ""}>
-      <td style="font-weight:700"><span style="display:inline-block;width:15px;
-        color:var(--color-neutral-600)">${open ? "−" : "+"}</span><span class="${
-        a.blown ? "blown" : ""}">${esc(accountShort(a.login_or_name))}</span></td>
-      <td class="muted">${esc(a.plan_name || "no plan")}${
-        a.account_size ? ` · ${money0(a.account_size)}` : ""}</td>
-      <td class="num">${money0(a.spent)}</td>
-      <td class="num muted">${a.drawdown_room == null ? "—" : money0(a.drawdown_room)}</td>
-      <td style="padding-right:20px;min-width:180px">
-        <div style="height:6px;background:var(--color-neutral-200)">
-          <div style="height:100%;width:${barW.toFixed(1)}%;background:${
-            a.blown ? "var(--color-neutral-400)" : "var(--color-accent)"}"></div>
-        </div>
-      </td>
-      <td class="num" style="font-weight:700;font-size:15px;color:${
-        a.blown || passouPara ? "var(--color-neutral-500)"
-        : a.plan_source === "inferred" ? "var(--color-neutral-500)"
-        : "var(--color-accent)"}">${
-        a.blown ? "blown" : mult == null ? "—" : num(mult, 2)}</td>
-      <td style="font-size:12px;color:${passouPara ? "var(--color-neutral-600)"
-        : notes.length ? "var(--loss)" : "var(--color-neutral-600)"}">${
-        passouPara ? `handed over to ${esc(passouPara)}`
-          : notes.length ? esc(notes[0].short) : "ok"}</td>
-    </tr>
-    ${open ? `<tr><td colspan="7" style="padding:0;background:var(--color-neutral-100)">
-      ${hedgeDetail(a, notes, liveAccount)}</td></tr>` : ""}`;
-  };
-
-  const body = shown.map(linha).join("");
-
-  render(`
-    <section class="cards kpi">
-      <div class="card">
-        <div class="label" style="color:var(--color-accent)">Pooled ratio</div>
-        <div class="value n" style="font-size:72px">${
-          pooled == null ? `<span class="mult-off">—</span>` : num(pooled, 2)}</div>
-        <div class="sub" style="max-width:46ch;line-height:1.6">${live.length
-          ? `Everything spent ÷ everything still losable, across the accounts in
-             play. A reading of the hole, not a number to type — the receiver
-             takes one multiplier per account, and each is in the table below.`
-          : `No account in play. Every challenge here has either blown or been
-             closed — start one in Challenges and the numbers come back.`}
-        </div>
-      </div>
-      <div class="card"><div class="label">To recover</div>
-        <div class="value n">${money0(spent)}</div>
-        <div class="sub">cost + live leg so far</div></div>
-      <div class="card"><div class="label">Drawdown left</div>
-        <div class="value n">${money0(room)}</div>
-        <div class="sub">what the number divides by</div></div>
-      <div class="card"><div class="label">Accounts</div>
-        <div class="value n">${live.length}</div>
-        <div class="sub" style="color:${flagged.length ? "var(--loss)" : ""}">${
-          flagged.length ? `${flagged.length} of ${rows.length} flagged` : "all registered"}</div></div>
-    </section>
-
-    <div class="tool">
-      <h2>Line by line</h2>
-      <span class="hint">click a row for the full math · bar reads against 0.50</span>
-      <span class="right">
-        <span class="n" style="font-size:11px;color:var(--color-neutral-600)">${
-          shown.length} of ${rows.length}</span>
-        <span class="filt">${chips}</span>
-      </span>
-    </div>
-
-    <div class="panel" style="margin-top:0">
-      <div class="scroll"><table class="dt n" style="min-width:880px">
-        <thead><tr>
-          <th style="width:110px">Account</th><th>Plan</th>
-          <th class="num">Spent</th><th class="num">DD left</th>
-          <th style="width:200px"></th>
-          <th class="num" style="width:80px">Mult</th><th>Flag</th>
-        </tr></thead>
-        <tbody>${body || `<tr><td colspan="7">${
-          empty(rows.length ? "nothing in play — see the closed accounts below"
-                            : "no prop account registered yet")}</td></tr>`}</tbody>
-      </table></div>
-    </div>
-
-    ${encerradas.length ? `
-    <div class="tool" style="margin-top:28px">
-      <h2>Closed</h2>
-      <span class="hint">blown, or handed over to another account — kept for the
-        history, out of the way of the decision</span>
-      <button class="btn ghost right" id="toggle-closed">${
-        state.hedgeClosed ? "Hide" : `Show ${encerradas.length}`}</button>
-    </div>
-    <div class="panel" style="margin-top:0" ${state.hedgeClosed ? "" : "hidden"}>
-      <div class="scroll"><table class="dt n" style="min-width:880px;opacity:.62">
-        <thead><tr>
-          <th style="width:110px">Account</th><th>Plan</th>
-          <th class="num">Spent</th><th class="num">DD left</th>
-          <th></th><th class="num" style="width:80px">Mult</th><th>Flag</th>
-        </tr></thead>
-        <tbody>${encerradas.map(linha).join("")}</tbody>
-      </table></div>
-    </div>` : ""}`);
-
-  const alternar = document.getElementById("toggle-closed");
-  if (alternar) {
-    alternar.onclick = () => {
-      state.hedgeClosed = !state.hedgeClosed;
-      renderHedge();
-    };
-  }
-
-  view.querySelectorAll("[data-hedge-filter]").forEach((b) => {
-    b.onclick = () => {
-      state.hedgeFilter = b.dataset.hedgeFilter;
-      renderHedge();
-    };
-  });
-
-  view.querySelectorAll("[data-hedge-row]").forEach((tr) => {
-    tr.onclick = () => {
-      const id = Number(tr.dataset.hedgeRow);
-      state.hedgeOpen = state.hedgeOpen === id ? null : id;
-      renderHedge();
-    };
-  });
-
-  // Simulacao de aporte: puro calculo na tela, nada e gravado. A pergunta e
-  // "com quanto a mais eu consigo rodar o multiplicador que a regra pede?", e a
-  // resposta muda a cada tecla.
-  view.querySelectorAll("[data-topup]").forEach((input) => {
-    const id = input.dataset.topup;
-    const row = rows.find((x) => String(x.account_id) === id);
-    const out = view.querySelector(`[data-topup-out="${id}"]`);
-    const perLot = Number(Object.values(liveAccount?.margin_per_lot || {})[0]) || 0;
-    const contracts = Number(row?.last_contracts) || 1;
-    const mult = Number(row?.hedge_multiplier) || 0;
-
-    input.onclick = (e) => e.stopPropagation();
-    input.oninput = () => {
-      const extra = Number(input.value) || 0;
-      const free = (Number(liveAccount?.margin_free) || 0) + extra;
-      const teto = Math.floor((free / (perLot * contracts)) * 100) / 100;
-      out.innerHTML = teto >= mult
-        ? `covers <b class="pos">${num(mult, 2)}</b> — enough`
-        : `covers <b class="neg">${num(teto, 2)}</b>, still short of ${num(mult, 2)}`;
-    };
-  });
-
-  view.querySelectorAll("[data-save-risk]").forEach((b) => {
-    b.onclick = async (e) => {
-      e.stopPropagation();   // a linha inteira abre e fecha ao clique
-      const input = b.closest("tr")?.querySelector("[data-risk]");
-      if (!input) return toast("Field not found");
-      const challengeId = Number(input.dataset.risk);
-      if (!challengeId) return toast("This account has no challenge yet");
-      const alvo = b.closest("tr")?.querySelector("[data-target]");
-      const raw = input.value.trim();
-      const rawAlvo = (alvo?.value ?? "").trim();
-      await guard(() => save.phaseByChallenge(challengeId, input.dataset.phase, {
-        risk_per_trade: raw === "" ? null : Number(raw),
-        target_per_trade: rawAlvo === "" ? null : Number(rawAlvo),
-      }), "Entry saved");
-      renderHedge();
-    };
-  });
-
-  // Clique dentro do detalhe nao pode fechar a linha -- o campo ficaria
-  // inalcancavel.
-  view.querySelectorAll("[data-risk], [data-target]").forEach((input) => {
-    input.onclick = (e) => e.stopPropagation();
-  });
-
-  view.querySelectorAll("[data-report-hedge]").forEach((b) => {
-    b.onclick = (e) => {
-      e.stopPropagation();
-      const a = rows.find((x) => x.account_id === Number(b.dataset.reportHedge));
-      openIssueForm({
-        area: "hedge",
-        targetTable: "accounts",
-        targetId: a.account_id,
-        targetLabel: `${accountShort(a.login_or_name)} · multiplier ${
-          a.hedge_multiplier ?? "—"}`,
-      }, () => renderHedge());
-    };
-  });
-}
-
-/**
- * Os dois caminhos da próxima entrada, em dinheiro.
- *
- * O stop e o alvo não dimensionam o hedge -- quem faz isso é a folga. Eles
- * respondem outra coisa, que é o que se pergunta antes de entrar: se a mesa
- * stopar, quanto a live devolve e como fica o gasto; se a mesa bater o alvo,
- * quanto a live paga por isso.
- *
- * Os dois lados usam fatores diferentes e MEDIDOS, porque spread e swap não
- * escolhem lado: quando a live precisa render, rende menos (`delivery`, 82%);
- * quando ela paga, paga mais (`drag`, 112%). Projetar com o nominal nos dois
- * lados pintaria a operação melhor do que ela é, das duas vezes.
- */
-function entryOutcomes(a) {
-  const mult = Number(a.hedge_multiplier);
-  const stop = Number(a.risk_per_trade) || 0;
-  const target = Number(a.target_per_trade) || 0;
-  if (!mult || (!stop && !target)) return "";
-
-  const spent = Number(a.spent) || 0;
-  const devolve = stop * mult * (Number(a.delivery) || 1);
-  const paga = target * mult * (Number(a.drag) || 1);
-
-  const linha = (rotulo, movimento, resultado, bom) => `
-    <tr>
-      <td style="border:0;padding:3px 0;color:var(--color-neutral-700)">${rotulo}</td>
-      <td class="num" style="border:0;padding:3px 0;color:${
-        bom ? "var(--gain)" : "var(--loss)"}">${bom ? "+" : "−"}${money0(movimento)}</td>
-      <td class="num" style="border:0;padding:3px 0 3px 18px">spend
-        <b>${money0(Math.max(0, resultado))}</b></td>
-    </tr>`;
-
-  return `
-    <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--color-divider)">
-      <div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;
-           color:var(--color-neutral-700)">Next entry, both ways</div>
-      <table class="n" style="margin-top:8px;font-size:12px">
-        <tbody>
-          ${stop ? linha(`stops −${money0(stop)}`, devolve, spent - devolve, true) : ""}
-          ${target ? linha(`takes +${money0(target)}`, paga, spent + paga, false) : ""}
-        </tbody>
-      </table>
-      ${stop && devolve >= spent ? `
-        <div class="n" style="margin-top:6px;font-size:11px;color:var(--gain)">
-          one stop already covers everything spent
-        </div>` : ""}
-    </div>`;
-}
-
-/**
- * Tudo que faz o número mentir, com o que fazer a respeito.
- *
- * Cada aviso tem uma forma curta, para caber na coluna Flag, e uma longa, que
- * aparece quando a linha abre. Sem o motivo, um 0,00 parece recomendação e não
- * falta de cadastro.
- */
-function hedgeNotes(a, liveAccount) {
-  const notes = [];
-  // Conta encerrada nao gera aviso: nao ha entrada pela frente, entao nada ali
-  // e acionavel. Dizer "funded" numa conta que estourou e so ruido.
-  if (a.blown) return notes;
-  const falta = marginShortfall(a, liveAccount);
-  if (falta) {
-    notes.push({
-      short: "no margin",
-      long: `the live account is ${money0(falta.missing)} short of the margin this`
-        + ` hedge needs (${money0(falta.needed)} against ${money0(falta.free)} free).`
-        + ` Add it, or enter at ${num(falta.max, 2)} and leave part of the prop`
-        + ` leg uncovered.`,
-    });
-  }
-  if (!a.plan_id) {
-    notes.push({
-      short: "no plan",
-      long: "no plan on this account — set the size and the drawdown in Setup,"
-        + " otherwise there is nothing to divide by",
-    });
-  }
-  if (a.plan_id && a.plan_source === "inferred") {
-    notes.push({
-      short: "plan guessed",
-      long: `plan deduced from the balance (${a.plan_name || "?"}, ${
-        money0(a.max_drawdown)} drawdown) — confirm it in Setup, it is the drawdown`
-        + " that sets this number",
-    });
-  }
-  if (a.plan_id && !Math.abs(Number(a.challenge_cost || 0))) {
-    notes.push({
-      short: "no cost",
-      long: "purchase cost not recorded — until it is, the multiplier is lower"
-        + " than it should be",
-    });
-  }
-  if (a.phase === "FUNDED") {
-    notes.push({
-      short: "funded",
-      long: "funded: no target left to chase — the multiplier here is what protects"
-        + " the payout",
-    });
-  }
-  return notes;
-}
-
-/** A conta aberta: de onde o número saiu e o que ainda falta na conta. */
-function hedgeDetail(a, notes, liveAccount) {
-  const cost = Math.abs(Number(a.challenge_cost || 0));
-  const hedge = Number(a.hedge_pnl || 0);
-
-  const chips = Array.isArray(a.rec_schedule) && a.rec_schedule.length
-    ? a.rec_schedule.map((d) => `<span class="chip n">day ${d.day}
-        <b>${money0(d.target)}</b>
-        <span style="color:var(--color-neutral-600)">${num(d.share_pct, 1)}%</span></span>`).join("")
-    : "";
-
-  return `
-  <div style="display:flex;flex-wrap:wrap;gap:36px;padding:22px 24px 26px">
-    <div style="min-width:250px">
-      <div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;
-           color:var(--color-accent)">Account ${esc(accountShort(a.login_or_name))} · the math</div>
-      ${a.hedge_multiplier == null ? `
-        <div style="margin-top:12px;font-size:13px;color:var(--color-neutral-700)">
-          nothing left to divide by</div>` : `
-        <div class="n" style="margin-top:12px;font-size:14px;line-height:1.7;
-             color:var(--color-neutral-700)">
-          ${money0(a.spent)} spent ÷ ${money0(a.risk_now)} still losable
-          = <b style="color:var(--color-text)">${num(a.hedge_multiplier_raw, 4)}</b><br>
-          ÷ ${num(Number(a.delivery) * 100, 1)}% delivered
-          → <b style="color:var(--color-text)">${num(a.hedge_multiplier, 2)}</b>
-        </div>
-        <div style="margin-top:8px;font-size:11px;line-height:1.6;
-             color:var(--color-neutral-600)">
-          The divisor is what can still be lost, not one entry\u2019s stop:
-          every loss that still fits feeds the recovery, and each stop already
-          cuts the spend for the next calculation. Dividing by a single stop
-          makes the first entry try to recover everything alone, with twice the
-          lot and twice the margin — and it ends up worse.
-          ${a.risk_per_trade
-            ? `Stop of ${money0(a.risk_per_trade)} per entry — that is for the
-               lot size and the margin check, not for this division.` : ""}
-          ${Number(a.delivery_pairs)
-            ? `Delivery measured on ${a.delivery_pairs} pair${
-                Number(a.delivery_pairs) === 1 ? "" : "s"} where the firm
-               stopped out — spread and swap always pull against, so the nominal
-               has to be bigger than the effect you want.`
-            : `No paired trade measured yet, so delivery counts as 100% — the
-               panel does not invent a correction.`}
-        </div>
-        ${entryOutcomes(a)}
-        <div class="row" style="margin-top:12px">
-          <div class="field"><label>Stop per entry</label>
-            <input class="n" type="number" min="0" step="10"
-                   data-risk="${a.challenge_id ?? ""}" data-phase="${esc(a.phase ?? "")}"
-                   value="${a.risk_per_trade ?? ""}"
-                   placeholder="what each entry risks"></div>
-          <div class="field"><label>Target per entry</label>
-            <input class="n" type="number" min="0" step="10"
-                   data-target="${a.challenge_id ?? ""}"
-                   value="${a.target_per_trade ?? ""}"
-                   placeholder="what each entry aims at"></div>
-          <div class="field auto"><label>&nbsp;</label>
-            <button class="btn ghost" data-save-risk="${a.account_id}">Save</button></div>
-        </div>`}
-      <table class="n" style="margin-top:14px;font-size:12px;min-width:240px">
-        <tbody>
-          <tr><td style="color:var(--color-neutral-700);border:0">challenge cost</td>
-              <td class="num" style="border:0">${cash(cost)}</td></tr>
-          <tr><td style="color:var(--color-neutral-700);border:0">live leg so far</td>
-              <td class="num" style="border:0">${cash(hedge)}</td></tr>
-          <tr><td style="font-weight:600;border:0;border-top:1px solid var(--color-divider)">
-                to recover</td>
-              <td class="num" style="font-weight:700;border:0;
-                  border-top:1px solid var(--color-divider)">${cash(a.spent)}</td></tr>
-        </tbody>
-      </table>
-      ${supersededBy(a) ? `<div class="mult-note" style="margin-top:14px">
-        This account finished its phase — the challenge moved on to
-        ${esc(supersededBy(a))}. The spend shown here belongs to the challenge,
-        not to this account, and it is counted once, on the account in play.
-      </div>` : ""}
-      <div style="margin-top:16px">
-        <button class="btn ghost" data-report-hedge="${a.account_id}">Report</button>
-      </div>
-    </div>
-
-    <div style="flex:1 1 340px;min-width:280px">
-      <div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;
-           color:var(--color-neutral-700)">${esc(a.plan_name || "no plan")}${
-        a.account_size ? ` · ${money0(a.account_size)}` : ""}${
-        a.phase ? ` · ${PHASE_LABEL[a.phase] || a.phase}` : ""}</div>
-      <div class="n" style="margin-top:10px;font-size:12px">${
-        a.target_left == null ? "no target to chase"
-          : `${money0(a.target_left)} left to pass${
-              a.days_left ? ` · ${a.days_left} day${a.days_left === 1 ? "" : "s"} minimum` : ""}${
-              a.consistency_pct ? ` · ${num(a.consistency_pct, 0)}% consistency` : ""}`}</div>
-      ${chips ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:12px">${chips}</div>
-        <div class="n" style="margin-top:8px;font-size:11px;color:var(--color-neutral-600)">${
-          a.rec_hedge_cost != null
-            ? `hedge costs about ${money0(a.rec_hedge_cost)} if today's target lands · ` : ""
-        }computed ${stamp(a.rec_computed_at)}</div>` : ""}
-      ${marginLine(a, liveAccount)}
-      ${notes.map((n) => `<div class="mult-note">${esc(n.long)}</div>`).join("")}
-    </div>
-  </div>`;
-}
-
-/**
- * O que a próxima entrada exige de margem, e o que a live tem.
- *
- * Vem antes da entrada de propósito. Ele opera a live com capital apertado --
- * às vezes cem dólares de folga -- e repõe com o saque da funded. Nesse regime,
- * descobrir que faltou margem DEPOIS de abrir na mesa é ficar com a perna
- * descoberta, que é o risco que este sistema existe para evitar.
- *
- * O número que resolve não é o "falta margem": é quanto de multiplicador a
- * margem aguenta. Com ele dá para decidir entrar menor em vez de não entrar.
- */
-function marginNeed(a, live) {
-  const mult = a.hedge_multiplier;
-  if (!live || mult == null) return null;
-
-  // O símbolo do hedge é o que a live opera de fato; sem par medido ainda, o
-  // único que ela tem cadastrado serve.
-  const perLot = live.margin_per_lot || {};
-  const symbol = Object.keys(perLot)[0];
-  if (!symbol || !Number(perLot[symbol])) return null;
-
-  const contracts = Number(a.last_contracts) || 1;
-  const lots = Number(mult) * contracts;
-  const needed = Number(perLot[symbol]) * lots;
-  const free = Number(live.margin_free) || 0;
-  return {
-    symbol, contracts, lots, needed, free,
-    fits: needed <= free,
-    missing: Math.max(0, needed - free),
-    // Quanto de multiplicador a margem paga, arredondado para BAIXO: teto é teto.
-    max: Math.floor((free / (Number(perLot[symbol]) * contracts)) * 100) / 100,
-    // E quantos contratos ela paga NO multiplicador recomendado. Este responde
-    // sem depender de adivinhar com quanto a pessoa vai entrar -- o outro
-    // supõe que a próxima entrada repete a anterior.
-    maxContracts: Math.floor(free / (Number(perLot[symbol]) * Number(mult))),
-    // Margem velha não serve para decidir entrada.
-    stale: Date.now() - new Date(live.margin_at).getTime() > 5 * 60 * 1000,
-  };
-}
-
-/** Só quando falta -- é o que vira aviso. */
-function marginShortfall(a, live) {
-  const need = marginNeed(a, live);
-  return need && !need.fits ? need : null;
-}
-
-function marginLine(a, live) {
-  const need = marginNeed(a, live);
-  if (!need) return "";
-  const { symbol, contracts, lots, needed, free, fits, max, stale } = need;
-  const mult = a.hedge_multiplier;
-  const cabe = fits;
-  const teto = max;
-  const velha = stale;
-
-  return `
-    <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--color-divider)">
-      <div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;
-           color:${cabe ? "var(--color-neutral-700)" : "var(--loss)"}">
-        Margin on the live${velha ? " · last read " + stamp(live.margin_at) : ""}</div>
-      <div class="n" style="margin-top:8px;font-size:12px;line-height:1.8;
-           color:var(--color-neutral-700)">
-        ${num(contracts, 0)} contract${contracts === 1 ? "" : "s"} × ${num(mult, 2)}
-        = <b style="color:var(--color-text)">${num(lots, 2)} ${esc(symbol)}</b><br>
-        needs <b style="color:${cabe ? "var(--color-text)" : "var(--loss)"}">${
-          money0(needed)}</b> of ${money0(free)} free
-      </div>
-      ${cabe
-        ? `<div class="n" style="margin-top:6px;font-size:11px;color:var(--color-neutral-600)">
-             covers up to <b>${need.maxContracts} contract${
-               need.maxContracts === 1 ? "" : "s"}</b> at ${num(mult, 2)},
-             or a multiplier of ${num(teto, 2)} at ${num(contracts, 0)}
-           </div>`
-        : `<div class="mult-note" style="margin-top:10px">
-             Not enough margin. Add <b>${money0(needed - free)}</b> to run
-             ${num(mult, 2)}, or enter at <b>${num(teto, 2)}</b> and leave part
-             of the prop leg uncovered.
-           </div>
-           <div class="row" style="margin-top:10px">
-             <div class="field"><label>If I add</label>
-               <input class="n" type="number" min="0" step="50"
-                      data-topup="${a.account_id}"
-                      placeholder="${Math.ceil(needed - free)}"></div>
-             <div class="field wide"><label>&nbsp;</label>
-               <div class="n" data-topup-out="${a.account_id}"
-                    style="font-size:12px;color:var(--color-neutral-700);
-                           padding-top:8px">—</div></div>
-           </div>`}
-    </div>`;
 }
 
 // ------------------------------------------------------ o que falta cadastrar
@@ -4365,64 +3806,13 @@ function openPendingForm(items, plans, accounts, signature) {
 
 // -------------------------------------------------------------- calculadora
 
-function renderCalc() {
-  render(`
-    <div style="max-width:900px">
-      <div class="tool">
-        <h2>Hedge economics</h2>
-        <span class="hint">the <em>Target × Multiplier</em> block from the spreadsheet:
-          how much of the payout the hedge eats</span>
-      </div>
-      <div class="row" style="margin-top:22px">
-        <div class="field"><label>Target</label>
-          <input id="k-target" type="number" value="3000" step="100"></div>
-        <div class="field"><label>Multiplier</label>
-          <input id="k-mult" type="number" value="0.1" step="0.01"></div>
-        <div class="field"><label>Trader split (%)</label>
-          <input id="k-split" type="number" value="90" step="1"></div>
-      </div>
-      <section class="cards" style="grid-template-columns:repeat(3,minmax(0,1fr));
-               border-top:2px solid var(--color-divider);border-bottom:0;margin-top:28px">
-        <div class="card"><div class="label">Hedge cost</div>
-          <div class="value n neg" id="k-cost" style="font-size:44px">—</div>
-          <div class="sub">target × multiplier</div></div>
-        <div class="card"><div class="label">After split</div>
-          <div class="value n" id="k-after" style="font-size:44px">—</div>
-          <div class="sub">target × split</div></div>
-        <div class="card"><div class="label" style="color:var(--color-accent)">Net profit</div>
-          <div class="value n" id="k-net" style="font-size:44px">—</div>
-          <div class="sub">after split − hedge cost</div></div>
-      </section>
-    </div>`);
-
-  const recompute = () => {
-    const target = Number(document.getElementById("k-target").value) || 0;
-    const mult = Number(document.getElementById("k-mult").value) || 0;
-    const split = (Number(document.getElementById("k-split").value) || 0) / 100;
-    const cost = target * mult;
-    const after = target * split;
-    const net = after - cost;
-    document.getElementById("k-cost").textContent = money(cost);
-    document.getElementById("k-after").textContent = money(after);
-    const netEl = document.getElementById("k-net");
-    netEl.textContent = money(net);
-    netEl.className = `value n ${signClass(net)}`;
-  };
-  ["k-target", "k-mult", "k-split"].forEach((id) => {
-    document.getElementById(id).oninput = recompute;
-  });
-  recompute();
-}
-
 // ------------------------------------------------------------------ router
 
 const RENDERERS = {
   overview: renderOverview,
-  hedge: renderHedge,
   challenges: renderChallenges,
   unassigned: renderUnassigned,
   config: renderConfig,
-  calc: renderCalc,
   issues: renderIssues,
 };
 
