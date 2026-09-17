@@ -6,14 +6,17 @@ export function nextLiveLot(challenge, progress) {
   if (!account || account.blown) return { lot: null, reason: "No active account for this phase" };
   if (phase !== "FUNDED") {
     const cost = Number(account.spent);
-    const drawdown = Number(account.drawdown_total);
+    // A folga, nao o drawdown do plano: o hedge devolve o gasto no dia em que
+    // a conta morrer, e ela morre ao perder o que ainda tem. Enquanto o piso
+    // persegue o pico os dois numeros sao o mesmo; depois que ele trava, nao.
+    const drawdown = Number(account.drawdown_room);
     if (account.spent == null || !Number.isFinite(cost) || cost < 0
         || !Number.isFinite(drawdown) || drawdown <= 0) {
-      return { lot: null, reason: "Recovery cost or drawdown unavailable" };
+      return { lot: null, reason: "Recovery cost or room to blow unavailable" };
     }
     return {
       lot: Math.round(cost / drawdown * 100) / 100,
-      reason: `Evaluation: total cost to recover ${cost.toFixed(2)} / drawdown ${drawdown.toFixed(2)}. No extra buffer or contract scaling.`,
+      reason: `Evaluation: total cost to recover ${cost.toFixed(2)} / ${drawdown.toFixed(2)} left to lose. No extra buffer or contract scaling.`,
     };
   }
   const contracts = Number(account.last_contracts);
@@ -31,8 +34,14 @@ export function nextLiveLot(challenge, progress) {
   if (multiplier == null || !Number.isFinite(Number(multiplier)) || Number(multiplier) < 0) {
     return { lot: null, reason: "Recommendation unavailable" };
   }
+  // O stop que este numero assume e o CHAO: e ali que a conta morre e o hedge
+  // precisa ter devolvido o gasto. Parar antes disso faz o hedge devolver mais
+  // do que se perdeu -- nao e erro, e dinheiro parado na live.
+  const room = Number(account.drawdown_room);
+  const stop = bufferedDaily || !Number.isFinite(room) || room <= 0
+    ? "" : ` Assumes the stop at the floor, ${room.toFixed(2)} away.`;
   return {
     lot: Math.round(Number(multiplier) * contracts * 100) / 100,
-    reason: `${bufferedDaily ? "Post-buffer strategy" : "Recovery calculation"}: ${Number(multiplier)} per contract × ${contracts} contract(s). Assumes the same contract quantity as the last operation.`,
+    reason: `${bufferedDaily ? "Post-buffer strategy" : "Recovery calculation"}: ${Number(multiplier)} per contract × ${contracts} contract(s). Assumes the same contract quantity as the last operation.${stop}`,
   };
 }
