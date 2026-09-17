@@ -10,21 +10,21 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=90a5027f92";
+} from "./db.js?v=501dd984bb";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=90a5027f92";
+} from "./util.js?v=501dd984bb";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=90a5027f92";
-import { cell, locked, wireEditables } from "./editable.js?v=90a5027f92";
-import { exportChallenges } from "./export.js?v=90a5027f92";
-import { mountPlanPicker } from "./plan-picker.js?v=90a5027f92";
-import { nextLiveLot } from "./next-lot.js?v=90a5027f92";
-import { filterForFirm } from "./firm-accounts.js?v=90a5027f92";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=90a5027f92";
+} from "./charts.js?v=501dd984bb";
+import { cell, locked, wireEditables } from "./editable.js?v=501dd984bb";
+import { exportChallenges } from "./export.js?v=501dd984bb";
+import { mountPlanPicker } from "./plan-picker.js?v=501dd984bb";
+import { nextLiveLot } from "./next-lot.js?v=501dd984bb";
+import { filterForFirm } from "./firm-accounts.js?v=501dd984bb";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=501dd984bb";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -126,6 +126,9 @@ function withdrawableWhy(c) {
 
 /** A linha fina embaixo do valor: o que segura o saque. */
 function withdrawableNote(c) {
+  // Ciclo fechado e a conta operando de novo: o dinheiro caiu e ninguem
+  // lancou. Enquanto nao lancar, este numero mostra dinheiro que ja saiu.
+  if (c.traded_after_cycle) return `<div class="sub">⚠ payout not recorded?</div>`;
   if (Number(c.winning_days_left) > 0) {
     const total = Number(c.winning_days) + Number(c.winning_days_left);
     return `<div class="sub">${c.winning_days}/${total} winning days</div>`;
@@ -1057,6 +1060,13 @@ async function saveChallengeField(field, id, raw) {
 }
 
 // ------------------------------------------------- detalhe de um challenge
+
+/** Abre o drill-down de fora da aba Challenges, buscando o que ele precisa. */
+async function openChallengeById(id) {
+  const [journal, firms, progress] = await Promise.all([
+    load.journal(), load.firms(), load.progress()]);
+  return openChallenge(id, journal, firms, progress);
+}
 
 async function openChallenge(id, journal, firms, progress = []) {
   const c = journal.find((x) => x.id === id);
@@ -3940,6 +3950,27 @@ async function loadPending() {
       });
     }
 
+    // Ciclo da Flex fechado e a conta voltou a operar. Quem opera essas contas
+    // só volta depois que o dinheiro cai -- então o saque foi pago e ninguém
+    // registrou. Enquanto não registrar, o relógio não zera, o sacável mostra
+    // dinheiro que já saiu e a folga de drawdown fica maior do que é.
+    if (c.traded_after_cycle && Number(c.payout_winning_days) > 0
+        && Number(c.winning_days) >= Number(c.payout_winning_days)) {
+      items.push({
+        key: `payout:${c.id}:${c.cycle_closed_on}`,
+        kind: "payout",
+        id: c.id,
+        title: `${c.account_ids || "?"} · ${c.firm || "?"}`,
+        ask: "Did this payout land?",
+        why: `The ${c.payout_winning_days} winning days closed on `
+          + `${day(c.cycle_closed_on)}, and the account traded again after that.`
+          + " You only go back to trading once the money is in, so it probably"
+          + " landed. Until it is recorded the cycle does not restart, the"
+          + " withdrawable shows money that already left, and the room to blow"
+          + " looks bigger than it is.",
+      });
+    }
+
     // Custo: linha importada da planilha já traz o número, então fica de fora --
     // o aviso é para o que o coletor criou e ninguém preencheu.
     if (c.import_source || Number(c.cost_entries) > 0) continue;
@@ -4147,6 +4178,12 @@ function openPendingForm(items, plans, accounts, signature) {
           <button class="btn" data-save-activation="${item.id}">Activate</button></div>
       </div>`;
     }
+    if (item.kind === "payout") {
+      return `<div class="row" style="margin-top:8px">
+        <div class="field auto"><button class="btn" data-go-payout="${item.id}">
+          Record the payout</button></div>
+      </div>`;
+    }
     if (item.kind === "failed") {
       return `<div class="row" style="margin-top:8px">
         <div class="field auto"><button class="btn ghost danger"
@@ -4264,6 +4301,13 @@ function openPendingForm(items, plans, accounts, signature) {
       await guard(() => activateFunded(id, select.value,
         policy ? Number(policy.value) : null), "Funded");
       finishPending();
+    };
+  });
+
+  modal.querySelectorAll("[data-go-payout]").forEach((b) => {
+    b.onclick = () => {
+      modal.close();
+      openChallengeById(Number(b.dataset.goPayout));
     };
   });
 
