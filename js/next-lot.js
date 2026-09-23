@@ -21,16 +21,11 @@ export function nextLiveLot(challenge, progress) {
   }
   const contracts = Number(account.last_contracts);
   if (!(contracts > 0)) return { lot: null, reason: "Contract quantity unavailable" };
-  const bufferedDaily = phase === "FUNDED"
-    && String(challenge.firm).toLowerCase() === "tradeify"
-    && String(account.product).toLowerCase() === "select"
-    && challenge.payout_policy === "daily"
-    && account.drawdown_locked
-    && (Number(challenge.funded_gross_paid) > 0
-      || (Number(challenge.payout_buffer) > 0
-        && Number(challenge.funded_prop) >= Number(challenge.payout_buffer)));
-  // Operator's post-buffer strategy; this is not a prop-firm requirement.
-  const multiplier = bufferedDaily ? 0.25 : account.hedge_multiplier;
+  // O multiplicador vem pronto de `account_progress`, que ja aplica o regime
+  // pos-saque (0,25 fixo). Repetir a regra aqui foi o que fez a tela discordar
+  // do coletor -- e a versao daqui era estreita: so Tradeify Select diaria.
+  const afterPayout = phase === "FUNDED" && Number(challenge.funded_gross_paid) > 0;
+  const multiplier = account.hedge_multiplier;
   if (multiplier == null || !Number.isFinite(Number(multiplier)) || Number(multiplier) < 0) {
     return { lot: null, reason: "Recommendation unavailable" };
   }
@@ -38,10 +33,10 @@ export function nextLiveLot(challenge, progress) {
   // precisa ter devolvido o gasto. Parar antes disso faz o hedge devolver mais
   // do que se perdeu -- nao e erro, e dinheiro parado na live.
   const room = Number(account.drawdown_room);
-  const stop = bufferedDaily || !Number.isFinite(room) || room <= 0
+  const stop = !Number.isFinite(room) || room <= 0
     ? "" : ` Assumes the stop at the floor, ${room.toFixed(2)} away.`;
   return {
     lot: Math.round(Number(multiplier) * contracts * 100) / 100,
-    reason: `${bufferedDaily ? "Post-buffer strategy" : "Recovery calculation"}: ${Number(multiplier)} per contract × ${contracts} contract(s). Assumes the same contract quantity as the last operation.${stop}`,
+    reason: `${afterPayout ? "Fixed after the first payout" : "Recovery calculation"}: ${Number(multiplier)} per contract × ${contracts} contract(s). Assumes the same contract quantity as the last operation.${stop}`,
   };
 }
