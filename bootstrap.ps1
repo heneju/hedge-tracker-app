@@ -32,7 +32,12 @@ Write-Host "Tracking -- instalacao" -ForegroundColor Green
 # O token e conferido ANTES de instalar qualquer coisa. Ele so e usado la na
 # frente, no clone, e descobrir que estava errado depois de dois minutos
 # instalando git e Python e o tipo de espera que nao ensina nada.
-if ($Token -notmatch "^(github_pat_|ghp_)[A-Za-z0-9_]{20,}$") {
+# Os dois formatos, com o tamanho de cada um -- so o prefixo nao basta:
+# colar "github_pat_" na frente de um token classico passava pela conferencia
+# e so falhava no clone, com mensagem que nao explica nada.
+#   fine-grained: github_pat_ + ~82 caracteres
+#   classico:     ghp_ + 36 caracteres
+if ($Token -notmatch "^(github_pat_[A-Za-z0-9_]{50,}|ghp_[A-Za-z0-9]{36})$") {
     throw @"
 O token nao parece um token do GitHub -- ele veio como '$Token'.
 
