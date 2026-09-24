@@ -133,4 +133,14 @@ Write-Host "    codigo em $Path"
 
 # ------------------------------------------------------------------ instalar
 Step 3 "Entregando para o instalador"
-& "$Path\install.ps1"
+# Num PC limpo a ExecutionPolicy e Restricted, e ela vale para ARQUIVO: o
+# bootstrap passa por ela porque roda como texto, mas o install.ps1 esta em
+# disco e seria recusado -- "running scripts is disabled on this system", com
+# o codigo ja baixado e a instalacao pela metade.
+#
+# O processo filho nasce com Bypass, e os scripts que o instalador chama
+# depois (install_task.ps1, build_addon.ps1) herdam a politica dele.
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$Path\install.ps1"
+if ($LASTEXITCODE -ne 0) {
+    throw "O instalador terminou com erro (codigo $LASTEXITCODE). O codigo ja esta em $Path -- da para rodar de novo com:  powershell -NoProfile -ExecutionPolicy Bypass -File `"$Path\install.ps1`""
+}
