@@ -10,21 +10,24 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=078be548a1";
+} from "./db.js?v=c195728e44";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=078be548a1";
+} from "./util.js?v=c195728e44";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=078be548a1";
-import { cell, locked, wireEditables } from "./editable.js?v=078be548a1";
-import { exportChallenges } from "./export.js?v=078be548a1";
-import { mountPlanPicker } from "./plan-picker.js?v=078be548a1";
-import { nextLiveLot } from "./next-lot.js?v=078be548a1";
-import { filterForFirm } from "./firm-accounts.js?v=078be548a1";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=078be548a1";
+} from "./charts.js?v=c195728e44";
+import { cell, locked, wireEditables } from "./editable.js?v=c195728e44";
+import { exportChallenges } from "./export.js?v=c195728e44";
+import { mountPlanPicker } from "./plan-picker.js?v=c195728e44";
+import { nextLiveLot } from "./next-lot.js?v=c195728e44";
+import { filterForFirm } from "./firm-accounts.js?v=c195728e44";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=c195728e44";
+import {
+  ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges,
+} from "./machine.js?v=c195728e44";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -36,6 +39,12 @@ const PAGES = [
   { id: "config",     label: "Setup" },
   { id: "issues",     label: "Report" },
 ];
+
+// Onde a máquina escolhida fica guardada. Declarada ANTES de `state`: `state`
+// chama `readMachine()` ao nascer, e uma const declarada depois ainda está na
+// zona morta -- o erro cairia no catch e a escolha salva seria perdida em
+// silêncio a cada carregamento.
+const MACHINE_KEY = "tracking:machine";
 
 const state = {
   page: "overview",
@@ -61,7 +70,26 @@ const state = {
   pendingSetup: 0,
   // Linha das contas estouradas na aba Challenges: fechada por padrão.
   failedOpen: false,
+  // Máquina em foco e as que existem. Quem tem VPS separada por conjunto de
+  // contas não quer a lista de uma misturada com a da outra; `ALL` mostra tudo,
+  // como sempre foi. A escolha é da pessoa e do navegador, não do banco: é
+  // preferência de tela, e cada aparelho dela pode olhar uma máquina diferente.
+  machine: readMachine(),
+  machines: [],
 };
+
+function readMachine() {
+  try {
+    return localStorage.getItem(MACHINE_KEY) || ALL;
+  } catch {
+    return ALL;   // janela anônima: vale só para esta sessão
+  }
+}
+
+function setMachine(next) {
+  setMachineQuiet(next);
+  go(state.page);
+}
 
 // ------------------------------------------------------------------- helpers
 
@@ -547,9 +575,20 @@ function openPositions(rows, accounts) {
 // ----------------------------------------------------------------- overview
 
 async function renderOverview() {
-  const [journal, monthly, progress, inTheAir, accounts] = await Promise.all([
+  const [todoJournal, monthly, todoProgresso, todoOAr, todasContas] = await Promise.all([
     load.journal(), load.monthly(), load.progress(),
     load.openPositions(), load.accounts()]);
+  // Filtrado ANTES de qualquer soma: o total do topo precisa fechar com a
+  // tabela de baixo. Um total geral sobre uma lista filtrada seria pior do que
+  // não ter filtro nenhum.
+  //
+  // O mapa de máquinas sai sempre da lista COMPLETA de contas. Filtrar as
+  // contas primeiro e traduzir depois transformaria a conta da outra máquina em
+  // "conta desconhecida" -- e desconhecida passa pelo filtro.
+  const accounts = keepOfMachine(todasContas, state.machine);
+  const progress = keepByAccount(todoProgresso, todasContas, state.machine);
+  const inTheAir = keepByAccount(todoOAr, todasContas, state.machine);
+  const journal = keepChallenges(todoJournal, todoProgresso, todasContas, state.machine);
   const liveAccount = () =>
     accounts.find((a) => a.kind === "live" && a.margin_at) ?? null;
   setTotals(journal);
@@ -721,7 +760,13 @@ async function renderOverview() {
 // --------------------------------------------------------------- challenges
 
 async function renderChallenges() {
-  const [journal, firms, progress] = await Promise.all([load.journal(), load.firms(), load.progress()]);
+  // As contas só são lidas quando há filtro: elas servem só para dizer de que
+  // máquina é cada challenge, e sem filtro isso não muda nada na tela.
+  const [todos, firms, progressoTodo, contas] = await Promise.all([
+    load.journal(), load.firms(), load.progress(),
+    state.machine ? load.accounts() : []]);
+  const progress = keepByAccount(progressoTodo, contas, state.machine);
+  const journal = keepChallenges(todos, progressoTodo, contas, state.machine);
   for (const challenge of journal) {
     const next = nextLiveLot(challenge, progress);
     challenge.next_live_lot = next.lot;
@@ -1724,7 +1769,9 @@ async function openChallengeEditor(c, firms) {
 // ------------------------------------------------------------ não atribuídos
 
 async function renderUnassigned() {
-  const [trades, journal] = await Promise.all([load.unassigned(), load.journal()]);
+  const [todas, journal, contas] = await Promise.all([
+    load.unassigned(), load.journal(), state.machine ? load.accounts() : []]);
+  const trades = keepByAccount(todas, contas, state.machine);
   const phasesByChallenge = await Promise.all(
     journal.slice(0, 60).map(async (c) => ({ c, phases: await load.phases(c.id) })));
   const options = phasesByChallenge.flatMap(({ c, phases }) =>
@@ -1780,11 +1827,16 @@ async function renderUnassigned() {
 // ------------------------------------------------------------- configuração
 
 async function renderConfig() {
-  const [accounts, stats, discovered, firms, plans, progress] = await Promise.all([
+  const [todasContas, stats, todasFontes, firms, plans, progress] = await Promise.all([
     load.accounts(), load.accountStats(), load.discovered(), load.firms(),
     load.plans(), load.progress()]);
+  const accounts = keepOfMachine(todasContas, state.machine);
+  const discovered = keepOfMachine(todasFontes, state.machine);
 
-  const claimed = new Set(accounts.map((a) => `${a.platform}:${a.login_or_name}`));
+  // `claimed` olha TODAS as contas, não só as da máquina em foco: uma fonte já
+  // cadastrada na outra máquina continua cadastrada, e oferecê-la de novo aqui
+  // criaria a mesma conta duas vezes.
+  const claimed = new Set(todasContas.map((a) => `${a.platform}:${a.login_or_name}`));
   const statOf = new Map(stats.map((x) => [x.account_id, x]));
   // Conta estourada: bateu o piso do drawdown ou o challenge foi marcado como
   // perdido. Risco no nome para não precisar ler número nenhum.
@@ -1872,6 +1924,13 @@ async function renderConfig() {
         : `<span class="dim">—</span>`}</td>
       ${cell(a.label, { id: a.id, field: "account:label", type: "text",
         format: () => `<span class="muted">${esc(a.label || a.terminal_path || "—")}</span>` })}
+      <!-- Quem lê esta conta. Escrito pelo coletor no primeiro ciclo em que ele
+           a enxerga, e editável porque conta que nenhum coletor alcança (uma
+           importada, uma live de corretora) nunca receberia carimbo nenhum. -->
+      ${cell(a.machine, { id: a.id, field: "account:machine", type: "text",
+        title: "machine whose collector reads this account",
+        format: () => `<span class="muted">${a.machine
+          ? esc(a.machine) : `<span class="dim">—</span>`}</span>` })}
       ${cell(a.magic_source_part, { id: a.id, field: "account:magic_source_part",
         type: "number", align: true,
         title: "key linking this account to the live hedge — only touch if you know",
@@ -1898,6 +1957,9 @@ async function renderConfig() {
   const discoveredRows = discovered.map((d) => {
     return `<tr>
       <td>${esc(d.platform)}</td>
+      <td class="muted">${d.machine
+        ? esc(d.machine)
+        : `<span class="dim" title="found before the collector started stamping the machine">—</span>`}</td>
       <td>${esc(d.label)}</td>
       <td class="muted">${esc(d.login_or_name)}</td>
       <td>${isDiscoveredClaimed(d)
@@ -2138,22 +2200,25 @@ async function renderConfig() {
         <thead><tr><th>Kind</th><th>ID</th><th>Platform</th><th>Account</th>
           <th class="num">P&amp;L</th><th class="num">Trades</th>
           <th class="num">Balance</th><th>Plan</th>
-          <th>Terminal</th><th class="num">magic_source_part</th><th></th></tr></thead>
-        <tbody>${accountRows || `<tr><td colspan="11">${empty("no accounts yet — register one below")}</td></tr>`}</tbody>
+          <th>Terminal</th><th>Machine</th>
+          <th class="num">magic_source_part</th><th></th></tr></thead>
+        <tbody>${accountRows || `<tr><td colspan="12">${empty("no accounts yet — register one below")}</td></tr>`}</tbody>
       </table></div>
     </div>
 
     <div class="panel" data-setup="found" ${tab === "found" ? "" : "hidden"}>
-      <h2>Found on this PC</h2>
+      <h2>Found by the collector</h2>
       <div class="panel-body" style="padding-bottom:0">
         <p class="muted" style="margin-top:0">
-          The collector publishes what it found; you decide which is live and which is prop.
-          For MT5 enter the login — the account number only shows with the terminal open.
+          Every machine running the collector publishes what it found; you decide which is
+          live and which is prop. For MT5 enter the login — the account number only shows
+          with the terminal open.
         </p>
       </div>
       <div class="scroll"><table>
-        <thead><tr><th>Platform</th><th>Terminal</th><th>Identifier</th><th>Classify</th></tr></thead>
-        <tbody>${discoveredRows || `<tr><td colspan="4">${empty("run: python -m collector.discovery --push")}</td></tr>`}</tbody>
+        <thead><tr><th>Platform</th><th>Machine</th><th>Terminal</th>
+          <th>Identifier</th><th>Classify</th></tr></thead>
+        <tbody>${discoveredRows || `<tr><td colspan="5">${empty("run: python -m collector.discovery --push")}</td></tr>`}</tbody>
       </table></div>
     </div>
 
@@ -3237,11 +3302,20 @@ const PRODUCTS = [
  * e sem ele o multiplicador do hedge sai menor do que devia" diz.
  */
 async function loadPending() {
-  const [journal, progress, accounts, plans, discovered, phases, firms, policies] =
+  const [todoJournal, todoProgresso, todasContas, plans, todasFontes, phases,
+         firms, policies] =
     await Promise.all([
       load.journal(), load.progress(), load.accounts(), load.plans(),
       load.discovered(), load.phasesOfPassed(), load.firms(),
       load.payoutPolicies().catch(() => [])]);
+
+  // A pendência segue a máquina em foco: abrir o painel na VPS e ser cobrado
+  // por uma conta que só existe no PC de casa é ruído, e ruído em aviso ensina
+  // a ignorar o aviso.
+  const accounts = keepOfMachine(todasContas, state.machine);
+  const discovered = keepOfMachine(todasFontes, state.machine);
+  const progress = keepByAccount(todoProgresso, todasContas, state.machine);
+  const journal = keepChallenges(todoJournal, todoProgresso, todasContas, state.machine);
 
   // As políticas do plano daquele challenge: mesma mesa, mesmo produto, mesmo
   // tamanho. Sem `product` no plano não há como saber quais valem -- e chutar
@@ -3258,8 +3332,11 @@ async function loadPending() {
   // Mesa sem padrao de nome nao consegue ligar a conta funded sozinha -- e a
   // pergunta vai voltar em toda aprovacao dela ate alguem preencher.
   const firmPattern = new Map(firms.map((f) => [f.name, Boolean(f.account_pattern)]));
-  const accountById = new Map(accounts.map((a) => [a.id, a]));
-  const claimed = new Set(accounts.map((a) => `${a.platform}:${a.login_or_name}`));
+  // Estes dois olham TODAS as contas de propósito: uma conta já cadastrada na
+  // outra máquina continua cadastrada, e oferecê-la aqui criaria a mesma conta
+  // duas vezes.
+  const accountById = new Map(todasContas.map((a) => [a.id, a]));
+  const claimed = new Set(todasContas.map((a) => `${a.platform}:${a.login_or_name}`));
   const inUse = new Set(progress.filter((p) => p.challenge_id).map((p) => p.account_id));
   const fundedPhase = new Set(phases.filter((p) => p.phase === "FUNDED")
     .map((p) => p.challenge_id));
@@ -3817,7 +3894,7 @@ const RENDERERS = {
 };
 
 function renderNav() {
-  document.getElementById("nav").innerHTML = PAGES.map((p) => {
+  const abas = PAGES.map((p) => {
     const count = p.id === "issues" ? state.openIssues
       : p.id === "config" ? state.pendingSetup : 0;
     const label = count
@@ -3826,9 +3903,23 @@ function renderNav() {
     return `<button data-page="${p.id}" ${
       p.id === state.page ? 'aria-current="page"' : ""}>${label}</button>`;
   }).join("");
+
+  // Só com duas máquinas ou mais: com uma, o seletor seria um controle que
+  // nunca muda nada ocupando o menu.
+  const seletor = state.machines.length > 1
+    ? `<select id="machine-pick" title="Which machine's accounts to show">
+         <option value="">All machines</option>
+         ${state.machines.map((m) => `<option value="${esc(m)}" ${
+           m === state.machine ? "selected" : ""}>${esc(m)}</option>`).join("")}
+       </select>`
+    : "";
+
+  document.getElementById("nav").innerHTML = abas + seletor;
   document.querySelectorAll("[data-page]").forEach((b) => {
     b.onclick = () => go(b.dataset.page);
   });
+  const pick = document.getElementById("machine-pick");
+  if (pick) pick.onchange = () => setMachine(pick.value);
   const section = document.getElementById("section");
   if (section) section.textContent = PAGES.find((p) => p.id === state.page)?.label ?? "";
 }
@@ -3887,6 +3978,34 @@ setInterval(checkForUpdate, 5 * 60 * 1000);
 // quando muda a PESSOA -- nunca quando muda so o token.
 let bootedFor;
 
+/**
+ * Quais máquinas existem nesta conta.
+ *
+ * Antes de desenhar o menu, de propósito: o seletor só aparece com duas
+ * máquinas ou mais, e ele não pode nascer errado e se corrigir na frente de
+ * quem está olhando. Falha de rede aqui não pode derrubar o login -- sem
+ * lista, o painel mostra tudo, que é o que ele sempre fez.
+ */
+async function loadMachines() {
+  try {
+    state.machines = machineNames(await load.machines());
+  } catch {
+    state.machines = [];
+  }
+  // Máquina desinstalada (ou renomeada) some da lista: o filtro salvo no
+  // navegador apontaria para nada e a tela ficaria vazia sem explicação.
+  if (state.machine && !state.machines.includes(state.machine)) setMachineQuiet(ALL);
+}
+
+function setMachineQuiet(next) {
+  state.machine = next || ALL;
+  try {
+    localStorage.setItem(MACHINE_KEY, state.machine);
+  } catch {
+    // Sem armazenamento: vale enquanto a aba estiver aberta.
+  }
+}
+
 async function boot() {
   const user = await currentUser();
   bootedFor = user?.id ?? null;
@@ -3903,6 +4022,7 @@ async function boot() {
   }
   state.email = user.email ?? "";
   renderStatus();
+  await loadMachines();
   renderNav();
   refreshIssueCount();
   const initial = location.hash.slice(1);

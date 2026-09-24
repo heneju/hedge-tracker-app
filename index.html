@@ -202,6 +202,16 @@ nav button:hover{color:var(--color-accent)}
 nav button[aria-current="page"]{
   color:var(--color-accent);font-weight:600;border-bottom-color:var(--color-accent);
 }
+/* Seletor de maquina, na ponta do menu. So aparece com duas maquinas ou mais.
+   Fica no menu, e nao no filtro de cada tela, porque vale para o painel
+   inteiro: a escolha atravessa Overview, Challenges, Setup e pendencias. */
+#machine-pick{
+  margin-left:auto;align-self:center;width:auto;max-width:190px;
+  padding:3px 6px;font-size:11px;color:var(--color-neutral-700);
+  border-width:2px;
+}
+#machine-pick:hover{color:var(--color-text)}
+
 /* Contador de reportes/pendencias abertos, no menu. */
 .pill{
   display:inline-flex;align-items:center;padding:1px 6px;
@@ -700,6 +710,6 @@ dialog th{background:var(--color-bg)}
     if (t === "dark" || t === "light") document.documentElement.setAttribute("data-theme", t);
   } catch (e) {}
 </script>
-<script type="module" src="./js/app.js?v=078be548a1"></script>
+<script type="module" src="./js/app.js?v=c195728e44"></script>
 </body>
 </html>

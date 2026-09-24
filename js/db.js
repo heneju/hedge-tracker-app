@@ -5,7 +5,7 @@
 // fica so no coletor, no PC.
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { CONFIG } from "./config.js?v=078be548a1";
+import { CONFIG } from "./config.js?v=c195728e44";
 
 export const supabase = createClient(CONFIG.url, CONFIG.anonKey);
 
@@ -76,6 +76,13 @@ export const load = {
   // usuário distinguir três contas da mesma mesa.
   accountStats: () =>
     supabase.from("account_stats").select("*").order("kind").order("short_id").then(unwrap),
+
+  // Uma linha por maquina instalada -- e o que o seletor de maquina precisa.
+  // Vem daqui, e nao das contas, porque a maquina existe no painel desde o
+  // primeiro ciclo, antes de ter qualquer conta classificada.
+  machines: () =>
+    supabase.from("collector_status").select("machine, last_cycle_at")
+      .order("machine").then(unwrap),
 
   discovered: () =>
     supabase.from("discovered_sources").select("*").order("platform").order("label").then(unwrap),
