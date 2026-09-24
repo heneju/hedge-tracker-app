@@ -5,7 +5,12 @@
 # o token de leitura do repo.
 #
 #   $t = "github_pat_..."
-#   irm https://heneju.github.io/hedge-tracker-app/bootstrap.ps1 -OutFile t.ps1; .\t.ps1 -Token $t
+#   & ([scriptblock]::Create((irm https://heneju.github.io/hedge-tracker-app/bootstrap.ps1))) -Token $t
+#
+# Roda o texto direto, sem salvar arquivo: em PC limpo o Windows bloqueia
+# script baixado -- ou pela ExecutionPolicy, ou pela marca de "veio da
+# internet" -- e a instalacao morria antes de comecar, com uma mensagem que
+# nao diz o que fazer.
 #
 # Este arquivo e publico de proposito -- ele nao contem segredo nenhum. O que da
 # acesso ao codigo e o token, passado por quem instala, e ele so le UM repo.
