@@ -10,24 +10,24 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=c195728e44";
+} from "./db.js?v=3dd45db7b9";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort,
-} from "./util.js?v=c195728e44";
+} from "./util.js?v=3dd45db7b9";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=c195728e44";
-import { cell, locked, wireEditables } from "./editable.js?v=c195728e44";
-import { exportChallenges } from "./export.js?v=c195728e44";
-import { mountPlanPicker } from "./plan-picker.js?v=c195728e44";
-import { nextLiveLot } from "./next-lot.js?v=c195728e44";
-import { filterForFirm } from "./firm-accounts.js?v=c195728e44";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=c195728e44";
+} from "./charts.js?v=3dd45db7b9";
+import { cell, locked, wireEditables } from "./editable.js?v=3dd45db7b9";
+import { exportChallenges } from "./export.js?v=3dd45db7b9";
+import { mountPlanPicker } from "./plan-picker.js?v=3dd45db7b9";
+import { nextLiveLot } from "./next-lot.js?v=3dd45db7b9";
+import { filterForFirm } from "./firm-accounts.js?v=3dd45db7b9";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=3dd45db7b9";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges,
-} from "./machine.js?v=c195728e44";
+} from "./machine.js?v=3dd45db7b9";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -3986,9 +3986,9 @@ let bootedFor;
  * quem está olhando. Falha de rede aqui não pode derrubar o login -- sem
  * lista, o painel mostra tudo, que é o que ele sempre fez.
  */
-async function loadMachines() {
+async function loadMachines(ownerId) {
   try {
-    state.machines = machineNames(await load.machines());
+    state.machines = machineNames(await load.machines(ownerId));
   } catch {
     state.machines = [];
   }
@@ -4022,7 +4022,7 @@ async function boot() {
   }
   state.email = user.email ?? "";
   renderStatus();
-  await loadMachines();
+  await loadMachines(user.id);
   renderNav();
   refreshIssueCount();
   const initial = location.hash.slice(1);

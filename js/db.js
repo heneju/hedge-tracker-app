@@ -5,7 +5,7 @@
 // fica so no coletor, no PC.
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { CONFIG } from "./config.js?v=c195728e44";
+import { CONFIG } from "./config.js?v=3dd45db7b9";
 
 export const supabase = createClient(CONFIG.url, CONFIG.anonKey);
 
@@ -80,9 +80,14 @@ export const load = {
   // Uma linha por maquina instalada -- e o que o seletor de maquina precisa.
   // Vem daqui, e nao das contas, porque a maquina existe no painel desde o
   // primeiro ciclo, antes de ter qualquer conta classificada.
-  machines: () =>
+  //
+  // FILTRADO PELO DONO, de proposito: quem mantem o projeto le o status de
+  // todo mundo (a politica `collector_status_admin_read` existe justamente
+  // para isso), e sem este filtro o seletor ofereceria a VPS de OUTRA pessoa
+  // -- escolher uma delas esvaziaria a tela sem explicacao.
+  machines: (ownerId) =>
     supabase.from("collector_status").select("machine, last_cycle_at")
-      .order("machine").then(unwrap),
+      .eq("owner_id", ownerId).order("machine").then(unwrap),
 
   discovered: () =>
     supabase.from("discovered_sources").select("*").order("platform").order("label").then(unwrap),

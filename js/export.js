@@ -12,7 +12,7 @@
 // dele, e os formatos numéricos usados aqui são os que o Sheets importa sem
 // reinterpretar.
 
-import { monthLabel } from "./util.js?v=c195728e44";
+import { monthLabel } from "./util.js?v=3dd45db7b9";
 
 const EXCELJS = "https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js";
 
