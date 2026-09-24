@@ -29,6 +29,22 @@ function Step($n, $text) { Write-Host "`n[$n] $text" -ForegroundColor Cyan }
 
 Write-Host "Tracking -- instalacao" -ForegroundColor Green
 
+# O token e conferido ANTES de instalar qualquer coisa. Ele so e usado la na
+# frente, no clone, e descobrir que estava errado depois de dois minutos
+# instalando git e Python e o tipo de espera que nao ensina nada.
+if ($Token -notmatch "^(github_pat_|ghp_)[A-Za-z0-9_]{20,}$") {
+    throw @"
+O token nao parece um token do GitHub -- ele veio como '$Token'.
+
+Gere um em https://github.com/settings/personal-access-tokens/new
+  . Repository access: Only select repositories -> $Repo
+  . Permissions: Contents -> Read-only
+
+Depois rode de novo trocando o texto de exemplo pelo token:
+  `$t = "github_pat_..."
+"@
+}
+
 # ------------------------------------------------------------- pre-requisitos
 #
 # Instalar git e Python a mao, em duas paginas diferentes, marcando "Add to
