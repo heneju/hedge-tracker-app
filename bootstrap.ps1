@@ -4,8 +4,9 @@
 # e entrega para o install.ps1. Numa maquina limpa, o unico pre-requisito e
 # o token de leitura do repo.
 #
-#   $t = "github_pat_..."
-#   & ([scriptblock]::Create((irm https://heneju.github.io/hedge-tracker-app/bootstrap.ps1))) -Token $t
+#   & ([scriptblock]::Create((irm https://heneju.github.io/hedge-tracker-app/bootstrap.ps1)))
+#
+# Ele pede o token e voce cola.
 #
 # Roda o texto direto, sem salvar arquivo: em PC limpo o Windows bloqueia
 # script baixado -- ou pela ExecutionPolicy, ou pela marca de "veio da
@@ -19,7 +20,7 @@
 # credenciais e agendamento.
 
 param(
-    [Parameter(Mandatory = $true)][string]$Token,
+    [string]$Token = "",
     [string]$Repo = "heneju/tracking-collector",
     [string]$Path = "$env:USERPROFILE\Desktop\tracker"
 )
@@ -32,23 +33,35 @@ Write-Host "Tracking -- instalacao" -ForegroundColor Green
 # O token e conferido ANTES de instalar qualquer coisa. Ele so e usado la na
 # frente, no clone, e descobrir que estava errado depois de dois minutos
 # instalando git e Python e o tipo de espera que nao ensina nada.
+#
+# E ele e PEDIDO, nao passado na linha de comando: digitar o prefixo e colar
+# um token que ja tem prefixo virava "ghp_ghp_..." -- aconteceu tres vezes
+# seguidas numa instalacao real. Pedindo, a pessoa so cola.
+#
 # Os dois formatos, com o tamanho de cada um -- so o prefixo nao basta:
-# colar "github_pat_" na frente de um token classico passava pela conferencia
-# e so falhava no clone, com mensagem que nao explica nada.
 #   fine-grained: github_pat_ + ~82 caracteres
 #   classico:     ghp_ + 36 caracteres
-if ($Token -notmatch "^(github_pat_[A-Za-z0-9_]{50,}|ghp_[A-Za-z0-9]{36})$") {
-    throw @"
-O token nao parece um token do GitHub -- ele veio como '$Token'.
+$formato = "^(github_pat_[A-Za-z0-9_]{50,}|ghp_[A-Za-z0-9]{36})$"
+$tentativas = 0
+while ($Token.Trim().Trim('"') -notmatch $formato) {
+    if ($Token) {
+        Write-Host "    esse token nao tem o formato do GitHub -- cole o texto inteiro, sem digitar nada antes" -ForegroundColor Yellow
+    }
+    if ($tentativas -ge 3) {
+        throw @"
+Token invalido tres vezes.
 
 Gere um em https://github.com/settings/personal-access-tokens/new
   . Repository access: Only select repositories -> $Repo
   . Permissions: Contents -> Read-only
 
-Depois rode de novo trocando o texto de exemplo pelo token:
-  `$t = "github_pat_..."
+Copie com o botao de copiar e cole inteiro, sem digitar nada antes dele.
 "@
+    }
+    $Token = Read-Host "    cole o token do GitHub"
+    $tentativas++
 }
+$Token = $Token.Trim().Trim('"')
 
 # ------------------------------------------------------------- pre-requisitos
 #
