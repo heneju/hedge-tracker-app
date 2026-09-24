@@ -1,5 +1,9 @@
 # Instalacao do Tracking numa maquina nova, em um comando.
 #
+# Ele instala o que faltar -- git e Python vem pelo winget -- clona o codigo
+# e entrega para o install.ps1. Numa maquina limpa, o unico pre-requisito e
+# o token de leitura do repo.
+#
 #   $t = "github_pat_..."
 #   irm https://heneju.github.io/hedge-tracker-app/bootstrap.ps1 -OutFile t.ps1; .\t.ps1 -Token $t
 #
@@ -21,11 +25,51 @@ function Step($n, $text) { Write-Host "`n[$n] $text" -ForegroundColor Cyan }
 Write-Host "Tracking -- instalacao" -ForegroundColor Green
 
 # ------------------------------------------------------------- pre-requisitos
+#
+# Instalar git e Python a mao, em duas paginas diferentes, marcando "Add to
+# PATH" na tela certa, era o passo que mais travava instalacao em maquina de
+# terceiro. O winget ja vem no Windows 10 e 11 e faz os dois.
 Step 1 "Conferindo git e Python"
-foreach ($tool in @("git", "python")) {
-    if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
-        throw "'$tool' nao encontrado. Instale antes: git -> https://git-scm.com/download/win | python -> https://python.org/downloads"
+
+function Atualiza-Path {
+    # O winget mexe no PATH do sistema, mas esta sessao so enxerga o PATH de
+    # quando ela abriu -- sem isto o proprio script nao acha o que acabou de
+    # instalar.
+    $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
+                [Environment]::GetEnvironmentVariable("Path", "User")
+}
+
+function Tem-Python {
+    if (-not (Get-Command python -ErrorAction SilentlyContinue)) { return $false }
+    # A Microsoft Store deixa um `python.exe` que so abre a loja: ele responde
+    # ao comando, mas nao e Python. A saida denuncia, entao ela e que decide.
+    # `cmd /c` para a mensagem de erro nao virar excecao do PowerShell.
+    $saida = cmd /c "python --version 2>&1"
+    if ("$saida" -notmatch "Python (\d+)\.(\d+)") { return $false }
+    return ([version]"$($Matches[1]).$($Matches[2])" -ge [version]"3.10")
+}
+
+function Instala($nome, $pacote) {
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+        throw "$nome nao esta instalado, e esta maquina nao tem winget. Instale o 'App Installer' pela Microsoft Store e rode de novo, ou instale $nome a mao."
     }
+    Write-Host "    instalando $nome -- o Windows pode pedir confirmacao"
+    winget install --id $pacote --exact --source winget `
+        --accept-package-agreements --accept-source-agreements
+    if ($LASTEXITCODE -ne 0) {
+        throw "A instalacao do $nome falhou (codigo $LASTEXITCODE). Se a janela do Windows pediu permissao e foi recusada, abra o PowerShell como administrador e rode de novo."
+    }
+    Atualiza-Path
+}
+
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) { Instala "git" "Git.Git" }
+if (-not (Tem-Python)) { Instala "Python" "Python.Python.3.12" }
+
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+    throw "git continua fora do PATH. Feche esta janela, abra outra e rode de novo -- e o que falta depois de instalar."
+}
+if (-not (Tem-Python)) {
+    throw "Python 3.10 ou mais novo continua fora do PATH. Feche esta janela, abra outra e rode de novo."
 }
 Write-Host "    ok"
 
