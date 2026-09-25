@@ -89,6 +89,23 @@ export const phasesFor = (evalPhases = 2) =>
 
 // FNV-1a 32-bit, igual ao Copyator_Sender_NT8.cs. Precisa existir tambem aqui
 // porque a conta NT8 e classificada pelo app, e o coletor depende deste valor
+/**
+ * O sinal de um lancamento de caixa, pela natureza dele e nao pelo que foi
+ * digitado.
+ *
+ * Custo e dinheiro que SAI: fica negativo. Payout e refund entram: ficam
+ * positivos. Quem digita nao deveria ter que lembrar do sinal -- e quando tem,
+ * erra: um custo digitado como 105 num formulario que gravava cru somou +105 a
+ * um challenge que ja tinha -90,20 e o resultado apareceu positivo na tela.
+ *
+ * Zero e null voltam como null: "sem lancamento" nao e "lancamento de zero".
+ */
+export function signedCash(kind, amount) {
+  const value = Number(amount);
+  if (!Number.isFinite(value) || value === 0) return null;
+  return kind === "cost" ? -Math.abs(value) : Math.abs(value);
+}
+
 // para traduzir o magic de um deal na conta live de volta para a conta prop.
 export function fnv1a32(text) {
   let h = 2166136261 >>> 0;

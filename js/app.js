@@ -10,24 +10,24 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=3dd45db7b9";
+} from "./db.js?v=15ae3687a3";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
-  magicSourcePart, accountShort,
-} from "./util.js?v=3dd45db7b9";
+  magicSourcePart, accountShort, signedCash,
+} from "./util.js?v=15ae3687a3";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=3dd45db7b9";
-import { cell, locked, wireEditables } from "./editable.js?v=3dd45db7b9";
-import { exportChallenges } from "./export.js?v=3dd45db7b9";
-import { mountPlanPicker } from "./plan-picker.js?v=3dd45db7b9";
-import { nextLiveLot } from "./next-lot.js?v=3dd45db7b9";
-import { filterForFirm } from "./firm-accounts.js?v=3dd45db7b9";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=3dd45db7b9";
+} from "./charts.js?v=15ae3687a3";
+import { cell, locked, wireEditables } from "./editable.js?v=15ae3687a3";
+import { exportChallenges } from "./export.js?v=15ae3687a3";
+import { mountPlanPicker } from "./plan-picker.js?v=15ae3687a3";
+import { nextLiveLot } from "./next-lot.js?v=15ae3687a3";
+import { filterForFirm } from "./firm-accounts.js?v=15ae3687a3";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=15ae3687a3";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges,
-} from "./machine.js?v=3dd45db7b9";
+} from "./machine.js?v=15ae3687a3";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -1068,10 +1068,8 @@ async function saveChallengeField(field, id, raw) {
   await guard(async () => {
     if (field === "cost" || field === "payout") {
       const kind = field === "cost" ? "cost" : "payout";
-      let amount = number() ?? 0;
-      // Custo é dinheiro que sai: guardado negativo, como na planilha. Aceita
-      // digitar 99 ou -99 e normaliza, para não depender de lembrar o sinal.
-      if (kind === "cost" && amount > 0) amount = -amount;
+      // Custo sai, payout entra: o sinal vem do tipo, nao do que foi digitado.
+      const amount = signedCash(kind, raw) ?? 0;
       const existing = await load.cashEventId(challengeId, kind);
       return save.setCashTotal(challengeId, kind, amount, existing);
     }
@@ -1258,7 +1256,8 @@ async function openChallenge(id, journal, firms, progress = []) {
         <div class="field"><label>Kind</label><select id="cash-kind">
           <option value="cost">Cost</option>
           <option value="refund">Refund</option></select></div>
-        <div class="field"><label>Amount</label><input id="cash-amount" type="number" step="0.01" placeholder="-99.00"></div>
+        <div class="field"><label>Amount</label><input id="cash-amount" type="number" step="0.01"
+          placeholder="105.00" title="the sign comes from the kind — cost goes out, refund comes in"></div>
         <div class="field"><label>Date</label><input id="cash-date" type="date" value="${new Date().toISOString().slice(0, 10)}"></div>
         <div class="field auto"><label>&nbsp;</label><button class="btn" id="add-cash">Add</button></div>
       </div></div>
@@ -1366,11 +1365,14 @@ async function openChallenge(id, journal, firms, progress = []) {
     }, () => openChallenge(id, journal, firms, progress));
   };
   modal.querySelector("#add-cash").onclick = async () => {
-    const amount = Number(modal.querySelector("#cash-amount").value);
+    const kind = modal.querySelector("#cash-kind").value;
+    // Pelo tipo do lancamento, nao pelo sinal digitado: um custo entrado como
+    // 105 virava +105 e deixava o challenge positivo.
+    const amount = signedCash(kind, modal.querySelector("#cash-amount").value);
     if (!amount) return toast("Enter an amount");
     await guard(() => save.createCashEvent({
       challenge_id: id,
-      kind: modal.querySelector("#cash-kind").value,
+      kind,
       amount,
       occurred_on: modal.querySelector("#cash-date").value,
       source: "manual",
@@ -2827,7 +2829,7 @@ async function renderConfig() {
             await save.createCashEvent({
               challenge_id: challenge.id,
               kind: "cost",
-              amount: -Math.abs(cost),
+              amount: signedCash("cost", cost),
               occurred_on: opened || new Date().toISOString().slice(0, 10),
               source: "manual",
             });
@@ -3763,12 +3765,10 @@ function openPendingForm(items, plans, accounts, signature) {
       const input = modal.querySelector(`[data-pending-cost="${id}"]`);
       const amount = Number(input.value);
       if (!amount) return toast("Enter the cost");
-      // Custo é dinheiro que sai: guardado negativo, como na planilha, mesmo
-      // que a pessoa digite positivo.
       await guard(() => save.createCashEvent({
         challenge_id: id,
         kind: "cost",
-        amount: -Math.abs(amount),
+        amount: signedCash("cost", amount),
         occurred_on: b.dataset.date || new Date().toISOString().slice(0, 10),
         source: "manual",
       }), "Cost saved");
