@@ -10,24 +10,24 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=00d71904c4";
+} from "./db.js?v=c3a8261a7c";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash,
-} from "./util.js?v=00d71904c4";
+} from "./util.js?v=c3a8261a7c";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=00d71904c4";
-import { cell, locked, wireEditables } from "./editable.js?v=00d71904c4";
-import { exportChallenges } from "./export.js?v=00d71904c4";
-import { mountPlanPicker } from "./plan-picker.js?v=00d71904c4";
-import { nextLiveLot } from "./next-lot.js?v=00d71904c4";
-import { filterForFirm } from "./firm-accounts.js?v=00d71904c4";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=00d71904c4";
+} from "./charts.js?v=c3a8261a7c";
+import { cell, locked, wireEditables } from "./editable.js?v=c3a8261a7c";
+import { exportChallenges } from "./export.js?v=c3a8261a7c";
+import { mountPlanPicker } from "./plan-picker.js?v=c3a8261a7c";
+import { nextLiveLot } from "./next-lot.js?v=c3a8261a7c";
+import { filterForFirm } from "./firm-accounts.js?v=c3a8261a7c";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=c3a8261a7c";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges,
-} from "./machine.js?v=00d71904c4";
+} from "./machine.js?v=c3a8261a7c";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -1776,10 +1776,14 @@ async function renderUnassigned() {
   const trades = keepByAccount(todas, contas, state.machine);
   const phasesByChallenge = await Promise.all(
     journal.slice(0, 60).map(async (c) => ({ c, phases: await load.phases(c.id) })));
+  // A conta vai no fim da opcao: com varios challenges da mesma mesa abertos no
+  // mesmo dia, "Tradeify 2026-10-06 · Phase 1" se repetia cinco vezes e nao
+  // havia como saber qual era a conta do trade.
   const options = phasesByChallenge.flatMap(({ c, phases }) =>
     phases.map((p) => ({
       id: p.id,
-      label: `${c.firm || "?"} ${day(c.date_open)} · ${PHASE_LABEL[p.phase] || p.phase}`,
+      label: `${c.firm || "?"} ${day(c.date_open)} · ${PHASE_LABEL[p.phase] || p.phase}`
+        + ` · ${p.accounts?.login_or_name || p.account_ref || "no account"}`,
     })));
 
   const rows = trades.map((t) => `

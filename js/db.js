@@ -5,7 +5,7 @@
 // fica so no coletor, no PC.
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { CONFIG } from "./config.js?v=00d71904c4";
+import { CONFIG } from "./config.js?v=c3a8261a7c";
 
 export const supabase = createClient(CONFIG.url, CONFIG.anonKey);
 
