@@ -5,7 +5,7 @@
 // fica so no coletor, no PC.
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { CONFIG } from "./config.js?v=15ae3687a3";
+import { CONFIG } from "./config.js?v=00d71904c4";
 
 export const supabase = createClient(CONFIG.url, CONFIG.anonKey);
 
@@ -289,7 +289,15 @@ export const save = {
   deleteIssue: (id) =>
     supabase.from("issues").delete().eq("id", id).then(unwrap),
 
-  // Classificacao manual de um trade live que o coletor nao atribuiu.
-  assignTrade: (tradeId, phaseId) =>
-    supabase.from("trades").update({ phase_id: phaseId }).eq("id", tradeId).then(unwrap),
+  // Classificacao manual de um trade que o coletor nao atribuiu. A fase vai
+  // marcada em `manual_cols`, como no editor do challenge: o coletor reenvia a
+  // janela de backfill a cada reinicio com a fase que ELE calculou -- nenhuma,
+  // para um trade da fila -- e sem a marca a escolha voltava para a fila sozinha.
+  // A fila nao traz `manual_cols`, entao le antes para nao soltar outra marca.
+  assignTrade: async (tradeId, phaseId) => {
+    const row = await supabase.from("trades").select("manual_cols")
+      .eq("id", tradeId).single().then(unwrap);
+    return supabase.from("trades").update(manualPatch(row, { phase_id: phaseId }))
+      .eq("id", tradeId).then(unwrap);
+  },
 };
