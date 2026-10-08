@@ -10,24 +10,24 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=c3a8261a7c";
+} from "./db.js?v=7eccb7ab37";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
-  magicSourcePart, accountShort, signedCash,
-} from "./util.js?v=c3a8261a7c";
+  magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
+} from "./util.js?v=7eccb7ab37";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=c3a8261a7c";
-import { cell, locked, wireEditables } from "./editable.js?v=c3a8261a7c";
-import { exportChallenges } from "./export.js?v=c3a8261a7c";
-import { mountPlanPicker } from "./plan-picker.js?v=c3a8261a7c";
-import { nextLiveLot } from "./next-lot.js?v=c3a8261a7c";
-import { filterForFirm } from "./firm-accounts.js?v=c3a8261a7c";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=c3a8261a7c";
+} from "./charts.js?v=7eccb7ab37";
+import { cell, locked, wireEditables } from "./editable.js?v=7eccb7ab37";
+import { exportChallenges } from "./export.js?v=7eccb7ab37";
+import { mountPlanPicker } from "./plan-picker.js?v=7eccb7ab37";
+import { nextLiveLot } from "./next-lot.js?v=7eccb7ab37";
+import { filterForFirm } from "./firm-accounts.js?v=7eccb7ab37";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=7eccb7ab37";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges,
-} from "./machine.js?v=c3a8261a7c";
+} from "./machine.js?v=7eccb7ab37";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -3387,7 +3387,8 @@ async function loadPending() {
       && !p.blown
       && !Number(p.days_left)
       && p.consistency_pct != null
-      && Number(p.best_day_pct) > Number(p.consistency_pct));
+      // Dentro da folga o coletor ja aprova sozinho; so acima dela ha o que perguntar.
+      && Number(p.best_day_pct) > Number(p.consistency_pct) + CONSISTENCY_SLACK_PCT);
 
     if (travada && !fundedPhase.has(c.id)
         && ["phase1", "phase2"].includes(c.status)) {

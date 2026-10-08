@@ -5,7 +5,7 @@
 // `vector-effect="non-scaling-stroke"` mantém a espessura da linha constante
 // mesmo com a escala distorcida, que é o que quebra SVG esticado.
 
-import { money, money0, monthLabel, signClass, esc } from "./util.js?v=c3a8261a7c";
+import { money, money0, monthLabel, signClass, esc, CONSISTENCY_SLACK_PCT } from "./util.js?v=7eccb7ab37";
 
 // Cores por token, nunca literais: o painel tem tema claro e escuro, e um hex
 // cravado aqui fica errado em um dos dois. Perda usa o acento da marca -- num
@@ -375,19 +375,24 @@ function daysLine(a) {
   const daysLeft = a.days_left == null ? null : Number(a.days_left);
   const settled = !daysLeft;
   const over = bestPct != null && limit != null && bestPct > limit;
-  const breaks = settled && over;
+  // Um pouco acima do teto a mesa ainda aprova (50,1% contra 50% passou): com os
+  // dias cumpridos, isso nao e quebra, e o coletor aprova sozinho.
+  const tolerated = settled && over && bestPct <= limit + CONSISTENCY_SLACK_PCT;
+  const breaks = settled && over && !tolerated;
 
   return `
     <div style="display:flex;flex-wrap:wrap;gap:18px;margin-top:14px;font-size:11px;color:${MUTE}">
       <span>days <b class="n" style="color:${INK}">${a.days_traded}</b>${
         a.min_trading_days ? `/${a.min_trading_days}` : ""}</span>
       ${limit != null ? `<span>best day <b class="n" style="color:${
-        breaks ? DOWN : over ? "var(--loss)" : bestPct == null ? SOFT : INK}">${
-        bestPct == null ? "—" : bestPct.toFixed(0) + "%"}</b> / ${limit.toFixed(0)}% max</span>` : ""}
+        breaks ? DOWN : over && !tolerated ? "var(--loss)" : bestPct == null ? SOFT : INK}">${
+        bestPct == null ? "—" : bestPct.toFixed(over ? 1 : 0) + "%"}</b> / ${limit.toFixed(0)}% max</span>` : ""}
       ${breaks
         ? `<span style="color:${DOWN}">consistency broken</span>`
-        : over
-          ? `<span style="color:var(--loss)">needs more days to spread</span>`
-          : ""}
+        : tolerated
+          ? `<span>within the firm's tolerance</span>`
+          : over
+            ? `<span style="color:var(--loss)">needs more days to spread</span>`
+            : ""}
     </div>`;
 }
