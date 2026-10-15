@@ -10,24 +10,24 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=7eccb7ab37";
+} from "./db.js?v=2ed985c2b7";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=7eccb7ab37";
+} from "./util.js?v=2ed985c2b7";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=7eccb7ab37";
-import { cell, locked, wireEditables } from "./editable.js?v=7eccb7ab37";
-import { exportChallenges } from "./export.js?v=7eccb7ab37";
-import { mountPlanPicker } from "./plan-picker.js?v=7eccb7ab37";
-import { nextLiveLot } from "./next-lot.js?v=7eccb7ab37";
-import { filterForFirm } from "./firm-accounts.js?v=7eccb7ab37";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=7eccb7ab37";
+} from "./charts.js?v=2ed985c2b7";
+import { cell, locked, wireEditables } from "./editable.js?v=2ed985c2b7";
+import { exportChallenges } from "./export.js?v=2ed985c2b7";
+import { mountPlanPicker } from "./plan-picker.js?v=2ed985c2b7";
+import { nextLiveLot } from "./next-lot.js?v=2ed985c2b7";
+import { filterForFirm } from "./firm-accounts.js?v=2ed985c2b7";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=2ed985c2b7";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges,
-} from "./machine.js?v=7eccb7ab37";
+} from "./machine.js?v=2ed985c2b7";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -762,9 +762,9 @@ async function renderOverview() {
 async function renderChallenges() {
   // As contas só são lidas quando há filtro: elas servem só para dizer de que
   // máquina é cada challenge, e sem filtro isso não muda nada na tela.
-  const [todos, firms, progressoTodo, contas] = await Promise.all([
+  const [todos, firms, progressoTodo, contas, sessao] = await Promise.all([
     load.journal(), load.firms(), load.progress(),
-    state.machine ? load.accounts() : []]);
+    state.machine ? load.accounts() : [], load.tradedToday()]);
   const progress = keepByAccount(progressoTodo, contas, state.machine);
   const journal = keepChallenges(todos, progressoTodo, contas, state.machine);
   for (const challenge of journal) {
@@ -773,6 +773,37 @@ async function renderChallenges() {
     challenge.next_live_lot_reason = next.reason;
   }
   setTotals(journal);
+
+  // Quem ja operou hoje. Com quatro contas vivas, a pergunta da abertura e
+  // "qual eu ja fiz e qual falta", e ela so se respondia abrindo challenge por
+  // challenge para olhar a data da ultima trade.
+  //
+  // O challenge conta como operado quando QUALQUER conta dele operou: a linha
+  // junta avaliacao e funded ("0012 / 0007") e o que se quer saber e se aquela
+  // linha ja teve a operacao do dia, nao em qual das duas contas ela caiu.
+  //
+  // Posicao ABERTA tambem marca. `trades` so recebe round-trip fechado, entao
+  // a conta em que ele acabou de entrar apareceria como "falta fazer" --
+  // exatamente o engano que o marcador existe para evitar.
+  const sessaoPorConta = new Map(sessao.map((r) => [r.account_id, r]));
+  const operadosHoje = new Map();
+  for (const p of progressoTodo) {
+    const hoje = sessaoPorConta.get(p.account_id);
+    if (!p.challenge_id || !hoje || !(hoje.traded_today || hoje.open_now)) continue;
+    const antes = operadosHoje.get(p.challenge_id) || { trades: 0, aberta: false };
+    operadosHoje.set(p.challenge_id, {
+      trades: antes.trades + Number(hoje.trades_today || 0),
+      aberta: antes.aberta || Boolean(hoje.open_now),
+    });
+  }
+  const porqueHoje = (c) => {
+    const m = operadosHoje.get(c.id);
+    if (!m) return "";
+    const fechadas = m.trades
+      ? `${m.trades} trade(s) fechada(s) no dia de sessão de hoje` : "";
+    return [fechadas, m.aberta ? "posição aberta agora" : ""]
+      .filter(Boolean).join(" · ");
+  };
 
   const months = [...new Set(journal.filter((c) => c.date_open)
     .map((c) => c.date_open.slice(0, 7)))].sort().reverse();
@@ -852,9 +883,10 @@ async function renderChallenges() {
                     format: () => cash(value) });
 
   const rowHtml = (c, { failedRow = false, hidden = false } = {}) => `
-    <tr class="clickable${failedRow ? " failed-row" : ""}" data-id="${c.id}"${
+    <tr class="clickable${failedRow ? " failed-row" : ""}${
+      operadosHoje.has(c.id) ? " traded-today" : ""}" data-id="${c.id}"${
       hidden ? " hidden" : ""}>
-      <td><strong class="${c.status === "failed" || c.drawdown_blown
+      <td title="${esc(porqueHoje(c))}"><strong class="${c.status === "failed" || c.drawdown_blown
         ? "blown" : "bright"}">${esc(c.account_ids || "—")}</strong></td>
       ${cell(c.firm_id, { id: c.id, field: "firm_id", type: "select", options: firmOpts,
                           format: () => esc(c.firm || "—") })}

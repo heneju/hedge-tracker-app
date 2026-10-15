@@ -561,6 +561,31 @@ dialog th{background:var(--color-bg)}
 }
 .dt tr.failed-row > td{opacity:.55}
 .dt tr.failed-row:hover > td{opacity:1}
+/* Conta ja operada no dia de sessao corrente. Com varias contas vivas, saber
+   qual ja foi feita era o unico jeito de nao repetir ou esquecer uma -- e
+   exigia abrir challenge por challenge.
+   O verde fica SO na primeira celula, e morre num gradiente antes da coluna
+   seguinte: pintar a linha inteira competiria com o verde/vermelho dos
+   numeros, que nesta tabela ja significa dinheiro. A barra solida na borda
+   esquerda e o que se enxerga de relance; o gradiente so amarra ela ao numero
+   da conta. */
+.dt tr.traded-today > td:first-child{
+  background:linear-gradient(90deg,
+    color-mix(in srgb, var(--gain) 30%, transparent) 0,
+    color-mix(in srgb, var(--gain) 10%, transparent) 45%,
+    transparent 100%);
+  box-shadow:inset 3px 0 0 var(--gain);
+}
+/* O hover pinta `tr`, que fica ATRAS do fundo da celula: sem isto a primeira
+   coluna e a unica que nao reage ao mouse. */
+.dt tr.traded-today:hover > td:first-child{
+  background:
+    linear-gradient(90deg,
+      color-mix(in srgb, var(--gain) 30%, transparent) 0,
+      color-mix(in srgb, var(--gain) 10%, transparent) 45%,
+      transparent 100%),
+    var(--color-neutral-100);
+}
 /* Coluna que so existe em mesa de duas fases. */
 .noP2 th.p2,.noP2 td.p2{display:none}
 /* Nota livre e o que estoura a largura das tabelas: ela corta com reticencias
@@ -710,6 +735,6 @@ dialog th{background:var(--color-bg)}
     if (t === "dark" || t === "light") document.documentElement.setAttribute("data-theme", t);
   } catch (e) {}
 </script>
-<script type="module" src="./js/app.js?v=7eccb7ab37"></script>
+<script type="module" src="./js/app.js?v=2ed985c2b7"></script>
 </body>
 </html>

@@ -5,7 +5,7 @@
 // fica so no coletor, no PC.
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { CONFIG } from "./config.js?v=7eccb7ab37";
+import { CONFIG } from "./config.js?v=2ed985c2b7";
 
 export const supabase = createClient(CONFIG.url, CONFIG.anonKey);
 
@@ -71,6 +71,14 @@ export const load = {
   // Progresso de cada conta prop contra as regras da mesa.
   progress: () =>
     supabase.from("account_progress").select("*").order("short_id").then(unwrap),
+
+  // Quais contas já foram operadas no dia de sessão corrente. O dia vem do
+  // banco de propósito: ele vira às 17:00 de Nova York, então a trade da noite
+  // já conta para o dia seguinte -- refazer esse cálculo no navegador erraria
+  // toda vez que o horário de verão americano virasse.
+  tradedToday: () =>
+    supabase.from("account_today")
+      .select("account_id, traded_today, trades_today, open_now, last_day").then(unwrap),
 
   // Contas com resultado e uso: é o que o seletor de fase precisa para o
   // usuário distinguir três contas da mesma mesa.
