@@ -12,7 +12,7 @@
 // dele, e os formatos numéricos usados aqui são os que o Sheets importa sem
 // reinterpretar.
 
-import { monthLabel } from "./util.js?v=570edd9f79";
+import { monthLabel } from "./util.js?v=1679a87877";
 
 const EXCELJS = "https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js";
 
@@ -39,10 +39,10 @@ function loadExcel() {
     const tag = document.createElement("script");
     tag.src = EXCELJS;
     tag.onload = () => (window.ExcelJS ? resolve(window.ExcelJS)
-      : reject(new Error("ExcelJS carregou mas não se registrou")));
+      : reject(new Error("ExcelJS loaded but did not register")));
     tag.onerror = () => {
       loading = null;   // deixa tentar de novo no próximo clique
-      reject(new Error("não consegui baixar a biblioteca de planilha"));
+      reject(new Error("could not download the spreadsheet library"));
     };
     document.head.appendChild(tag);
   });

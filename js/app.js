@@ -10,24 +10,24 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=570edd9f79";
+} from "./db.js?v=1679a87877";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=570edd9f79";
+} from "./util.js?v=1679a87877";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=570edd9f79";
-import { cell, locked, wireEditables } from "./editable.js?v=570edd9f79";
-import { exportChallenges } from "./export.js?v=570edd9f79";
-import { mountPlanPicker } from "./plan-picker.js?v=570edd9f79";
-import { nextLiveLot } from "./next-lot.js?v=570edd9f79";
-import { filterForFirm } from "./firm-accounts.js?v=570edd9f79";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=570edd9f79";
+} from "./charts.js?v=1679a87877";
+import { cell, locked, wireEditables } from "./editable.js?v=1679a87877";
+import { exportChallenges } from "./export.js?v=1679a87877";
+import { mountPlanPicker } from "./plan-picker.js?v=1679a87877";
+import { nextLiveLot } from "./next-lot.js?v=1679a87877";
+import { filterForFirm } from "./firm-accounts.js?v=1679a87877";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=1679a87877";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges,
-} from "./machine.js?v=570edd9f79";
+} from "./machine.js?v=1679a87877";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -736,63 +736,62 @@ async function renderOverview() {
     <input class="inp n" id="${id}" type="number" step="0.01" value="${valor}"></label>`;
 
   const avisoGiro = giro
-    ? "fica parado para a operação girar"
-    : "preencha aí em cima: sem isso, tudo parece livre";
+    ? "stays put to keep the operation running"
+    : "fill it in above — without it everything looks free";
 
   const quadro = `
     <div class="panel">
-      <h2>Your money<span class="dim">${campo("set-seed", aporte, "aporte próprio")}
-        ${campo("set-loan", emprestado, "emprestado")}
-        ${campo("set-giro", giro, "caixa de giro")}</span></h2>
+      <h2>Your money<span class="dim">${campo("set-seed", aporte, "own capital")}
+        ${campo("set-loan", emprestado, "borrowed")}
+        ${campo("set-giro", giro, "working cash")}</span></h2>
       <div class="panel-body"><div class="scroll">
         <table class="dt n">
           <tbody>
             ${verba("At the broker", contasLive.length, naCorretora,
-                    "margem do hedge, lida agora da corretora")}
+                    "hedge margin, read live from the broker")}
             ${verba("In your wallet", "", naCarteira,
-                    "deduzido: capital que entrou + resultado − corretora")}
+                    "derived: capital in + result − broker")}
             ${verba("Net worth", "", patrimonio,
-                    "tudo que está na operação hoje", "tot")}
+                    "everything inside the operation today", "tot")}
             ${emprestado ? verba("Borrowed", "", -emprestado,
-                    "não é seu — sai daqui quando você devolver") : ""}
+                    "not yours — leaves when you pay it back") : ""}
             ${deleEhLucro
               ? verba("YOURS — all of it profit", "", dele,
-                      "o capital era todo emprestado, então tudo que sobra é lucro",
+                      "the capital was all borrowed, so everything left over is profit",
                       "tot big")
-              : verba("Yours", "", dele, "patrimônio menos a dívida", "tot")
-                + verba("Your own capital", "", -aporte, "seu aporte — não é lucro")
-                + verba("PROFIT", "", cashTotal, "o que a operação gerou", "tot big")}
+              : verba("Yours", "", dele, "net worth minus the debt", "tot")
+                + verba("Your own capital", "", -aporte, "your own money in — not profit")
+                + verba("PROFIT", "", cashTotal, "what the operation produced", "tot big")}
 
             <tr class="sec"><td colspan="4">Can you spend it</td></tr>
             ${verba("Working cash", "", -giro, avisoGiro)}
             ${verba("FREE TO USE", "", livre,
-                    "dá para tirar sem enfraquecer a operação", "tot big")}
+                    "what you can take out without weakening the operation", "tot big")}
           </tbody>
         </table>
       </div></div>
     </div>
 
     <div class="panel">
-      <h2>How that profit was made<span class="dim">o mesmo dólar nunca aparece
-        em duas linhas</span></h2>
+      <h2>How that profit was made<span class="dim">the same dollar never shows up in two lines</span></h2>
       <div class="panel-body"><div class="scroll">
         <table class="dt n">
           <tbody>
             ${verba("Closed cycles", estagios.fechado.length,
                     somaEm(estagios.fechado, "cash_pnl"),
-                    "sacou e encerrou — definitivo")}
+                    "paid out and finished — this one is final")}
             ${verba("Blown, never paid", estagios.morreu.length,
                     somaEm(estagios.morreu, "cash_pnl"),
-                    "o hedge devolveu o custo — essas são de graça")}
+                    "the hedge gave the cost back — these are free")}
             ${verba("In flight", estagios.noAr.length,
                     somaEm(estagios.noAr, "cash_pnl"),
-                    "hedge pago, saque não veio — adiantamento, não perda")}
+                    "hedge paid, payout not in yet — an advance, not a loss")}
             ${verba("Profit", journal.length, cashTotal, "", "tot")}
 
-            <tr class="sec"><td colspan="4">Na mesa — referência, nunca seu</td></tr>
-            ${verba("Can request now", "", pending, "liberável hoje, se pedir")}
+            <tr class="sec"><td colspan="4">At the firm — reference only, never yours</td></tr>
+            ${verba("Can request now", "", pending, "withdrawable today, if you ask")}
             ${verba("Locked", "", locked,
-                    "piso e colchão: segura o drawdown, mas não entra em nada acima")}
+                    "floor and cushion: holds the drawdown, counts in nothing above")}
           </tbody>
         </table>
       </div></div>
@@ -955,8 +954,8 @@ async function renderChallenges() {
     const m = operadosHoje.get(c.id);
     if (!m) return "";
     const fechadas = m.trades
-      ? `${m.trades} trade(s) fechada(s) no dia de sessão de hoje` : "";
-    return [fechadas, m.aberta ? "posição aberta agora" : ""]
+      ? `${m.trades} trade(s) closed in today's session` : "";
+    return [fechadas, m.aberta ? "position open right now" : ""]
       .filter(Boolean).join(" · ");
   };
 
@@ -1028,12 +1027,12 @@ async function renderChallenges() {
   const liveCell = (c, field, value, trades) => trades > 0
     ? locked(cash(value), `${trades} paired trade(s) — measured, not editable`)
     : cell(value, { id: c.id, field, type: "number", align: true,
-                    format: () => cash(value), title: "importado — clique para corrigir" });
+                    format: () => cash(value), title: "imported — click to correct" });
 
   const cashCell = (c, field, value, entries) => field === "payout"
     ? `<td class="num"><button class="btn ghost" title="Open challenge to record payout">${cash(value)} ✎</button></td>`
     : entries > 1
-    ? locked(cash(value), `${entries} lançamentos — abra a linha para editar`)
+    ? locked(cash(value), `${entries} entries — open the row to edit`)
     : cell(value, { id: c.id, field, type: "number", align: true,
                     format: () => cash(value) });
 
@@ -1053,7 +1052,7 @@ async function renderChallenges() {
         // Janela entre o estouro e o ciclo do coletor que marca: mostra os
         // dois em vez de escolher um. Fora dessa janela os dois concordam.
         title: c.drawdown_blown && c.status !== "failed"
-          ? "a conta bateu o chão do drawdown, mas o status ainda diz o contrário"
+          ? "the account hit the drawdown floor, but the status still says otherwise"
           : "",
         format: () => `${badge(c.status, statusLabel(c.status, c.eval_phases))}${
           c.drawdown_blown && c.status !== "failed"
@@ -1372,7 +1371,7 @@ async function openChallenge(id, journal, firms, progress = []) {
       <span class="spacer"></span>
       ${badge(c.status, STATUS_LABEL[c.status] || c.status)}
       ${c.drawdown_blown && c.status !== "failed"
-        ? `<span class="badge failed" title="bateu o chão do drawdown">blown</span>` : ""}
+        ? `<span class="badge failed" title="hit the drawdown floor">blown</span>` : ""}
       ${c.status === "failed" || c.drawdown_blown
         ? `<button class="btn ghost" id="reset-account"
              title="the firm gave this account back — start a new attempt on it"

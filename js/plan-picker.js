@@ -8,7 +8,7 @@
 // O modulo so escolhe. O que o plano faz no formulario fica em quem monta o
 // seletor (`onPlan`), porque e o formulario que sabe quais campos existem.
 
-import { esc, money0, num } from "./util.js?v=570edd9f79";
+import { esc, money0, num } from "./util.js?v=1679a87877";
 
 const firmOf = (pl) => pl.prop_firms?.name || "?";
 
