@@ -5,7 +5,7 @@
 // fica so no coletor, no PC.
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { CONFIG } from "./config.js?v=9845ee29b6";
+import { CONFIG } from "./config.js?v=88b6ff496a";
 
 export const supabase = createClient(CONFIG.url, CONFIG.anonKey);
 
@@ -71,6 +71,17 @@ export const load = {
   // Progresso de cada conta prop contra as regras da mesa.
   progress: () =>
     supabase.from("account_progress").select("*").order("short_id").then(unwrap),
+
+  // Capital aportado e caixa de giro. Uma linha por dono, e pode não existir
+  // ainda: o painel trata ausência como zero em vez de exigir cadastro antes
+  // de mostrar qualquer coisa.
+  settings: () =>
+    supabase.from("operation_settings")
+      .select("seed_capital, working_cash").maybeSingle()
+      .then(({ data, error }) => {
+        if (error) throw new Error(error.message);
+        return data ?? { seed_capital: 0, working_cash: 0 };
+      }),
 
   // Quais contas já foram operadas no dia de sessão corrente. O dia vem do
   // banco de propósito: ele vira às 17:00 de Nova York, então a trade da noite
@@ -284,6 +295,22 @@ export const save = {
       challenge_id: challengeId, kind, amount,
       occurred_on: new Date().toISOString().slice(0, 10), source: "manual",
     }).then(unwrap);
+  },
+
+  // Upsert pelo dono: a linha nasce no primeiro salvamento. O `owner_id` vai
+  // explícito porque ele é a chave do conflito -- deixá-lo para o default da
+  // tabela faria o PostgREST não ter o que casar, e cada salvamento tentaria
+  // INSERT de novo. A RLS continua sendo a barreira: gravar o id de outra
+  // pessoa seria recusado pelo `with check` da política.
+  settings: async (patch) => {
+    const user = await currentUser();
+    if (!user) throw new Error("sessão expirada");
+    const { data, error } = await supabase.from("operation_settings")
+      .upsert({ owner_id: user.id, ...patch, updated_at: new Date().toISOString() },
+              { onConflict: "owner_id" })
+      .select();
+    if (error) throw new Error(error.message);
+    return data ?? [];
   },
 
   createIssue: (row) =>

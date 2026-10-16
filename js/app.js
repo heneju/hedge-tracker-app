@@ -10,24 +10,24 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=9845ee29b6";
+} from "./db.js?v=88b6ff496a";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=9845ee29b6";
+} from "./util.js?v=88b6ff496a";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=9845ee29b6";
-import { cell, locked, wireEditables } from "./editable.js?v=9845ee29b6";
-import { exportChallenges } from "./export.js?v=9845ee29b6";
-import { mountPlanPicker } from "./plan-picker.js?v=9845ee29b6";
-import { nextLiveLot } from "./next-lot.js?v=9845ee29b6";
-import { filterForFirm } from "./firm-accounts.js?v=9845ee29b6";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=9845ee29b6";
+} from "./charts.js?v=88b6ff496a";
+import { cell, locked, wireEditables } from "./editable.js?v=88b6ff496a";
+import { exportChallenges } from "./export.js?v=88b6ff496a";
+import { mountPlanPicker } from "./plan-picker.js?v=88b6ff496a";
+import { nextLiveLot } from "./next-lot.js?v=88b6ff496a";
+import { filterForFirm } from "./firm-accounts.js?v=88b6ff496a";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=88b6ff496a";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges,
-} from "./machine.js?v=9845ee29b6";
+} from "./machine.js?v=88b6ff496a";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -575,9 +575,10 @@ function openPositions(rows, accounts) {
 // ----------------------------------------------------------------- overview
 
 async function renderOverview() {
-  const [todoJournal, monthly, todoProgresso, todoOAr, todasContas] = await Promise.all([
-    load.journal(), load.monthly(), load.progress(),
-    load.openPositions(), load.accounts()]);
+  const [todoJournal, monthly, todoProgresso, todoOAr, todasContas, config] =
+    await Promise.all([
+      load.journal(), load.monthly(), load.progress(),
+      load.openPositions(), load.accounts(), load.settings()]);
   // Filtrado ANTES de qualquer soma: o total do topo precisa fechar com a
   // tabela de baixo. Um total geral sobre uma lista filtrada seria pior do que
   // não ter filtro nenhum.
@@ -692,9 +693,29 @@ async function renderOverview() {
       <div class="sub">${esc(sub)}</div>
     </div>`;
 
-  // Linha do quadro de caixa. `contas` fica em branco quando a linha não é um
-  // conjunto de challenges -- escrever "0 contas" ali sugeriria que não há
-  // nenhuma, quando o que há é outra unidade.
+  // O que ele pediu, nas palavras dele: "quero saber de lucro, dinheiro meu,
+  // dinheiro que se eu quiser eu posso usar".
+  //
+  // Tres numeros diferentes que o painel tratava como um so:
+  //
+  //   PATRIMONIO  tudo que e dele hoje -- corretora + carteira.
+  //   LUCRO       patrimonio menos o que ele aportou. Ter 6.575 tendo posto
+  //               1.500 e lucro de 5.075, nao de 6.575.
+  //   LIVRE       lucro menos o caixa que a operacao precisa para girar. E o
+  //               unico que responde "posso gastar?".
+  //
+  // A carteira e DEDUZIDA, nao cadastrada: aporte + resultado - corretora. Ela
+  // muda a cada saque e a cada deposito, e pedir para ele manter isso em dia
+  // garantiria um numero errado na tela. O aporte, esse, e fixo e ele sabe.
+  const aporte = Number(config.seed_capital) || 0;
+  const giro = Number(config.working_cash) || 0;
+  const patrimonio = aporte + cashTotal;
+  const naCarteira = patrimonio - naCorretora;
+  const livre = patrimonio - giro;
+
+  // Linha do quadro. `contas` fica em branco quando a linha não é um conjunto
+  // de challenges -- escrever "0 contas" ali sugeriria que não há nenhuma,
+  // quando o que há é outra unidade.
   const verba = (rotulo, contas, valor, nota, cls = "") => `
     <tr${cls ? ` class="${cls}"` : ""}>
       <td>${esc(rotulo)}</td>
@@ -703,42 +724,58 @@ async function renderOverview() {
       <td class="muted" style="white-space:normal">${esc(nota)}</td>
     </tr>`;
 
-  const naMesa = pending + locked;
+  const campo = (id, valor, rotulo) => `<label class="cfg">${esc(rotulo)}
+    <input class="inp n" id="${id}" type="number" step="0.01" value="${valor}"></label>`;
+
   const quadro = `
     <div class="panel">
-      <h2>Where the money is<span class="dim">o mesmo dólar nunca aparece em
-        duas linhas</span></h2>
+      <h2>Your money<span class="dim">${campo("set-seed", aporte, "capital aportado")}
+        ${campo("set-giro", giro, "caixa de giro")}</span></h2>
       <div class="panel-body"><div class="scroll">
         <table class="dt n">
-          <thead><tr>
-            <th>Stage</th><th class="num">Accounts</th><th class="num">Amount</th>
-            <th>What it means</th>
-          </tr></thead>
           <tbody>
-            <tr class="sec"><td colspan="4">Result — settled</td></tr>
+            ${verba("At the broker", contasLive.length, naCorretora,
+                    "margem do hedge, lida agora da corretora")}
+            ${verba("In your wallet", "", naCarteira,
+                    "deduzido: aporte + resultado − corretora")}
+            ${verba("Net worth", "", patrimonio, "tudo que é seu hoje", "tot")}
+            ${verba("Capital you put in", "", -aporte,
+                    aporte ? "seu aporte — não é lucro"
+                           : "preencha aí em cima para separar lucro de patrimônio")}
+            ${verba("PROFIT", "", cashTotal, "o que a operação gerou", "tot")}
+
+            <tr class="sec"><td colspan="4">Can you spend it</td></tr>
+            ${verba("Working cash", "", -giro,
+                    giro ? "fica parado para a operação girar"
+                         : "preencha aí em cima: sem isso, tudo parece livre")}
+            ${verba("FREE TO USE", "", livre,
+                    "dá para tirar sem enfraquecer a operação", "tot big")}
+          </tbody>
+        </table>
+      </div></div>
+    </div>
+
+    <div class="panel">
+      <h2>How that profit was made<span class="dim">o mesmo dólar nunca aparece
+        em duas linhas</span></h2>
+      <div class="panel-body"><div class="scroll">
+        <table class="dt n">
+          <tbody>
             ${verba("Closed cycles", estagios.fechado.length,
                     somaEm(estagios.fechado, "cash_pnl"),
-                    "paid out and finished — this number is final")}
+                    "sacou e encerrou — definitivo")}
             ${verba("Blown, never paid", estagios.morreu.length,
                     somaEm(estagios.morreu, "cash_pnl"),
-                    "the hedge gave the cost back — these are free")}
+                    "o hedge devolveu o custo — essas são de graça")}
             ${verba("In flight", estagios.noAr.length,
                     somaEm(estagios.noAr, "cash_pnl"),
-                    "hedge already paid, payout has not arrived — advance, not loss")}
-            ${verba("Realised", journal.length, cashTotal,
-                    "what the operation actually produced", "tot")}
+                    "hedge pago, saque não veio — adiantamento, não perda")}
+            ${verba("Profit", journal.length, cashTotal, "", "tot")}
 
-            <tr class="sec"><td colspan="4">Parked — yours, not profit</td></tr>
-            ${verba("At the broker", contasLive.length, naCorretora,
-                    "hedge working capital. What it lost is already in the line above")}
-
-            <tr class="sec"><td colspan="4">At the firm — not yours</td></tr>
-            ${verba("Can request now", "", pending,
-                    "withdrawable today, if you ask")}
+            <tr class="sec"><td colspan="4">Na mesa — referência, nunca seu</td></tr>
+            ${verba("Can request now", "", pending, "liberável hoje, se pedir")}
             ${verba("Locked", "", locked,
-                    "needs winning days, buffer or consistency first")}
-            ${verba("Total at the firm", estagios.noAr.length, naMesa,
-                    "simulated. It goes to zero if the account breaches", "tot")}
+                    "piso e colchão: segura o drawdown, mas não entra em nada acima")}
           </tbody>
         </table>
       </div></div>
@@ -837,6 +874,24 @@ async function renderOverview() {
         </table>
       </div>
     </div>`);
+
+  // Os dois campos do quadro. Salvam no blur e so quando o numero MUDOU:
+  // tocar no campo e sair sem alterar nada nao precisa escrever no banco.
+  for (const [id, campo, antes] of [["set-seed", "seed_capital", aporte],
+                                    ["set-giro", "working_cash", giro]]) {
+    const input = document.getElementById(id);
+    input.onblur = async () => {
+      const valor = Number(input.value);
+      if (!Number.isFinite(valor) || valor === antes) return;
+      try {
+        await save.settings({ [campo]: valor });
+        renderOverview();
+      } catch (err) {
+        toast(`Error: ${err.message}`);
+      }
+    };
+    input.onkeydown = (e) => { if (e.key === "Enter") input.blur(); };
+  }
 }
 
 // --------------------------------------------------------------- challenges

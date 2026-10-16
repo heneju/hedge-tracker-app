@@ -600,6 +600,17 @@ dialog th{background:var(--color-bg)}
   border-top:2px solid var(--color-divider);
   border-bottom:0;font-weight:800;
 }
+/* O numero que responde "posso gastar?" nao pode ter o mesmo peso das linhas
+   de composicao acima dele. */
+.dt tr.tot.big > td{font-size:15px;padding-top:12px;padding-bottom:12px}
+/* Campo de configuracao no cabecalho do painel: rotulo pequeno em cima, campo
+   estreito embaixo, para caber no h2 sem empurrar o titulo. */
+.cfg{
+  display:inline-flex;flex-direction:column;gap:3px;margin-left:16px;
+  font-size:9.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--color-neutral-600);vertical-align:bottom;
+}
+.cfg .inp{min-width:0;width:110px;padding:3px 6px;font-size:12px;text-align:right}
 /* Coluna que so existe em mesa de duas fases. */
 .noP2 th.p2,.noP2 td.p2{display:none}
 /* Nota livre e o que estoura a largura das tabelas: ela corta com reticencias
@@ -749,6 +760,6 @@ dialog th{background:var(--color-bg)}
     if (t === "dark" || t === "light") document.documentElement.setAttribute("data-theme", t);
   } catch (e) {}
 </script>
-<script type="module" src="./js/app.js?v=9845ee29b6"></script>
+<script type="module" src="./js/app.js?v=88b6ff496a"></script>
 </body>
 </html>
