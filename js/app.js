@@ -10,24 +10,24 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=88b6ff496a";
+} from "./db.js?v=570edd9f79";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=88b6ff496a";
+} from "./util.js?v=570edd9f79";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=88b6ff496a";
-import { cell, locked, wireEditables } from "./editable.js?v=88b6ff496a";
-import { exportChallenges } from "./export.js?v=88b6ff496a";
-import { mountPlanPicker } from "./plan-picker.js?v=88b6ff496a";
-import { nextLiveLot } from "./next-lot.js?v=88b6ff496a";
-import { filterForFirm } from "./firm-accounts.js?v=88b6ff496a";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=88b6ff496a";
+} from "./charts.js?v=570edd9f79";
+import { cell, locked, wireEditables } from "./editable.js?v=570edd9f79";
+import { exportChallenges } from "./export.js?v=570edd9f79";
+import { mountPlanPicker } from "./plan-picker.js?v=570edd9f79";
+import { nextLiveLot } from "./next-lot.js?v=570edd9f79";
+import { filterForFirm } from "./firm-accounts.js?v=570edd9f79";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=570edd9f79";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges,
-} from "./machine.js?v=88b6ff496a";
+} from "./machine.js?v=570edd9f79";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -707,11 +707,19 @@ async function renderOverview() {
   // A carteira e DEDUZIDA, nao cadastrada: aporte + resultado - corretora. Ela
   // muda a cada saque e a cada deposito, e pedir para ele manter isso em dia
   // garantiria um numero errado na tela. O aporte, esse, e fixo e ele sabe.
+  //
+  // Capital emprestado nao e capital proprio: ele sai do que e dele, nao do
+  // lucro. Com aporte proprio zero -- os 1.500 que comecaram esta operacao
+  // sao emprestimo -- "dele" e "lucro" dao o mesmo numero, e a tela mostra uma
+  // linha so. Os dois divergem no dia em que ele puser dinheiro do bolso.
   const aporte = Number(config.seed_capital) || 0;
+  const emprestado = Number(config.borrowed_capital) || 0;
   const giro = Number(config.working_cash) || 0;
-  const patrimonio = aporte + cashTotal;
+  const patrimonio = aporte + emprestado + cashTotal;
   const naCarteira = patrimonio - naCorretora;
-  const livre = patrimonio - giro;
+  const dele = patrimonio - emprestado;
+  const livre = dele - giro;
+  const deleEhLucro = Math.abs(dele - cashTotal) < 0.005;
 
   // Linha do quadro. `contas` fica em branco quando a linha não é um conjunto
   // de challenges -- escrever "0 contas" ali sugeriria que não há nenhuma,
@@ -727,9 +735,14 @@ async function renderOverview() {
   const campo = (id, valor, rotulo) => `<label class="cfg">${esc(rotulo)}
     <input class="inp n" id="${id}" type="number" step="0.01" value="${valor}"></label>`;
 
+  const avisoGiro = giro
+    ? "fica parado para a operação girar"
+    : "preencha aí em cima: sem isso, tudo parece livre";
+
   const quadro = `
     <div class="panel">
-      <h2>Your money<span class="dim">${campo("set-seed", aporte, "capital aportado")}
+      <h2>Your money<span class="dim">${campo("set-seed", aporte, "aporte próprio")}
+        ${campo("set-loan", emprestado, "emprestado")}
         ${campo("set-giro", giro, "caixa de giro")}</span></h2>
       <div class="panel-body"><div class="scroll">
         <table class="dt n">
@@ -737,17 +750,21 @@ async function renderOverview() {
             ${verba("At the broker", contasLive.length, naCorretora,
                     "margem do hedge, lida agora da corretora")}
             ${verba("In your wallet", "", naCarteira,
-                    "deduzido: aporte + resultado − corretora")}
-            ${verba("Net worth", "", patrimonio, "tudo que é seu hoje", "tot")}
-            ${verba("Capital you put in", "", -aporte,
-                    aporte ? "seu aporte — não é lucro"
-                           : "preencha aí em cima para separar lucro de patrimônio")}
-            ${verba("PROFIT", "", cashTotal, "o que a operação gerou", "tot")}
+                    "deduzido: capital que entrou + resultado − corretora")}
+            ${verba("Net worth", "", patrimonio,
+                    "tudo que está na operação hoje", "tot")}
+            ${emprestado ? verba("Borrowed", "", -emprestado,
+                    "não é seu — sai daqui quando você devolver") : ""}
+            ${deleEhLucro
+              ? verba("YOURS — all of it profit", "", dele,
+                      "o capital era todo emprestado, então tudo que sobra é lucro",
+                      "tot big")
+              : verba("Yours", "", dele, "patrimônio menos a dívida", "tot")
+                + verba("Your own capital", "", -aporte, "seu aporte — não é lucro")
+                + verba("PROFIT", "", cashTotal, "o que a operação gerou", "tot big")}
 
             <tr class="sec"><td colspan="4">Can you spend it</td></tr>
-            ${verba("Working cash", "", -giro,
-                    giro ? "fica parado para a operação girar"
-                         : "preencha aí em cima: sem isso, tudo parece livre")}
+            ${verba("Working cash", "", -giro, avisoGiro)}
             ${verba("FREE TO USE", "", livre,
                     "dá para tirar sem enfraquecer a operação", "tot big")}
           </tbody>
@@ -878,6 +895,7 @@ async function renderOverview() {
   // Os dois campos do quadro. Salvam no blur e so quando o numero MUDOU:
   // tocar no campo e sair sem alterar nada nao precisa escrever no banco.
   for (const [id, campo, antes] of [["set-seed", "seed_capital", aporte],
+                                    ["set-loan", "borrowed_capital", emprestado],
                                     ["set-giro", "working_cash", giro]]) {
     const input = document.getElementById(id);
     input.onblur = async () => {
