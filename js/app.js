@@ -10,24 +10,24 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=3f92f9bc1a";
+} from "./db.js?v=5eaf5f4968";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=3f92f9bc1a";
+} from "./util.js?v=5eaf5f4968";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=3f92f9bc1a";
-import { cell, locked, wireEditables } from "./editable.js?v=3f92f9bc1a";
-import { exportChallenges } from "./export.js?v=3f92f9bc1a";
-import { mountPlanPicker } from "./plan-picker.js?v=3f92f9bc1a";
-import { nextLiveLot } from "./next-lot.js?v=3f92f9bc1a";
-import { filterForFirm } from "./firm-accounts.js?v=3f92f9bc1a";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=3f92f9bc1a";
+} from "./charts.js?v=5eaf5f4968";
+import { cell, locked, wireEditables } from "./editable.js?v=5eaf5f4968";
+import { exportChallenges } from "./export.js?v=5eaf5f4968";
+import { mountPlanPicker } from "./plan-picker.js?v=5eaf5f4968";
+import { nextLiveLot } from "./next-lot.js?v=5eaf5f4968";
+import { filterForFirm } from "./firm-accounts.js?v=5eaf5f4968";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=5eaf5f4968";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges,
-} from "./machine.js?v=3f92f9bc1a";
+} from "./machine.js?v=5eaf5f4968";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -285,7 +285,17 @@ function identifySource(source, firms, plans, usage = new Map()) {
         why = `most used — ${ranked[0].uso} accounts`;
       }
     }
-    return { firm, parsed: lido, plan, why, candidates: candidatos };
+    // O padrao desta mesa sabe dizer que a conta e funded?
+    //
+    // `^LF(?:E|(?<funded>F))\d+$` sabe: a letra muda. `^BGF\d{6,}$` nao sabe --
+    // a Blue Guardian nomeia a funded igual a avaliacao. Sem o grupo, `funded`
+    // sai false porque o padrao nao enxerga, e nao porque a conta e compra.
+    //
+    // A diferenca importa: tratar uma funded como compra criaria um challenge
+    // novo com custo que nao houve, e deixaria a funded de verdade sem ligacao
+    // com a avaliacao que a originou.
+    const tellsFunded = /\(\?P?<funded>/.test(firm.account_pattern || "");
+    return { firm, parsed: lido, plan, why, tellsFunded, candidates: candidatos };
   }
   return null;
 }
@@ -2430,8 +2440,15 @@ async function renderConfig() {
               <tbody>${novas.map(({ source, id }) => `
                 <tr>
                   <td><input type="checkbox" data-new="${source.id}"
-                       ${id.plan ? "" : "disabled"}></td>
-                  <td><strong class="bright">${esc(source.login_or_name)}</strong></td>
+                       ${id.plan ? "" : "disabled"}
+                       ${id.tellsFunded ? "" : `data-new-unsure="1"`}></td>
+                  <td><strong class="bright">${esc(source.login_or_name)}</strong>${
+                    id.tellsFunded ? "" : ` <span class="badge" title="${esc(
+                      `${id.firm.name} gives funded accounts the same kind of name as`
+                      + ` evaluations, so this one cannot be told apart. Only tick it`
+                      + ` if you actually bought it — a funded account registered here`
+                      + ` becomes a duplicate challenge with a cost that never happened.`
+                    )}">check</span>`}</td>
                   <td>${esc(id.firm.name)}</td>
                   <td class="num">${money0(id.parsed.size)}</td>
                   <td>${id.candidates.length ? `<select data-new-plan="${source.id}">
@@ -2721,9 +2738,13 @@ async function renderConfig() {
   const marcarTodas = document.getElementById("new-all");
   if (marcarTodas) {
     marcarTodas.onchange = () => {
-      // Caixa desabilitada e conta sem plano: marcar em bloco nao pode ligar
-      // o que o botao de confirmar vai recusar.
-      novasCaixas().forEach((c) => { if (!c.disabled) c.checked = marcarTodas.checked; });
+      // Marcar em bloco so pega o que e seguro: conta sem plano o confirmar
+      // recusaria, e mesa que nomeia funded igual a avaliacao exige olho --
+      // essas ficam de fora e so entram no clique individual.
+      novasCaixas().forEach((c) => {
+        if (c.disabled || c.dataset.newUnsure) return;
+        c.checked = marcarTodas.checked;
+      });
       atualizaContador();
     };
   }
