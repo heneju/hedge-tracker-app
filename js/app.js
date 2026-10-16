@@ -10,24 +10,24 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=1679a87877";
+} from "./db.js?v=3f92f9bc1a";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=1679a87877";
+} from "./util.js?v=3f92f9bc1a";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=1679a87877";
-import { cell, locked, wireEditables } from "./editable.js?v=1679a87877";
-import { exportChallenges } from "./export.js?v=1679a87877";
-import { mountPlanPicker } from "./plan-picker.js?v=1679a87877";
-import { nextLiveLot } from "./next-lot.js?v=1679a87877";
-import { filterForFirm } from "./firm-accounts.js?v=1679a87877";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=1679a87877";
+} from "./charts.js?v=3f92f9bc1a";
+import { cell, locked, wireEditables } from "./editable.js?v=3f92f9bc1a";
+import { exportChallenges } from "./export.js?v=3f92f9bc1a";
+import { mountPlanPicker } from "./plan-picker.js?v=3f92f9bc1a";
+import { nextLiveLot } from "./next-lot.js?v=3f92f9bc1a";
+import { filterForFirm } from "./firm-accounts.js?v=3f92f9bc1a";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=3f92f9bc1a";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges,
-} from "./machine.js?v=1679a87877";
+} from "./machine.js?v=3f92f9bc1a";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -64,6 +64,9 @@ const state = {
   hedgeClosed: false,
   // Sub-aba aberta no Setup.
   setupTab: "register",
+  // Fila de contas novas: o padrão mostra só a última semana. Ver o histórico
+  // inteiro é escolha explícita -- ver o comentário em `renderConfig`.
+  showAllNew: false,
   // Quantas informações o coletor não tem como descobrir e continuam em branco.
   // Fica no menu pelo mesmo motivo dos reportes: buraco esquecido vira número
   // errado que ninguém questiona.
@@ -222,6 +225,69 @@ function parseAccountName(name, pattern) {
   } catch {
     return null;   // Padrão inválido não pode derrubar a tela de pendências.
   }
+}
+
+/**
+ * O que dá para saber de uma fonte descoberta só pelo NOME dela.
+ *
+ * "rather than me manually going through many account numbers just to find the
+ * right one to add" -- com 161 contas Tradeify na lista, achar a que acabou de
+ * ser comprada é o trabalho todo. E o nome já responde: `TDFYSL50875965103` é
+ * Tradeify, 50k, avaliação.
+ *
+ * O que o nome NÃO resolve é qual linha de `firm_plans` descreve a compra,
+ * porque quem opera a mesma mesa há meses acumula várias do mesmo tamanho --
+ * um dos usuários tem três Tradeify 50k com as mesmas regras.
+ *
+ * A ordem de desempate, da mais forte para a mais fraca:
+ *
+ *   1. o plano marcado como preferido;
+ *   2. candidato único, que não tem o que desempatar;
+ *   3. o MAIS USADO por ele naquela mesa e tamanho -- 22 das 30 contas
+ *      Tradeify 50k de um deles apontam para o mesmo plano, então o palpite
+ *      acerta e ninguém precisa configurar nada antes de usar.
+ *
+ * O passo 3 é heurística, e `infer_plan` continua proibido de fazer isso: lá o
+ * coletor grava sozinho, sem ninguém ver, e foi essa desistência que impediu
+ * uma conta NinjaTrader de virar plano CFD. Aqui é diferente -- a escolha
+ * aparece escrita na linha, num select, e só vira challenge quando a pessoa
+ * confirma. Empate de uso também desiste: sem maioria não há palpite honesto.
+ *
+ * Devolve `null` quando nenhum padrão de mesa casa: fonte não reconhecida
+ * continua indo para o cadastro manual, que nunca deixou de existir.
+ */
+function identifySource(source, firms, plans, usage = new Map()) {
+  if (!source?.login_or_name) return null;
+  for (const firm of firms) {
+    if (firm.platform !== source.platform) continue;
+    const lido = parseAccountName(source.login_or_name, firm.account_pattern);
+    if (!lido) continue;
+    // Nem todo padrao captura o tamanho: `^BGF\d{6,}$` identifica a mesa e mais
+    // nada. Sem tamanho a mesa inteira vira candidata, e o desempate abaixo
+    // decide -- quem so opera um tamanho naquela mesa cai no caso de plano
+    // unico e resolve do mesmo jeito.
+    const candidatos = plans.filter((pl) => pl.firm_id === firm.id
+      && (lido.size == null || Number(pl.account_size) === lido.size));
+
+    let plan = candidatos.find((pl) => pl.is_preferred) || null;
+    let why = plan ? "preferred" : "";
+    if (!plan && candidatos.length === 1) {
+      [plan] = candidatos;
+      why = "only plan for this size";
+    }
+    if (!plan && candidatos.length > 1) {
+      const ranked = candidatos
+        .map((pl) => ({ pl, uso: usage.get(pl.id) || 0 }))
+        .sort((a, b) => b.uso - a.uso);
+      // Maioria de verdade: dois planos empatados em uso não elegem nenhum.
+      if (ranked[0].uso > 0 && ranked[0].uso > ranked[1].uso) {
+        plan = ranked[0].pl;
+        why = `most used — ${ranked[0].uso} accounts`;
+      }
+    }
+    return { firm, parsed: lido, plan, why, candidates: candidatos };
+  }
+  return null;
 }
 
 /**
@@ -2205,6 +2271,12 @@ async function renderConfig() {
     const nota = daysNote(pl.min_trading_days, pl.consistency_pct);
     return `
     <tr>
+      <!-- Qual plano a fila de contas novas usa quando o nome da conta resolve
+           mesa e tamanho mas sobra mais de uma linha. Sem marcar nada o palpite
+           sai do plano mais usado; marcar aqui trava a escolha. -->
+      <td><input type="checkbox" data-plan-preferred="${pl.id}"
+           ${pl.is_preferred ? "checked" : ""}
+           title="use this plan for new accounts of this firm and size"></td>
       ${cell(pl.firm_id, { id: pl.id, field: "plan:firm_id", type: "select", options: firmOpts,
         format: () => `<span class="muted">${esc(pl.prop_firms?.name || "—")}</span>` })}
       ${cell(pl.name, { id: pl.id, field: "plan:name", type: "text",
@@ -2266,7 +2338,41 @@ async function renderConfig() {
     </tr>`;
   }).join("");
 
+  // ------------------------------------------------------- contas novas
+  //
+  // A fila que responde ao pedido: "maybe it noticed the accounts I buy and
+  // just ask me to confirm". Toda fonte livre cujo NOME identifica a mesa
+  // entra aqui já resolvida -- mesa, tamanho e plano -- faltando só o que o
+  // nome não tem: quanto ele pagou.
+  //
+  // Conta FUNDED fica de fora. Ela não é compra: a mesa a libera depois de uma
+  // aprovação, e `link_funded_accounts` a liga ao challenge que já existe.
+  // Oferecê-la aqui criaria um challenge novo e duplicado, com custo que não
+  // houve.
+  //
+  // O recorte de data não é enfeite. Dos 161 Tradeify livres de um dos
+  // usuários, 132 são de setembro: o NinjaTrader guarda conta velha no banco
+  // local para sempre, e um "adicionar todas" criaria 132 challenges
+  // retroativos com custo inventado. Por isso o padrão é só o que apareceu na
+  // última semana, e ver o resto é uma escolha explícita.
+  const NOVAS_DIAS = 7;
+  const limiteNovas = Date.now() - NOVAS_DIAS * 864e5;
+  // Quantas contas ja apontam para cada plano. E o que elege o plano quando o
+  // tamanho sozinho nao desempata -- ver `identifySource`.
+  const usoPorPlano = new Map();
+  for (const a of todasContas) {
+    if (a.plan_id) usoPorPlano.set(a.plan_id, (usoPorPlano.get(a.plan_id) || 0) + 1);
+  }
+  const reconhecidas = freeDiscovered
+    .map((d) => ({ source: d, id: identifySource(d, firms, plans, usoPorPlano) }))
+    .filter((x) => x.id && !x.id.parsed.funded)
+    .map((x) => ({ ...x, recente: new Date(x.source.first_seen).getTime() >= limiteNovas }));
+  const novas = state.showAllNew ? reconhecidas : reconhecidas.filter((x) => x.recente);
+  const escondidas = reconhecidas.length - novas.length;
+
   const setupTabs = [
+    ["new", `New${reconhecidas.filter((x) => x.recente).length
+      ? ` · ${reconhecidas.filter((x) => x.recente).length}` : ""}`],
     ["register", "Register"],
     ["accounts", `Accounts · ${accounts.length}`],
     ["found", `Found · ${discovered.length}`],
@@ -2285,6 +2391,73 @@ async function renderConfig() {
       <span class="snav">${setupTabs.map(([id, label]) =>
         `<button type="button" data-setup-tab="${id}" aria-pressed="${id === tab}">${
           esc(label)}</button>`).join("")}</span>
+    </div>
+
+    <div class="panel" data-setup="new" ${tab === "new" ? "" : "hidden"}>
+      <h2>New accounts <span class="dim">recognised by name — confirm and they
+        are in</span></h2>
+      <div class="panel-body">
+        ${!reconhecidas.length ? empty(
+            "no unregistered account matches a firm naming pattern")
+        : `<p class="muted" style="margin-top:0">
+            The name already says the firm, the size and the payout policy.
+            Tick what you bought, type what you paid, and confirm — one
+            challenge per account. Funded accounts are not listed: the firm
+            releases those after a pass, and they link to the challenge that
+            already exists.
+          </p>
+          <div class="row" style="gap:12px;align-items:flex-end;margin-bottom:12px">
+            <div class="field" style="margin:0">
+              <label>Cost per account</label>
+              <input class="inp n" id="new-cost" type="number" step="0.01"
+                     placeholder="119.00" style="width:130px">
+            </div>
+            <div class="field" style="margin:0">
+              <label>Opened</label>
+              <input class="inp" id="new-opened" type="date"
+                     value="${new Date().toISOString().slice(0, 10)}">
+            </div>
+            <button class="btn" id="new-confirm">Add selected</button>
+            <span class="muted" id="new-count" style="font-size:12px"></span>
+          </div>
+          <div class="scroll">
+            <table class="dt n">
+              <thead><tr>
+                <th style="width:34px"><input type="checkbox" id="new-all"></th>
+                <th>Account</th><th>Firm</th><th class="num">Size</th>
+                <th>Plan</th><th>Found</th><th>Machine</th>
+              </tr></thead>
+              <tbody>${novas.map(({ source, id }) => `
+                <tr>
+                  <td><input type="checkbox" data-new="${source.id}"
+                       ${id.plan ? "" : "disabled"}></td>
+                  <td><strong class="bright">${esc(source.login_or_name)}</strong></td>
+                  <td>${esc(id.firm.name)}</td>
+                  <td class="num">${money0(id.parsed.size)}</td>
+                  <td>${id.candidates.length ? `<select data-new-plan="${source.id}">
+                      ${id.candidates.map((pl) => `<option value="${pl.id}" ${
+                        pl.id === id.plan?.id ? "selected" : ""}>${
+                        esc(pl.name || pl.product || money0(pl.account_size))}</option>`).join("")}
+                    </select>${id.why ? `<div style="font-size:10px;color:var(--color-neutral-600);margin-top:2px">${
+                      esc(id.why)}</div>` : ""}`
+                    : `<span class="blown" title="no plan registered for this firm and size">no plan</span>`}</td>
+                  <td class="muted">${day(source.first_seen)}</td>
+                  <td class="muted">${esc(source.machine || "—")}</td>
+                </tr>`).join("") || `<tr><td colspan="7">${
+                  empty("nothing new in the last 7 days")}</td></tr>`}</tbody>
+            </table>
+          </div>
+          ${escondidas ? `<p class="muted" style="font-size:12px;margin-top:12px">
+            ${escondidas} older one${escondidas === 1 ? "" : "s"} hidden — the
+            platform keeps closed accounts listed forever, and registering them
+            now would create back-dated challenges with a cost that never
+            happened.
+            <button class="btn ghost" id="new-show-all"
+                    style="margin-left:8px">Show all</button></p>`
+          : state.showAllNew ? `<p class="muted" style="font-size:12px;margin-top:12px">
+            <button class="btn ghost" id="new-show-recent">Show only the last
+            ${NOVAS_DIAS} days</button></p>` : ""}`}
+      </div>
     </div>
 
     <div class="panel" data-setup="register" ${tab === "register" ? "" : "hidden"}>
@@ -2448,7 +2621,9 @@ async function renderConfig() {
         </p>
       </div>
       <div class="scroll"><table>
-        <thead><tr><th>Firm</th><th>Model</th>
+        <thead><tr>
+          <th style="width:34px" title="default for new accounts of this size">Def.</th>
+          <th>Firm</th><th>Model</th>
           <th title="decides which payout policies are available">Product</th>
           <th class="num">Size</th>
           <th class="num">Target</th><th class="num">Target P2</th>
@@ -2458,7 +2633,7 @@ async function renderConfig() {
           <th class="num">Split</th>
           <th class="num">Buffer &times;</th><th class="num">Buffer $</th>
           <th>Notes</th><th></th></tr></thead>
-        <tbody>${planRows || `<tr><td colspan="15">${empty("no plans — add one below")}</td></tr>`}</tbody>
+        <tbody>${planRows || `<tr><td colspan="18">${empty("no plans — add one below")}</td></tr>`}</tbody>
       </table></div>
       <div class="panel-body row">
         <div class="field"><label>Firm</label><select id="plan-firm">${
@@ -2507,6 +2682,135 @@ async function renderConfig() {
       toast(`Pending failed: ${err.message}`);
     }
   };
+
+  // Plano padrao da mesa+tamanho. O indice parcial no banco so deixa um por
+  // (dono, mesa, tamanho), entao marcar um novo exige desmarcar o antigo
+  // ANTES -- senao o banco recusa e a marca fica so na tela.
+  view.querySelectorAll("[data-plan-preferred]").forEach((box) => {
+    box.onchange = async () => {
+      const id = Number(box.dataset.planPreferred);
+      const alvo = plans.find((pl) => pl.id === id);
+      if (!alvo) return;
+      try {
+        if (box.checked) {
+          const anterior = plans.find((pl) => pl.is_preferred && pl.id !== id
+            && pl.firm_id === alvo.firm_id
+            && Number(pl.account_size) === Number(alvo.account_size));
+          if (anterior) await save.plan(anterior.id, { is_preferred: false });
+        }
+        await save.plan(id, { is_preferred: box.checked });
+        renderConfig();
+      } catch (err) {
+        box.checked = !box.checked;
+        toast(`Failed: ${err.message}`);
+      }
+    };
+  });
+
+  // ------------------------------------------------- fila de contas novas
+  const novasCaixas = () => [...view.querySelectorAll("[data-new]")];
+  const novasMarcadas = () => novasCaixas().filter((c) => c.checked);
+  const contadorNovas = document.getElementById("new-count");
+  const atualizaContador = () => {
+    if (!contadorNovas) return;
+    const n = novasMarcadas().length;
+    contadorNovas.textContent = n ? `${n} selected` : "";
+  };
+  novasCaixas().forEach((c) => { c.onchange = atualizaContador; });
+
+  const marcarTodas = document.getElementById("new-all");
+  if (marcarTodas) {
+    marcarTodas.onchange = () => {
+      // Caixa desabilitada e conta sem plano: marcar em bloco nao pode ligar
+      // o que o botao de confirmar vai recusar.
+      novasCaixas().forEach((c) => { if (!c.disabled) c.checked = marcarTodas.checked; });
+      atualizaContador();
+    };
+  }
+  for (const [id, valor] of [["new-show-all", true], ["new-show-recent", false]]) {
+    const b = document.getElementById(id);
+    if (b) b.onclick = () => { state.showAllNew = valor; renderConfig(); };
+  }
+
+  const confirmarNovas = document.getElementById("new-confirm");
+  if (confirmarNovas) {
+    confirmarNovas.onclick = async () => {
+      const marcadas = novasMarcadas();
+      if (!marcadas.length) return toast("Tick at least one account");
+
+      const custo = Number(document.getElementById("new-cost").value);
+      const aberto = document.getElementById("new-opened").value
+        || new Date().toISOString().slice(0, 10);
+      if (!Number.isFinite(custo) || custo <= 0) {
+        return toast("Type what you paid per account");
+      }
+
+      const porFonte = new Map(reconhecidas.map((x) => [String(x.source.id), x]));
+      const pedidos = [];
+      for (const caixa of marcadas) {
+        const item = porFonte.get(caixa.dataset.new);
+        if (!item) continue;
+        // O select manda, nao o palpite: ele pode ter trocado o plano na linha.
+        const escolhido = view.querySelector(`[data-new-plan="${item.source.id}"]`);
+        const planId = Number(escolhido?.value) || item.id.plan?.id;
+        const plano = plans.find((pl) => pl.id === planId);
+        if (!plano) continue;
+        pedidos.push({ source: item.source, firm: item.id.firm, plano });
+      }
+      if (!pedidos.length) return toast("No account with a plan to use");
+
+      confirmarNovas.disabled = true;
+      const criados = [];
+      try {
+        await guard(async () => {
+          for (const { source, firm, plano } of pedidos) {
+            const conta = await save.createAccount({
+              kind: "prop",
+              platform: source.platform,
+              login_or_name: source.login_or_name,
+              label: source.label,
+              terminal_hash: source.terminal_hash,
+              terminal_path: source.terminal_path,
+              broker_server: source.broker_server,
+              machine: source.machine,
+              magic_source_part: magicSourcePart(source.platform, source.login_or_name),
+              plan_id: plano.id,
+              plan_source: "manual",
+            });
+            criados.push(conta.id);
+
+            const challenge = await save.createChallenge({
+              firm_id: firm.id,
+              plan_id: plano.id,
+              date_open: aberto,
+              // Toda conta desta fila e avaliacao: a funded nao entra aqui.
+              status: Number(plano.eval_phases) === 2 ? "phase2" : "phase1",
+              target: plano.profit_target,
+              split_pct: plano.profit_split,
+            });
+            await save.createPhase({
+              challenge_id: challenge.id,
+              phase: Number(plano.eval_phases) === 2 ? "P2" : "P1",
+              account_id: conta.id,
+              started_at: new Date().toISOString(),
+              outcome: "active",
+            });
+            await save.createCashEvent({
+              challenge_id: challenge.id,
+              kind: "cost",
+              amount: signedCash("cost", custo),
+              occurred_on: aberto,
+              source: "manual",
+            });
+          }
+        }, `${pedidos.length} account${pedidos.length === 1 ? "" : "s"} registered`);
+        renderConfig();
+      } catch (err) {
+        toast(`Failed: ${err.message}`);
+        confirmarNovas.disabled = false;
+      }
+    };
+  }
 
   // A aba so troca a visibilidade: tudo ja esta montado e ligado, entao nao ha
   // consulta nem redesenho aqui.
