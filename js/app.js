@@ -10,24 +10,24 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=2ed985c2b7";
+} from "./db.js?v=9845ee29b6";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=2ed985c2b7";
+} from "./util.js?v=9845ee29b6";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=2ed985c2b7";
-import { cell, locked, wireEditables } from "./editable.js?v=2ed985c2b7";
-import { exportChallenges } from "./export.js?v=2ed985c2b7";
-import { mountPlanPicker } from "./plan-picker.js?v=2ed985c2b7";
-import { nextLiveLot } from "./next-lot.js?v=2ed985c2b7";
-import { filterForFirm } from "./firm-accounts.js?v=2ed985c2b7";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=2ed985c2b7";
+} from "./charts.js?v=9845ee29b6";
+import { cell, locked, wireEditables } from "./editable.js?v=9845ee29b6";
+import { exportChallenges } from "./export.js?v=9845ee29b6";
+import { mountPlanPicker } from "./plan-picker.js?v=9845ee29b6";
+import { nextLiveLot } from "./next-lot.js?v=9845ee29b6";
+import { filterForFirm } from "./firm-accounts.js?v=9845ee29b6";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=9845ee29b6";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges,
-} from "./machine.js?v=2ed985c2b7";
+} from "./machine.js?v=9845ee29b6";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -627,6 +627,34 @@ async function renderOverview() {
   const hedgeDrag = gross ? (Math.abs(hedge) / gross) * 100 : null;
   const roi = spent ? (total / spent) * 100 : null;
 
+  // ------------------------------------------------ onde está o dinheiro
+  //
+  // "nunca sei quanto realmente faturei, porque flutua muito". O total mexe
+  // o tempo todo porque comprar a conta, pagar o hedge e receber o saque são
+  // três momentos do MESMO ciclo, e o agregado soma os três estágios num
+  // número só. Conta que abriu ontem entra como prejuízo -- o hedge já saiu
+  // da corretora -- e só vira lucro semanas depois, quando o saque cai.
+  //
+  // Aqui o ciclo fica aberto por estágio, e cada dólar aparece UMA vez:
+  //
+  //   fechado  sacou e encerrou. O resultado é definitivo.
+  //   morreu   estourou sem sacar. O hedge devolveu o custo, então dá ~zero
+  //            -- é o desenho do hedge funcionando, não prejuízo.
+  //   no ar    hedge pago, saque ainda não veio. É ADIANTAMENTO, não perda:
+  //            some quando o ciclo fechar.
+  const estagioDe = (c) => c.status !== "failed" ? "noAr"
+    : Number(c.funded_payout) > 0 ? "fechado" : "morreu";
+  const estagios = { fechado: [], morreu: [], noAr: [] };
+  for (const c of journal) estagios[estagioDe(c)].push(c);
+  const somaEm = (lista, campo) =>
+    lista.reduce((a, c) => a + Number(c[campo] || 0), 0);
+
+  // Saldo das contas live. NÃO é resultado: é capital de giro que ele
+  // depositou, e o que o hedge perdeu dali já está descontado no caixa de
+  // cada challenge. Somar com o realizado contaria o mesmo dólar duas vezes.
+  const contasLive = accounts.filter((a) => a.kind === "live" && a.equity != null);
+  const naCorretora = somaEm(contasLive, "equity");
+
   const span = monthly.length
     ? `${monthLabel(monthly[0].month)} → ${monthLabel(monthly[monthly.length - 1].month)}`
     : "no month closed yet";
@@ -662,6 +690,58 @@ async function renderOverview() {
       <div class="label">${esc(label)}</div>
       <div class="value n ${cls}">${value}</div>
       <div class="sub">${esc(sub)}</div>
+    </div>`;
+
+  // Linha do quadro de caixa. `contas` fica em branco quando a linha não é um
+  // conjunto de challenges -- escrever "0 contas" ali sugeriria que não há
+  // nenhuma, quando o que há é outra unidade.
+  const verba = (rotulo, contas, valor, nota, cls = "") => `
+    <tr${cls ? ` class="${cls}"` : ""}>
+      <td>${esc(rotulo)}</td>
+      <td class="num muted">${contas === "" ? "" : contas}</td>
+      <td class="num ${signClass(valor)}">${cash(valor)}</td>
+      <td class="muted" style="white-space:normal">${esc(nota)}</td>
+    </tr>`;
+
+  const naMesa = pending + locked;
+  const quadro = `
+    <div class="panel">
+      <h2>Where the money is<span class="dim">o mesmo dólar nunca aparece em
+        duas linhas</span></h2>
+      <div class="panel-body"><div class="scroll">
+        <table class="dt n">
+          <thead><tr>
+            <th>Stage</th><th class="num">Accounts</th><th class="num">Amount</th>
+            <th>What it means</th>
+          </tr></thead>
+          <tbody>
+            <tr class="sec"><td colspan="4">Result — settled</td></tr>
+            ${verba("Closed cycles", estagios.fechado.length,
+                    somaEm(estagios.fechado, "cash_pnl"),
+                    "paid out and finished — this number is final")}
+            ${verba("Blown, never paid", estagios.morreu.length,
+                    somaEm(estagios.morreu, "cash_pnl"),
+                    "the hedge gave the cost back — these are free")}
+            ${verba("In flight", estagios.noAr.length,
+                    somaEm(estagios.noAr, "cash_pnl"),
+                    "hedge already paid, payout has not arrived — advance, not loss")}
+            ${verba("Realised", journal.length, cashTotal,
+                    "what the operation actually produced", "tot")}
+
+            <tr class="sec"><td colspan="4">Parked — yours, not profit</td></tr>
+            ${verba("At the broker", contasLive.length, naCorretora,
+                    "hedge working capital. What it lost is already in the line above")}
+
+            <tr class="sec"><td colspan="4">At the firm — not yours</td></tr>
+            ${verba("Can request now", "", pending,
+                    "withdrawable today, if you ask")}
+            ${verba("Locked", "", locked,
+                    "needs winning days, buffer or consistency first")}
+            ${verba("Total at the firm", estagios.noAr.length, naMesa,
+                    "simulated. It goes to zero if the account breaches", "tot")}
+          </tbody>
+        </table>
+      </div></div>
     </div>`;
 
   const rows = monthly.slice().reverse();
@@ -716,6 +796,8 @@ async function renderOverview() {
                `${pctOf(paidRate)} · ${pctOf(hedgeDrag)} · ${pctOf(roi)}`, "",
                `${paid} paid · drag on gross · on spend`)}
     </section>
+
+    ${quadro}
 
     ${openPositions(inTheAir, accounts)}
 

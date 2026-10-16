@@ -586,6 +586,20 @@ dialog th{background:var(--color-bg)}
       transparent 100%),
     var(--color-neutral-100);
 }
+/* Quadro de caixa do Overview: a tabela e dividida em blocos, e o bloco tem
+   titulo proprio em vez de tabela separada -- tres tabelas lado a lado
+   perderiam o alinhamento das colunas de valor, que e o que se compara. */
+.dt tr.sec > td{
+  padding:18px 8px 4px;border-bottom:0;
+  font-family:var(--font-heading);font-size:10.5px;font-weight:800;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--color-neutral-600);
+}
+.dt tr.sec:first-child > td{padding-top:2px}
+.dt tr.sec:hover > td{background:transparent}
+.dt tr.tot > td{
+  border-top:2px solid var(--color-divider);
+  border-bottom:0;font-weight:800;
+}
 /* Coluna que so existe em mesa de duas fases. */
 .noP2 th.p2,.noP2 td.p2{display:none}
 /* Nota livre e o que estoura a largura das tabelas: ela corta com reticencias
@@ -735,6 +749,6 @@ dialog th{background:var(--color-bg)}
     if (t === "dark" || t === "light") document.documentElement.setAttribute("data-theme", t);
   } catch (e) {}
 </script>
-<script type="module" src="./js/app.js?v=2ed985c2b7"></script>
+<script type="module" src="./js/app.js?v=9845ee29b6"></script>
 </body>
 </html>
