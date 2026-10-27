@@ -118,13 +118,19 @@ Step 2 "Baixando o codigo"
 # sem isso o primeiro `git pull` pediria senha e o coletor ficaria parado.
 $remote = "https://x-access-token:$Token@github.com/$Repo.git"
 
+# Sem helper: com o token na URL nao ha o que guardar. Com ele, o Credential
+# Manager salvava o token como uma segunda conta do github.com, e na maquina
+# de quem usa o GitHub com a propria conta todo git passava a abrir "Select an
+# account". O coletor desliga o helper deste repo de vez na primeira passada.
+$semHelper = "credential.helper="
+
 if (Test-Path "$Path\.git") {
     Write-Host "    ja existe em $Path -- atualizando"
     git -C $Path remote set-url origin $remote
-    git -C $Path pull --ff-only --quiet
+    git -c $semHelper -C $Path pull --ff-only --quiet
 } else {
     New-Item -ItemType Directory -Force (Split-Path $Path) | Out-Null
-    git clone --quiet $remote $Path
+    git -c $semHelper clone --quiet $remote $Path
     if ($LASTEXITCODE -ne 0) {
         throw "Clone recusado. Confira o token -- ele precisa de leitura em '$Repo'."
     }

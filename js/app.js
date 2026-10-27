@@ -10,24 +10,24 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=5eaf5f4968";
+} from "./db.js?v=3869bf24cc";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=5eaf5f4968";
+} from "./util.js?v=3869bf24cc";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=5eaf5f4968";
-import { cell, locked, wireEditables } from "./editable.js?v=5eaf5f4968";
-import { exportChallenges } from "./export.js?v=5eaf5f4968";
-import { mountPlanPicker } from "./plan-picker.js?v=5eaf5f4968";
-import { nextLiveLot } from "./next-lot.js?v=5eaf5f4968";
-import { filterForFirm } from "./firm-accounts.js?v=5eaf5f4968";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=5eaf5f4968";
+} from "./charts.js?v=3869bf24cc";
+import { cell, locked, wireEditables } from "./editable.js?v=3869bf24cc";
+import { exportChallenges } from "./export.js?v=3869bf24cc";
+import { mountPlanPicker } from "./plan-picker.js?v=3869bf24cc";
+import { nextLiveLot } from "./next-lot.js?v=3869bf24cc";
+import { filterForFirm } from "./firm-accounts.js?v=3869bf24cc";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=3869bf24cc";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges,
-} from "./machine.js?v=5eaf5f4968";
+} from "./machine.js?v=3869bf24cc";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
