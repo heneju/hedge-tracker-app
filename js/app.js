@@ -10,31 +10,31 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=40ea4aa36b";
+} from "./db.js?v=b3aa6d57fc";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=40ea4aa36b";
+} from "./util.js?v=b3aa6d57fc";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=40ea4aa36b";
-import { cell, locked, wireEditables } from "./editable.js?v=40ea4aa36b";
-import { exportChallenges } from "./export.js?v=40ea4aa36b";
-import { mountPlanPicker } from "./plan-picker.js?v=40ea4aa36b";
-import { nextLiveLot } from "./next-lot.js?v=40ea4aa36b";
-import { filterForFirm } from "./firm-accounts.js?v=40ea4aa36b";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=40ea4aa36b";
+} from "./charts.js?v=b3aa6d57fc";
+import { cell, locked, wireEditables } from "./editable.js?v=b3aa6d57fc";
+import { exportChallenges } from "./export.js?v=b3aa6d57fc";
+import { mountPlanPicker } from "./plan-picker.js?v=b3aa6d57fc";
+import { nextLiveLot } from "./next-lot.js?v=b3aa6d57fc";
+import { filterForFirm } from "./firm-accounts.js?v=b3aa6d57fc";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=b3aa6d57fc";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges,
-} from "./machine.js?v=40ea4aa36b";
+} from "./machine.js?v=b3aa6d57fc";
 import { loader,
   renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
   initProfile, raf, odo, burst, landOn, blob, deltaChip,
-} from "./skin.js?v=40ea4aa36b";
-import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=40ea4aa36b";
-import { firmMark, logoBg, logoInner } from "./logos.js?v=40ea4aa36b";
-import { startTour } from "./tour.js?v=40ea4aa36b";
+} from "./skin.js?v=b3aa6d57fc";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=b3aa6d57fc";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=b3aa6d57fc";
+import { startTour } from "./tour.js?v=b3aa6d57fc";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -2385,7 +2385,7 @@ async function renderConfig() {
             <div class="field" style="margin:0">
               <label>Cost per account</label>
               <input class="inp n" id="new-cost" type="number" step="0.01"
-                     placeholder="119.00" style="width:130px">
+                     placeholder="${(Number(novas.find((x) => x.id.plan?.price)?.id.plan.price) || 119).toFixed(2)}" style="width:130px">
             </div>
             <div class="field" style="margin:0">
               <label>Opened</label>
@@ -2415,7 +2415,7 @@ async function renderConfig() {
                       + ` becomes a duplicate challenge with a cost that never happened.`
                     )}">check</span>`}</td>
                   <td>${esc(id.firm.name)}</td>
-                  <td class="num">${money0(id.parsed.size)}</td>
+                  <td class="num">${money0(id.parsed.size ?? id.plan?.account_size)}</td>
                   <td>${id.candidates.length ? `<select data-new-plan="${source.id}">
                       ${id.candidates.map((pl) => `<option value="${pl.id}" ${
                         pl.id === id.plan?.id ? "selected" : ""}>${
