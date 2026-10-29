@@ -94,6 +94,15 @@ export function placePill() {
  * Desenha as abas. `pages` = [{id, label, count}], `current` = id ativo.
  * A pilula e a notificacao moram dentro da barra e sobrevivem ao redesenho.
  */
+/**
+ * Carregando: uma massa de liquido em loop (mesmo filtro gooey do braco do
+ * Live feed). `cls`: "" tela inteira, "sm" dentro de folha/modal, "xs" inline.
+ */
+export function loader(cls = "") {
+  return `<div class="loader ${cls}" role="status" aria-label="loading"><div class="blobs"><i></i><i></i><i></i><i></i><i></i></div>${
+    cls.includes("xs") ? "" : "<span>loading</span>"}</div>`;
+}
+
 export function renderTabs(pages, current, onPick) {
   const nav = tabsEl();
   nav.innerHTML = '<span class="tab-pill" id="tabPill"></span>'

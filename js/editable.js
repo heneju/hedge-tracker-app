@@ -8,7 +8,8 @@
 // veio. Para as linhas importadas da planilha não há trade nenhuma, então
 // aquele mesmo campo volta a ser editável.
 
-import { esc } from "./util.js?v=72953edbf9";
+import { esc } from "./util.js?v=5f173abc46";
+import { loader } from "./skin.js?v=5f173abc46";
 
 /**
  * Marca uma célula como editável. O HTML fica com os dados no dataset e o
@@ -81,7 +82,7 @@ export function wireEditables(root, onSave) {
           return;
         }
 
-        td.textContent = "…";
+        td.innerHTML = loader("xs");
         try {
           await onSave(td.dataset.editField, td.dataset.editId, next);
         } catch {

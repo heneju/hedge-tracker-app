@@ -10,38 +10,38 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=72953edbf9";
+} from "./db.js?v=5f173abc46";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=72953edbf9";
+} from "./util.js?v=5f173abc46";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=72953edbf9";
-import { cell, locked, wireEditables } from "./editable.js?v=72953edbf9";
-import { exportChallenges } from "./export.js?v=72953edbf9";
-import { mountPlanPicker } from "./plan-picker.js?v=72953edbf9";
-import { nextLiveLot } from "./next-lot.js?v=72953edbf9";
-import { filterForFirm } from "./firm-accounts.js?v=72953edbf9";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=72953edbf9";
+} from "./charts.js?v=5f173abc46";
+import { cell, locked, wireEditables } from "./editable.js?v=5f173abc46";
+import { exportChallenges } from "./export.js?v=5f173abc46";
+import { mountPlanPicker } from "./plan-picker.js?v=5f173abc46";
+import { nextLiveLot } from "./next-lot.js?v=5f173abc46";
+import { filterForFirm } from "./firm-accounts.js?v=5f173abc46";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=5f173abc46";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges,
-} from "./machine.js?v=72953edbf9";
-import {
+} from "./machine.js?v=5f173abc46";
+import { loader, 
   renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
   initProfile, raf, odo, burst, landOn, blob, deltaChip,
-} from "./skin.js?v=72953edbf9";
-import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=72953edbf9";
-import { firmMark, logoBg, logoInner } from "./logos.js?v=72953edbf9";
-import { startTour } from "./tour.js?v=72953edbf9";
+} from "./skin.js?v=5f173abc46";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=5f173abc46";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=5f173abc46";
+import { startTour } from "./tour.js?v=5f173abc46";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
 // O detalhe do challenge e uma folha que entra pela direita (no celular, por
 // baixo); os outros dialogos continuam centrados. A classe vai no proprio
 // <dialog>, entao cada abertura declara a forma que quer.
-function showModal(cls = "") { modal.className = cls; modal.showModal(); }
+function showModal(cls = "") { modal.className = cls; if (!modal.open) modal.showModal(); }
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 function closeModal() {
   if (!modal.open) return;
@@ -1352,6 +1352,9 @@ async function openChallenge(id, journal, firms, progress = []) {
   const c = journal.find((x) => x.id === id);
   if (!c) return;
 
+  // A folha abre na hora, com a massa carregando; os dados chegam em seguida.
+  modal.innerHTML = loader("sm");
+  showModal("side");
   const [phases, cashEvents] = await Promise.all([load.phases(id), load.cashEvents(id)]);
   const trades = await load.tradesForPhases(phases.map((p) => p.id));
   const links = await load.linksForTrades(trades.map((t) => t.id));
@@ -4409,7 +4412,7 @@ async function go(page) {
   state.page = page;
   location.hash = page;
   renderNav();
-  render(`<div class="empty">loading</div>`);
+  render(loader());
   try {
     await RENDERERS[page]();
     placePill();

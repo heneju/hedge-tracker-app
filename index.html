@@ -612,6 +612,21 @@ details.more .fgrid{margin-top:12px;animation:vin .3s var(--ease) both}
 .quiet{padding:60px 20px;text-align:center;border:1.5px dashed rgba(var(--wrgb),.2);border-radius:28px;color:var(--fg-2);font:500 13px var(--f)}
 .quiet b{display:block;color:var(--ink);font-weight:700;margin-bottom:6px;font-size:16px}
 
+/* carregando: uma massa de liquido em loop, no tom da tinta do tema */
+.loader{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;min-height:46vh;animation:vin .4s var(--ease) both;--d:46px}
+.loader span{font:600 10.5px var(--f);letter-spacing:.22em;text-transform:uppercase;color:var(--fg-3)}
+.loader .blobs{position:relative;width:150px;height:150px;filter:url(#gooL) drop-shadow(0 0 22px rgba(var(--wrgb),.28));animation:lspin 16s linear infinite}
+.loader .blobs i{position:absolute;left:50%;top:50%;width:40px;height:40px;margin:-20px;border-radius:50%;background:var(--ink);animation:lsat 3.8s cubic-bezier(.65,0,.35,1) infinite;animation-delay:calc(var(--k) * -.95s)}
+.loader .blobs i:first-child{width:58px;height:58px;margin:-29px;animation:lcore 3.8s ease-in-out infinite}
+.loader .blobs i:nth-child(2){--k:0}.loader .blobs i:nth-child(3){--k:1}.loader .blobs i:nth-child(4){--k:2}.loader .blobs i:nth-child(5){--k:3}
+@keyframes lsat{0%,100%{transform:rotate(calc(var(--k) * 90deg)) translateX(0) scale(.5)}42%{transform:rotate(calc(var(--k) * 90deg + 35deg)) translateX(var(--d)) scale(1)}58%{transform:rotate(calc(var(--k) * 90deg + 62deg)) translateX(calc(var(--d) * .92)) scale(.88)}}
+@keyframes lcore{0%,100%{transform:scale(1)}50%{transform:scale(1.2)}}
+@keyframes lspin{to{transform:rotate(360deg)}}
+.loader.sm{min-height:60vh}
+.loader.xs{display:inline-flex;min-height:0;gap:0;vertical-align:middle;animation:none;--d:9px}
+.loader.xs .blobs{width:30px;height:30px;filter:url(#gooXS);animation-duration:9s}
+.loader.xs .blobs i{width:9px;height:9px;margin:-4.5px}
+.loader.xs .blobs i:first-child{width:13px;height:13px;margin:-6.5px}
 /* bottom tabs: phone only */
 .mtabs{display:none}
 
@@ -900,6 +915,10 @@ dialog.side .panel{margin:12px 0 0;padding:16px 18px}
 </style>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <filter id="gooL"><feGaussianBlur in="SourceGraphic" stdDeviation="7" result="b"/><feColorMatrix in="b" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 22 -9"/></filter>
+  <filter id="gooXS"><feGaussianBlur in="SourceGraphic" stdDeviation="1.6" result="b"/><feColorMatrix in="b" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 16 -6"/></filter>
+</defs></svg>
 <div class="amb" aria-hidden="true"><i></i><i></i></div>
 <div class="app">
   <header class="top">
@@ -912,7 +931,7 @@ dialog.side .panel{margin:12px 0 0;padding:16px 18px}
     </div>
     <div class="ntf2" id="ntf2"><i class="dot"></i><b></b><small></small><span class="amt n"></span></div>
   </header>
-  <main id="view"><div class="empty">loading</div></main>
+  <main id="view"><div class="loader" role="status" aria-label="loading"><div class="blobs"><i></i><i></i><i></i><i></i><i></i></div><span>loading</span></div></main>
   <nav class="mtabs" id="mtabs" aria-label="Sections"></nav>
 </div>
 
@@ -937,6 +956,6 @@ dialog.side .panel{margin:12px 0 0;padding:16px 18px}
 
 <dialog id="modal"></dialog>
 
-<script type="module" src="./js/app.js?v=72953edbf9"></script>
+<script type="module" src="./js/app.js?v=5f173abc46"></script>
 </body>
 </html>
