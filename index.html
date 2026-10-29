@@ -666,6 +666,42 @@ details.more .fgrid{margin-top:12px;animation:vin .3s var(--ease) both}
   .hero,.chart,.feed,.air{grid-column:span 2}
   .air .cells{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
+/* ─── tour guiado ─── */
+html.tour-lock{overflow:hidden}
+.tour-hi{position:fixed;inset:0;z-index:70;display:grid;place-items:center;padding:24px;background:rgba(8,0,3,.58);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);animation:hiFade .5s ease both;color:#fff;
+  --ink:#fff;--fg:#fff;--fg-2:rgba(255,255,255,.65);--acc:#000;--wrgb:255,255,255}
+.tour-hi.out{animation:hiOut .32s ease-in both}
+.hi-in{display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px;max-width:560px}
+.hi-eye{font:800 10.5px "Unbounded",var(--f);letter-spacing:.32em;text-transform:uppercase;color:rgba(255,255,255,.55);animation:hiUp .6s var(--spr) both .1s}
+.hi-in h1{margin:4px 0 0;font:800 clamp(42px,9vw,76px)/1 "Unbounded",var(--f);letter-spacing:-.03em;display:flex;text-shadow:0 0 40px rgba(255,255,255,.25)}
+.hi-in h1 i{font-style:normal;display:inline-block;animation:hiChar .85s var(--spr) both;animation-delay:calc(.25s + var(--i) * 55ms)}
+.hi-line{height:2px;width:0;border-radius:2px;background:linear-gradient(90deg,transparent,#fff,transparent);animation:hiLine .9s var(--ios) both .7s}
+.hi-mail{font:600 14px var(--mono);color:#67E8F9;animation:hiUp .6s var(--spr) both .85s}
+.hi-sub{margin:0;font:500 14.5px/1.5 var(--f);color:rgba(255,255,255,.72);max-width:42ch;animation:hiUp .6s var(--spr) both 1s}
+.hi-act{display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;justify-content:center;animation:hiUp .6s var(--spr) both 1.15s}
+@keyframes hiFade{from{opacity:0}to{opacity:1}}
+@keyframes hiOut{to{opacity:0;transform:scale(1.03)}}
+@keyframes hiUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+@keyframes hiChar{from{opacity:0;transform:translateY(30px) rotate(5deg);filter:blur(12px)}to{opacity:1;transform:none;filter:blur(0)}}
+@keyframes hiLine{to{width:180px}}
+.tour-sp{position:fixed;inset:0;z-index:70;pointer-events:none;opacity:0;transition:opacity .32s ease}
+.tour-sp.on{opacity:1}
+.sp-blk{position:fixed;pointer-events:auto}
+.sp-hole{position:fixed;pointer-events:none;box-shadow:0 0 0 200vmax rgba(5,0,2,.62),0 0 0 1.5px rgba(255,255,255,.45),0 0 40px rgba(255,255,255,.18);
+  transition:top .75s var(--spr),left .75s var(--spr),width .75s var(--spr),height .75s var(--spr),border-radius .5s ease}
+.sp-hole::after{content:"";position:absolute;inset:-7px;border-radius:inherit;border:1.5px solid rgba(255,255,255,.55);animation:spPing 2.2s ease-out infinite}
+.sp-hole.none::after{display:none}
+@keyframes spPing{0%{opacity:.9;transform:scale(1)}100%{opacity:0;transform:scale(1.08)}}
+.sp-tip{position:fixed;pointer-events:auto;width:min(340px,calc(100vw - 32px));background:#000;color:#fff;border-radius:20px;padding:16px 18px 14px;display:flex;flex-direction:column;gap:6px;box-shadow:0 30px 80px rgba(0,0,0,.5);
+  --ink:#fff;--fg:#fff;--fg-2:rgba(255,255,255,.65);--acc:#000;--wrgb:255,255,255;
+  transition:top .75s var(--spr),left .75s var(--spr),opacity .14s ease,transform .14s ease}
+.sp-tip.swap{opacity:0;transform:translateY(6px)}
+.sp-n{font:600 10.5px var(--mono);color:rgba(255,255,255,.45);letter-spacing:.08em}
+.sp-tip b{font:800 15.5px var(--f);letter-spacing:-.01em}
+.sp-tip p{margin:0;font:500 13px/1.5 var(--f);color:rgba(255,255,255,.72)}
+.sp-act{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}
+.sp-act .cta,.sp-act .ghost{height:36px;padding:0 16px;font-size:12.5px}
+@media (prefers-reduced-motion:reduce){.sp-hole,.sp-tip{transition:none}.hi-in *{animation:none !important}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none !important;transition:none !important}}
 
 /* ─── telas antigas (Setup, Unassigned, Report, editores) na pele nova ─── */
@@ -877,11 +913,11 @@ dialog th{background:transparent}
     </div></div>
   <div class="fld"><label>New password</label><input id="pw" type="password" placeholder="at least 8 characters" autocomplete="new-password"></div>
   <div class="act"><button type="button" class="cta" id="pwGo" disabled>Change</button><span class="muted" id="pwHint">signs the collector in too</span></div>
-  <div class="act" style="padding-top:12px;border-top:1px solid var(--line)"><span class="muted" style="margin-right:auto">same account on every PC</span><button type="button" class="ghost" id="signOut">Sign out</button></div>
+  <div class="act" style="padding-top:12px;border-top:1px solid var(--line)"><span class="muted" style="margin-right:auto">same account on every PC · <button type="button" class="lnk" id="tourAgain">show the tour</button></span><button type="button" class="ghost" id="signOut">Sign out</button></div>
 </div>
 
 <dialog id="modal"></dialog>
 
-<script type="module" src="./js/app.js?v=b1734aed0d"></script>
+<script type="module" src="./js/app.js?v=65094e4aff"></script>
 </body>
 </html>

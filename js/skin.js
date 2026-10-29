@@ -278,7 +278,7 @@ export function setPhoto(url, animate) {
   if (row) row.hidden = !url;
 }
 
-function openProf() {
+export function openProf() {
   const prof = $("#prof"), av = $("#avatar");
   const r = av.getBoundingClientRect();
   prof.style.top = (r.bottom + 10) + "px";

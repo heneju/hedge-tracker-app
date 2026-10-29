@@ -10,30 +10,31 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=b1734aed0d";
+} from "./db.js?v=65094e4aff";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=b1734aed0d";
+} from "./util.js?v=65094e4aff";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=b1734aed0d";
-import { cell, locked, wireEditables } from "./editable.js?v=b1734aed0d";
-import { exportChallenges } from "./export.js?v=b1734aed0d";
-import { mountPlanPicker } from "./plan-picker.js?v=b1734aed0d";
-import { nextLiveLot } from "./next-lot.js?v=b1734aed0d";
-import { filterForFirm } from "./firm-accounts.js?v=b1734aed0d";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=b1734aed0d";
+} from "./charts.js?v=65094e4aff";
+import { cell, locked, wireEditables } from "./editable.js?v=65094e4aff";
+import { exportChallenges } from "./export.js?v=65094e4aff";
+import { mountPlanPicker } from "./plan-picker.js?v=65094e4aff";
+import { nextLiveLot } from "./next-lot.js?v=65094e4aff";
+import { filterForFirm } from "./firm-accounts.js?v=65094e4aff";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=65094e4aff";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges,
-} from "./machine.js?v=b1734aed0d";
+} from "./machine.js?v=65094e4aff";
 import {
   renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
   initProfile, raf, odo, burst, landOn, blob, deltaChip,
-} from "./skin.js?v=b1734aed0d";
-import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=b1734aed0d";
-import { firmMark, logoBg, logoInner } from "./logos.js?v=b1734aed0d";
+} from "./skin.js?v=65094e4aff";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=65094e4aff";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=65094e4aff";
+import { startTour } from "./tour.js?v=65094e4aff";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -4520,6 +4521,14 @@ async function boot() {
     const p = location.hash.slice(1);
     if (RENDERERS[p] && p !== state.page) go(p);
   });
+  // Primeira vez nesta conta: a apresentacao guiada. So depois dela o aviso
+  // do que falta cadastrar, porque o <dialog> ficaria por cima do tour.
+  const tourBtn = document.getElementById("tourAgain");
+  if (tourBtn) tourBtn.onclick = () => startTour({ email: state.email });
+  if (!prefs.tour_seen_at) {
+    await startTour({ email: state.email });
+    save.settings({ tour_seen_at: new Date().toISOString() }).catch(() => {});
+  }
   // Depois da primeira tela, de propósito: o aviso do que falta cadastrar não
   // pode atrasar o que a pessoa entrou para ver.
   checkPending();
