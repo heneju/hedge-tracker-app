@@ -5,7 +5,7 @@
 // fica so no coletor, no PC.
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { CONFIG } from "./config.js?v=3869bf24cc";
+import { CONFIG } from "./config.js?v=5d30430729";
 
 export const supabase = createClient(CONFIG.url, CONFIG.anonKey);
 
@@ -77,10 +77,10 @@ export const load = {
   // de mostrar qualquer coisa.
   settings: () =>
     supabase.from("operation_settings")
-      .select("seed_capital, borrowed_capital, working_cash").maybeSingle()
+      .select("seed_capital, borrowed_capital, working_cash, theme, avatar_data").maybeSingle()
       .then(({ data, error }) => {
         if (error) throw new Error(error.message);
-        return data ?? { seed_capital: 0, borrowed_capital: 0, working_cash: 0 };
+        return data ?? { seed_capital: 0, borrowed_capital: 0, working_cash: 0, theme: null, avatar_data: null };
       }),
 
   // Quais contas já foram operadas no dia de sessão corrente. O dia vem do

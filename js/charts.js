@@ -5,7 +5,7 @@
 // `vector-effect="non-scaling-stroke"` mantém a espessura da linha constante
 // mesmo com a escala distorcida, que é o que quebra SVG esticado.
 
-import { money, money0, monthLabel, signClass, esc, CONSISTENCY_SLACK_PCT } from "./util.js?v=3869bf24cc";
+import { money, money0, monthLabel, signClass, esc, CONSISTENCY_SLACK_PCT } from "./util.js?v=5d30430729";
 
 // Cores por token, nunca literais: o painel tem tema claro e escuro, e um hex
 // cravado aqui fica errado em um dos dois. Perda usa o acento da marca -- num
@@ -61,7 +61,7 @@ export function equityCurve(monthly, { height } = {}) {
      </circle>`).join("");
 
   const ticks = points.map((p) =>
-    `<span class="tick" style="flex:1 1 0;text-align:center">${esc(monthLabel(p.month))}</span>`).join("");
+    `<span class="axl" style="flex:1 1 0;text-align:center">${esc(monthLabel(p.month))}</span>`).join("");
 
   return `
     <div>
@@ -127,7 +127,7 @@ export function monthlyBars(monthly) {
     return `<div class="col" title="${esc(monthLabel(m.month))} · ${money(pnl)} · ${m.accounts} accounts">
       <span class="val ${signClass(pnl)}">${money0(pnl)}</span>
       <div class="bar ${pnl < 0 ? "neg" : ""}" style="height:${h}px"></div>
-      <span class="tick">${esc(monthLabel(m.month))}</span>
+      <span class="axl">${esc(monthLabel(m.month))}</span>
     </div>`;
   }).join("")}</div>`;
 }

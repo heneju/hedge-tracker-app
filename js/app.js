@@ -10,24 +10,30 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=3869bf24cc";
+} from "./db.js?v=5d30430729";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=3869bf24cc";
+} from "./util.js?v=5d30430729";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=3869bf24cc";
-import { cell, locked, wireEditables } from "./editable.js?v=3869bf24cc";
-import { exportChallenges } from "./export.js?v=3869bf24cc";
-import { mountPlanPicker } from "./plan-picker.js?v=3869bf24cc";
-import { nextLiveLot } from "./next-lot.js?v=3869bf24cc";
-import { filterForFirm } from "./firm-accounts.js?v=3869bf24cc";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=3869bf24cc";
+} from "./charts.js?v=5d30430729";
+import { cell, locked, wireEditables } from "./editable.js?v=5d30430729";
+import { exportChallenges } from "./export.js?v=5d30430729";
+import { mountPlanPicker } from "./plan-picker.js?v=5d30430729";
+import { nextLiveLot } from "./next-lot.js?v=5d30430729";
+import { filterForFirm } from "./firm-accounts.js?v=5d30430729";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=5d30430729";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges,
-} from "./machine.js?v=3869bf24cc";
+} from "./machine.js?v=5d30430729";
+import {
+  renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
+  initProfile, raf, odo, burst, landOn, blob, deltaChip,
+} from "./skin.js?v=5d30430729";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=5d30430729";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=5d30430729";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -79,6 +85,12 @@ const state = {
   // preferência de tela, e cada aparelho dela pode olhar uma máquina diferente.
   machine: readMachine(),
   machines: [],
+  // Quantas contas ja operaram na sessao de hoje (a ilha do cabecalho).
+  tradedToday: null,
+  // Challenges: Operate mostra o que se opera, Money o dinheiro.
+  colMode: "op",
+  // Os ultimos eventos do coletor, para o feed da Overview.
+  feed: [],
 };
 
 function readMachine() {
@@ -369,46 +381,24 @@ function render(html) {
   view.innerHTML = html;
 }
 
-// Barra de status do cabecalho. Mostra só o que é verdade: relógio, quem está
-// logado e o total já carregado. Sem métrica inventada.
+// A ilha do cabecalho: so o que e verdade -- quantas contas ja operaram hoje
+// (ou quantos challenges ha) e o relogio UTC. Tema, maquina e saida moram no
+// cartao do perfil, atras do avatar.
 function renderStatus() {
-  const el = document.getElementById("status");
-  if (!el) return;
-  // Deslogado nao tem status a mostrar -- e o relogio redesenha a barra a cada
-  // segundo, entao sem esta guarda ela reaparece sozinha na tela de login.
+  const utc = document.getElementById("utc");
+  if (utc) utc.textContent = new Date().toISOString().slice(11, 19);
+  const island = document.getElementById("status");
+  const avatar = document.getElementById("avatar");
   if (!state.email) {
-    el.innerHTML = "";
+    if (island) island.hidden = true;
+    if (avatar) avatar.hidden = true;
     return;
   }
-  const { pnl, challenges } = state.totals;
-  const utc = new Date().toISOString().slice(11, 19);
-
-  const dark = theme() === "dark";
-
-  el.innerHTML = `
-    <span class="lbl"><span class="dot"></span>LIVE</span>
-    <span class="lbl utc">UTC <b class="n">${utc}</b></span>
-    ${challenges != null ? `<span class="lbl">accts <b class="n">${challenges}</b></span>` : ""}
-    ${pnl != null ? `<span class="lbl">pnl <b class="n ${
-      signClass(pnl)}">${money0(pnl)}</b></span>` : ""}
-    <span class="lbl" title="${esc(state.email)}">${esc(state.email.split("@")[0])}</span>
-    <span class="thm">
-      <button type="button" data-theme-set="dark" aria-pressed="${dark}">Dark</button>
-      <button type="button" data-theme-set="light" aria-pressed="${!dark}">Light</button>
-    </span>
-    <span class="actions">
-      <button class="btn ghost icon" id="refresh" title="Reload">${ICON.reload}</button>
-      <button class="btn ghost icon" id="logout" title="Sign out">${ICON.signout}</button>
-    </span>`;
-
-  el.querySelectorAll("[data-theme-set]").forEach((b) => {
-    b.onclick = () => setTheme(b.dataset.themeSet);
-  });
-  el.querySelector("#refresh").onclick = () => go(state.page);
-  el.querySelector("#logout").onclick = async () => {
-    await signOut();
-    location.reload();
-  };
+  if (island) island.hidden = false;
+  if (avatar) avatar.hidden = false;
+  const { challenges } = state.totals;
+  setIsland(state.tradedToday != null ? `${state.tradedToday} traded today`
+    : challenges != null ? `${challenges} challenges` : "live");
 }
 
 // Ícones do cabeçalho. Desenhados, não emoji: emoji muda de forma e de cor a
@@ -422,26 +412,6 @@ const ICON = {
     d="M18.36 6.64A9 9 0 0 1 20.77 15a9 9 0 0 1-17.54 0 9 9 0 0 1 2.41-8.36"></path><line
     x1="12" y1="2" x2="12" y2="12"></line></svg>`,
 };
-
-/**
- * Tema claro ou escuro.
- *
- * O `index.html` já aplica o salvo antes do app subir -- senão a página pinta
- * clara e vira escura na frente de quem está olhando. Aqui só trocamos.
- */
-function theme() {
-  return document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
-}
-
-function setTheme(next) {
-  document.documentElement.setAttribute("data-theme", next);
-  try {
-    localStorage.setItem("tracking:theme", next);
-  } catch {
-    // Janela anônima: vale só para esta sessão, o que já é o suficiente.
-  }
-  renderStatus();
-}
 
 function setTotals(journal) {
   state.totals = {
@@ -481,8 +451,9 @@ function empty(message) {
 
 function renderLogin() {
   render(`
-    <div class="panel" style="max-width:360px;margin:12vh auto">
-      <h2>Sign in<span class="dim">tracking</span></h2>
+    <div class="panel login">
+      <h2>Trackator</h2>
+      <div class="sub">the hedge, in one place · sign in</div>
       <div class="panel-body">
         <div class="field"><label>Email</label>
           <input id="email" type="email" autocomplete="username" placeholder="voce@exemplo.com">
@@ -492,7 +463,7 @@ function renderLogin() {
         </div>
         <button class="btn" id="signin" style="margin-top:14px;width:100%">Sign in</button>
 
-        <div style="margin-top:18px;padding-top:16px;border-top:2px solid var(--color-divider)">
+        <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--line)">
           <button class="btn ghost" id="magic" style="width:100%">Email me a link instead</button>
           <p class="muted" style="margin:12px 0 0;font-size:11px;line-height:1.7">
             The link is single use — some email providers open it before you do,
@@ -651,17 +622,12 @@ function openPositions(rows, accounts) {
 // ----------------------------------------------------------------- overview
 
 async function renderOverview() {
-  const [todoJournal, monthly, todoProgresso, todoOAr, todasContas, config] =
+  const [todoJournal, monthly, todoProgresso, todoOAr, todasContas, config, firms, sessao] =
     await Promise.all([
       load.journal(), load.monthly(), load.progress(),
-      load.openPositions(), load.accounts(), load.settings()]);
+      load.openPositions(), load.accounts(), load.settings(), load.firms(), load.tradedToday()]);
   // Filtrado ANTES de qualquer soma: o total do topo precisa fechar com a
-  // tabela de baixo. Um total geral sobre uma lista filtrada seria pior do que
-  // não ter filtro nenhum.
-  //
-  // O mapa de máquinas sai sempre da lista COMPLETA de contas. Filtrar as
-  // contas primeiro e traduzir depois transformaria a conta da outra máquina em
-  // "conta desconhecida" -- e desconhecida passa pelo filtro.
+  // tabela de baixo. O mapa de máquinas sai sempre da lista COMPLETA de contas.
   const accounts = keepOfMachine(todasContas, state.machine);
   const progress = keepByAccount(todoProgresso, todasContas, state.machine);
   const inTheAir = keepByAccount(todoOAr, todasContas, state.machine);
@@ -669,13 +635,16 @@ async function renderOverview() {
   const liveAccount = () =>
     accounts.find((a) => a.kind === "live" && a.margin_at) ?? null;
   setTotals(journal);
+  state.tradedToday = sessao.filter((r) => r.traded_today || r.open_now).length;
+  renderStatus();
 
   // Só contas que ainda estão valendo: conta encerrada não tem alvo a
   // perseguir, e a conta de avaliação de um challenge que já virou funded
-  // cumpriu o papel dela -- quem está em jogo é a conta nova.
+  // cumpriu o papel dela.
   const running = progress.filter((a) =>
     (a.challenge_status == null || ["phase1", "phase2", "passed", "funded"]
       .includes(a.challenge_status)) && isCurrentPhase(a));
+  const hojePorConta = new Map(sessao.map((r) => [r.account_id, r]));
 
   const sum = (f) => journal.reduce((a, c) => a + Number(c[f] || 0), 0);
   const total = sum("total_pnl");
@@ -684,110 +653,26 @@ async function renderOverview() {
   const hedge = sum("lost_hedging");
   const cost = sum("cost");
   const payouts = sum("funded_payout");
-  // Avaliação é só visualização: dinheiro simulado, que não conta em lugar
-  // nenhum. Funded é diferente -- vira payout -- mas só a parte SACÁVEL entra
-  // no Total: o buffer fica preso na conta e some junto se ela estourar.
-  const evalProp = sum("eval_prop");
   const pending = sum("funded_withdrawable");
   const locked = sum("funded_locked");
-  const withProp = journal.filter((c) => Number(c.prop_trades) > 0).length;
-  const open = journal.filter((c) => ["phase1", "phase2", "passed", "funded"].includes(c.status));
-
-  // "paid" e não "pass rate": uma conta marcada como failed pode ter pago
-  // payout antes de estourar, e paga com frequência. Medir por status diria
-  // que quase nada dá certo, o que não é o que os números mostram.
   const paid = journal.filter((c) => Number(c.funded_payout) > 0).length;
   const spent = Math.abs(cost);
   const gross = payouts + spent;
-  const pctOf = (v) => (v == null ? "—" : `${Math.round(v)}<span style="font-size:15px">%</span>`);
+  const pctS = (v) => (v == null ? "—" : `${Math.round(v)}%`);
   const paidRate = journal.length ? (paid / journal.length) * 100 : null;
   const hedgeDrag = gross ? (Math.abs(hedge) / gross) * 100 : null;
   const roi = spent ? (total / spent) * 100 : null;
 
-  // ------------------------------------------------ onde está o dinheiro
-  //
-  // "nunca sei quanto realmente faturei, porque flutua muito". O total mexe
-  // o tempo todo porque comprar a conta, pagar o hedge e receber o saque são
-  // três momentos do MESMO ciclo, e o agregado soma os três estágios num
-  // número só. Conta que abriu ontem entra como prejuízo -- o hedge já saiu
-  // da corretora -- e só vira lucro semanas depois, quando o saque cai.
-  //
-  // Aqui o ciclo fica aberto por estágio, e cada dólar aparece UMA vez:
-  //
-  //   fechado  sacou e encerrou. O resultado é definitivo.
-  //   morreu   estourou sem sacar. O hedge devolveu o custo, então dá ~zero
-  //            -- é o desenho do hedge funcionando, não prejuízo.
-  //   no ar    hedge pago, saque ainda não veio. É ADIANTAMENTO, não perda:
-  //            some quando o ciclo fechar.
+  // O ciclo aberto por estágio -- cada dólar aparece UMA vez (ver versão
+  // anterior desta tela para o porquê de cada estágio).
   const estagioDe = (c) => c.status !== "failed" ? "noAr"
     : Number(c.funded_payout) > 0 ? "fechado" : "morreu";
   const estagios = { fechado: [], morreu: [], noAr: [] };
   for (const c of journal) estagios[estagioDe(c)].push(c);
-  const somaEm = (lista, campo) =>
-    lista.reduce((a, c) => a + Number(c[campo] || 0), 0);
+  const somaEm = (lista, campo) => lista.reduce((a, c) => a + Number(c[campo] || 0), 0);
 
-  // Saldo das contas live. NÃO é resultado: é capital de giro que ele
-  // depositou, e o que o hedge perdeu dali já está descontado no caixa de
-  // cada challenge. Somar com o realizado contaria o mesmo dólar duas vezes.
   const contasLive = accounts.filter((a) => a.kind === "live" && a.equity != null);
   const naCorretora = somaEm(contasLive, "equity");
-
-  const span = monthly.length
-    ? `${monthLabel(monthly[0].month)} → ${monthLabel(monthly[monthly.length - 1].month)}`
-    : "no month closed yet";
-
-  // O número que a operação inteira produz. Ele é o assunto da tela, então
-  // ocupa um bloco pintado em vez de mais um cartão na fila -- e a cor do
-  // preenchimento é o próprio resultado.
-  const hero = `
-    <div style="padding:0">
-      <div style="height:100%;padding:32px 26px 28px;color:${
-        total >= 0 ? "var(--gain-ink)" : "var(--loss-ink)"};background:${
-        total >= 0 ? "var(--gain-fill)" : "var(--loss-fill)"}">
-        <div style="font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;
-              opacity:.82;margin-bottom:10px">Total P&amp;L</div>
-        <div class="n" style="font-family:var(--font-heading);font-weight:800;font-size:72px;
-              line-height:.9;letter-spacing:-.03em">${money0(total)}</div>
-        <div style="margin-top:14px;font-size:12px;opacity:.78">${
-          journal.length} challenges · ${esc(span)}${
-          Math.round(total) !== Math.round(cashTotal)
-            ? ` · ${money0(cashTotal)} in total PnL` : ""}</div>
-      </div>
-    </div>`;
-
-  const kpi = (label, value, cls, sub) => `
-    <div class="card">
-      <div class="label">${esc(label)}</div>
-      <div class="value ${cls}">${value}</div>
-      <div class="sub">${sub}</div>
-    </div>`;
-
-  const ledger = (label, value, cls, sub) => `
-    <div class="card led">
-      <div class="label">${esc(label)}</div>
-      <div class="value n ${cls}">${value}</div>
-      <div class="sub">${esc(sub)}</div>
-    </div>`;
-
-  // O que ele pediu, nas palavras dele: "quero saber de lucro, dinheiro meu,
-  // dinheiro que se eu quiser eu posso usar".
-  //
-  // Tres numeros diferentes que o painel tratava como um so:
-  //
-  //   PATRIMONIO  tudo que e dele hoje -- corretora + carteira.
-  //   LUCRO       patrimonio menos o que ele aportou. Ter 6.575 tendo posto
-  //               1.500 e lucro de 5.075, nao de 6.575.
-  //   LIVRE       lucro menos o caixa que a operacao precisa para girar. E o
-  //               unico que responde "posso gastar?".
-  //
-  // A carteira e DEDUZIDA, nao cadastrada: aporte + resultado - corretora. Ela
-  // muda a cada saque e a cada deposito, e pedir para ele manter isso em dia
-  // garantiria um numero errado na tela. O aporte, esse, e fixo e ele sabe.
-  //
-  // Capital emprestado nao e capital proprio: ele sai do que e dele, nao do
-  // lucro. Com aporte proprio zero -- os 1.500 que comecaram esta operacao
-  // sao emprestimo -- "dele" e "lucro" dao o mesmo numero, e a tela mostra uma
-  // linha so. Os dois divergem no dia em que ele puser dinheiro do bolso.
   const aporte = Number(config.seed_capital) || 0;
   const emprestado = Number(config.borrowed_capital) || 0;
   const giro = Number(config.working_cash) || 0;
@@ -796,105 +681,99 @@ async function renderOverview() {
   const dele = patrimonio - emprestado;
   const livre = dele - giro;
   const deleEhLucro = Math.abs(dele - cashTotal) < 0.005;
+  const span = monthly.length
+    ? `${monthLabel(monthly[0].month)} → ${monthLabel(monthly[monthly.length - 1].month)}`
+    : "no month closed yet";
 
-  // Linha do quadro. `contas` fica em branco quando a linha não é um conjunto
-  // de challenges -- escrever "0 contas" ali sugeriria que não há nenhuma,
-  // quando o que há é outra unidade.
-  const verba = (rotulo, contas, valor, nota, cls = "") => `
-    <tr${cls ? ` class="${cls}"` : ""}>
-      <td>${esc(rotulo)}</td>
-      <td class="num muted">${contas === "" ? "" : contas}</td>
-      <td class="num ${signClass(valor)}">${cash(valor)}</td>
-      <td class="muted" style="white-space:normal">${esc(nota)}</td>
-    </tr>`;
+  // ---------------------------------------------------------- curva
+  let acc = 0;
+  const pts = monthly.map((m) => (acc += Number(m.pnl) || 0));
+  const W = 720, H = 168, n = pts.length;
+  const mx = Math.max(...pts, 0), mn = Math.min(...pts, 0);
+  const sy = (y) => 10 + (H - 14) * (1 - (y - mn) / (mx - mn || 1));
+  const sx = (i) => (n === 1 ? (W - 14) / 2 : (i / (n - 1)) * (W - 14));
+  const line = pts.map((y, i) => `${i ? "L" : "M"}${sx(i).toFixed(1)} ${sy(y).toFixed(1)}`).join(" ");
+  const chart = n ? `
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Equity">
+      <defs><linearGradient id="eqg" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="var(--ink)" stop-opacity=".28"/><stop offset="1" stop-color="var(--ink)" stop-opacity="0"/>
+      </linearGradient></defs>
+      <line x1="0" x2="${W}" y1="${sy(0).toFixed(1)}" y2="${sy(0).toFixed(1)}"/>
+      <path class="a" d="${line} L${sx(n - 1).toFixed(1)} ${H} L0 ${H} Z"/>
+      <path class="l" id="mLine" d="${line}"/>
+      <circle id="mTip" cx="${sx(n - 1).toFixed(1)}" cy="${sy(pts[n - 1]).toFixed(1)}" r="4" fill="var(--ink)"/>
+      <circle class="ring" cx="${sx(n - 1).toFixed(1)}" cy="${sy(pts[n - 1]).toFixed(1)}" r="7"/>
+    </svg>
+    <div class="axl"><span>${esc(monthLabel(monthly[0].month))}</span><span>${esc(monthLabel(monthly[n - 1].month))}</span></div>`
+    : `<div class="quiet">no month closed yet</div>`;
 
+  // ---------------------------------------------------------- dinheiro
   const campo = (id, valor, rotulo) => `<label class="cfg">${esc(rotulo)}
     <input class="inp n" id="${id}" type="number" step="0.01" value="${valor}"></label>`;
+  const krow = (rotulo, valor, cls = "", nota = "") => `
+    <div class="krow ${cls}" ${nota ? `title="${esc(nota)}"` : ""}><span>${esc(rotulo)}</span><b class="n ${signClass(valor)}">${cash(valor)}</b></div>`;
 
-  const avisoGiro = giro
-    ? "stays put to keep the operation running"
-    : "fill it in above — without it everything looks free";
+  // ---------------------------------------------------------- contas
+  const journalById = new Map(journal.map((c) => [c.id, c]));
+  const chOf = (a) => journalById.get(a.challenge_id) || {};
+  const statusOf = (a) => a.challenge_status || "phase1";
+  const lotOf = (a) => {
+    const m = a.hedge_multiplier ?? a.rec_multiplier;
+    return m == null ? null : Number(m);
+  };
+  const accRow = (a) => {
+    const st = statusOf(a), lot = lotOf(a), funded = a.phase === "FUNDED";
+    const hoje = hojePorConta.get(a.account_id);
+    const today = Boolean(hoje && (hoje.traded_today || hoje.open_now));
+    const target = Number(a.target_pct) || 0;
+    const roomPct = a.max_drawdown ? (Number(a.drawdown_room) / Number(a.max_drawdown)) * 100 : null;
+    const bar = funded ? roomPct : target;
+    const ch = chOf(a);
+    const sub = funded
+      ? `Funded · withdrawable ${money0(ch.funded_withdrawable ?? 0)} · room ${money0(a.drawdown_room)}`
+      : st === "passed" ? `Passed · awaiting activation`
+      : `${statusLabel(st, ch.eval_phases)} · ${money0(a.pnl)} of ${money0(a.profit_target)} · room ${money0(a.drawdown_room)}`;
+    const pill = a.blown ? `<span class="lotp off">FAILED</span>`
+      : st === "passed" || lot == null ? `<span class="lotp off">WAIT</span>`
+      : `<span class="lotp n">${num(lot, 2)}</span>`;
+    return `<div class="acc" data-id="${esc(a.short_id)}" data-ch="${a.challenge_id ?? ""}" title="${
+      esc(a.plan_name || "")}${a.plan_source === "inferred" ? " · plan deduced from balance" : ""}">
+      <span class="ic" style="background:${logoBg(ch.firm)}"><span class="lgi">${logoInner(ch.firm)}</span>${
+        today ? '<i title="traded today"></i>' : ""}</span>
+      <span class="tx"><b class="n">${esc(a.short_id)} <em>· ${esc(ch.firm || "—")} ${a.account_size ? esc(money0(a.account_size).replace(/,000$/, "k")) : ""}</em></b>
+        <span>${esc(sub)}</span>
+        ${a.blown ? "" : `<div class="bar"><i class="${st === "passed" ? "a" : "m"}" data-w="${
+          Math.round(Math.max(0, Math.min(100, bar ?? 0)))}"></i></div>`}</span>
+      ${pill}</div>`;
+  };
+  const accRows = running.map(accRow).join("") || `<div class="quiet"><b>No accounts running</b>Register one in Setup.</div>`;
 
-  const quadro = `
-    <div class="panel">
-      <h2>Your money<span class="dim">${campo("set-seed", aporte, "own capital")}
-        ${campo("set-loan", emprestado, "borrowed")}
-        ${campo("set-giro", giro, "working cash")}</span></h2>
-      <div class="panel-body"><div class="scroll">
-        <table class="dt n">
-          <tbody>
-            ${verba("At the broker", contasLive.length, naCorretora,
-                    "hedge margin, read live from the broker")}
-            ${verba("In your wallet", "", naCarteira,
-                    "derived: capital in + result − broker")}
-            ${verba("Net worth", "", patrimonio,
-                    "everything inside the operation today", "tot")}
-            ${emprestado ? verba("Borrowed", "", -emprestado,
-                    "not yours — leaves when you pay it back") : ""}
-            ${deleEhLucro
-              ? verba("YOURS — all of it profit", "", dele,
-                      "the capital was all borrowed, so everything left over is profit",
-                      "tot big")
-              : verba("Yours", "", dele, "net worth minus the debt", "tot")
-                + verba("Your own capital", "", -aporte, "your own money in — not profit")
-                + verba("PROFIT", "", cashTotal, "what the operation produced", "tot big")}
-
-            <tr class="sec"><td colspan="4">Can you spend it</td></tr>
-            ${verba("Working cash", "", -giro, avisoGiro)}
-            ${verba("FREE TO USE", "", livre,
-                    "what you can take out without weakening the operation", "tot big")}
-          </tbody>
-        </table>
-      </div></div>
-    </div>
-
-    <div class="panel">
-      <h2>How that profit was made<span class="dim">the same dollar never shows up in two lines</span></h2>
-      <div class="panel-body"><div class="scroll">
-        <table class="dt n">
-          <tbody>
-            ${verba("Closed cycles", estagios.fechado.length,
-                    somaEm(estagios.fechado, "cash_pnl"),
-                    "paid out and finished — this one is final")}
-            ${verba("Blown, never paid", estagios.morreu.length,
-                    somaEm(estagios.morreu, "cash_pnl"),
-                    "the hedge gave the cost back — these are free")}
-            ${verba("In flight", estagios.noAr.length,
-                    somaEm(estagios.noAr, "cash_pnl"),
-                    "hedge paid, payout not in yet — an advance, not a loss")}
-            ${verba("Profit", journal.length, cashTotal, "", "tot")}
-
-            <tr class="sec"><td colspan="4">At the firm — reference only, never yours</td></tr>
-            ${verba("Can request now", "", pending, "withdrawable today, if you ask")}
-            ${verba("Locked", "", locked,
-                    "floor and cushion: holds the drawdown, counts in nothing above")}
-          </tbody>
-        </table>
-      </div></div>
-    </div>`;
+  // ---------------------------------------------------------- feed
+  const feedRows = state.feed.slice(0, 2).map((ev) => `
+    <div class="ev" style="--c:${ev.color}"><span class="ic"></span><span class="tx"><b>${esc(ev.title)}</b></span>${
+      ev.amt != null ? `<span class="amt n">${ev.amt > 0 ? "+" : "−"}$${Math.abs(Math.round(ev.amt))}</span>` : ""}<span class="tag">${
+      esc(ev.tag)}</span><span class="t">${esc(ev.when)}</span></div>`).join("")
+    || `<div class="ev" style="--c:#67E8F9"><span class="ic"></span><span class="tx"><b>collector · ${
+      sessao.reduce((a, r) => a + Number(r.trades_today || 0), 0)} fills today · ${inTheAir.length} open</b></span><span class="tag">ok</span><span class="t">${
+      new Date().toISOString().slice(11, 16)}</span></div>`;
 
   const rows = monthly.slice().reverse();
   const peak = Math.max(1, ...rows.map((m) => Math.abs(Number(m.pnl) || 0)));
   const monthRows = rows.map((m) => {
     const pnl = Number(m.pnl) || 0;
-    // A barra cresce a partir do meio: à direita quando o mês fechou no azul,
-    // à esquerda quando fechou no vermelho. Uma barra da esquerda para a
-    // direita esconderia o sinal, que é o que se lê primeiro.
     const half = (Math.abs(pnl) / peak) * 50;
     const left = pnl >= 0 ? 50 : 50 - half;
     return `
     <tr>
       <td style="font-weight:600">${esc(monthLabel(m.month))}</td>
       <td style="width:180px;padding-right:20px">
-        <div style="height:6px;background:var(--color-neutral-200);position:relative">
-          <div style="position:absolute;top:0;bottom:0;left:${left.toFixed(1)}%;
-               width:${half.toFixed(1)}%;background:${
-                 pnl >= 0 ? "var(--gain)" : "var(--loss)"}"></div>
-          <div style="position:absolute;top:-3px;bottom:-3px;left:50%;width:1px;
-               background:var(--color-neutral-500)"></div>
+        <div style="height:4px;border-radius:4px;background:rgba(var(--wrgb),.12);position:relative">
+          <div style="position:absolute;top:0;bottom:0;left:${left.toFixed(1)}%;width:${half.toFixed(1)}%;border-radius:4px;background:${
+            pnl >= 0 ? "var(--mint)" : "var(--coral)"}"></div>
+          <div style="position:absolute;top:-3px;bottom:-3px;left:50%;width:1px;background:rgba(var(--wrgb),.4)"></div>
         </div>
       </td>
-      <td class="num muted">${m.accounts}</td>
+      <td class="num muted">${m.challenges ?? ""}</td>
       <td class="num">${cash(m.pnl)}</td>
       <td class="num">${cash(m.cost)}</td>
       <td class="num">${cash(m.payouts)}</td>
@@ -906,29 +785,69 @@ async function renderOverview() {
   }).join("");
 
   render(`
-    <section class="cards kpi">
-      ${hero}
-      ${kpi("Without hedge", money0(noHedge), signClass(noHedge), "costs + payouts")}
-      ${kpi("Hedge result", money0(hedge), signClass(hedge), "the three live columns")}
-      ${kpi("Withdrawable", money0(pending), signClass(pending),
-        locked ? `in Total · ${money0(locked)} locked out of it`
-               : "what you can request · in Total")}
-    </section>
+    <div class="grid">
+      <section class="card hero" id="cHero" style="--i:0">
+        <span class="eyebrow">Total P&amp;L · <b>${journal.length} challenges</b> · ${esc(span)}${
+          Math.round(total) !== Math.round(cashTotal) ? ` · ${money0(cashTotal)} in cash` : ""}</span>
+        <div class="heroN n" id="heroN"><span class="odo" id="heroW"></span><small class="odo" id="heroC"></small></div>
+        <span class="delta ${state.tradedToday ? "" : "dim"}" id="heroD">${
+          state.tradedToday ? `● ${state.tradedToday} traded today` : "nothing traded yet today"}</span>
+        <div class="mrow">
+          <div class="mk"><span>Free to use</span><b class="n ${signClass(livre)}" id="kFree">${money0(livre)}</b></div>
+          <div class="mk"><span>Withdrawable</span><b class="n">${money0(pending)}</b></div>
+          <div class="mk"><span>Hedge</span><b class="n ${signClass(hedge)}">${money0(hedge)}</b></div>
+          <div class="mk"><span>Payouts</span><b class="n">${money0(payouts)}</b></div>
+          <div class="mk"><span>Costs</span><b class="n ${signClass(cost)}">${money0(cost)}</b></div>
+          <div class="mk"><span>Without hedge</span><b class="n ${signClass(noHedge)}">${money0(noHedge)}</b></div>
+        </div>
+      </section>
 
-    <section class="cards ledger">
-      ${ledger("Costs", money0(cost), signClass(cost), "challenges bought")}
-      ${ledger("Payouts", money0(payouts), signClass(payouts), "received from firms")}
-      ${ledger("Eval accounts", money0(evalProp), signClass(evalProp),
-               `${withProp} tracked · not counted`)}
-      ${ledger("Active accounts", String(open.length), "", "phase 1, 2, passed and funded")}
-      ${ledger("Paid / Drag / ROI",
-               `${pctOf(paidRate)} · ${pctOf(hedgeDrag)} · ${pctOf(roi)}`, "",
-               `${paid} paid · drag on gross · on spend`)}
-    </section>
+      <section class="card chart" id="cChart" style="--i:1">
+        <h2>Equity <span>closed months · cumulative</span></h2>
+        ${chart}
+        <div class="stats">
+          <span>Closed cycles <b>${estagios.fechado.length} · ${money0(somaEm(estagios.fechado, "cash_pnl"))}</b></span>
+          <span>Blown, never paid <b>${estagios.morreu.length} · ${money0(somaEm(estagios.morreu, "cash_pnl"))}</b></span>
+          <span>In flight <b>${estagios.noAr.length} · ${money0(somaEm(estagios.noAr, "cash_pnl"))}</b></span>
+          <span>Paid rate <b>${pctS(paidRate)}</b></span><span>Drag <b>${pctS(hedgeDrag)}</b></span><span>ROI <b>${pctS(roi)}</b></span>
+        </div>
+      </section>
 
-    ${quadro}
+      <section class="card money" id="cMoney" style="--i:2">
+        <h2>Your money <span>yours · borrowed · working</span></h2>
+        <div class="cfgrow">${campo("set-seed", aporte, "own")}${campo("set-loan", emprestado, "borrowed")}${campo("set-giro", giro, "working")}</div>
+        <div>
+          ${krow("At the broker · " + (contasLive.length ? contasLive.map((a) => a.label || a.login_or_name).join(", ") : "—"), naCorretora, "", "hedge margin, read live from the broker")}
+          ${krow("In your wallet", naCarteira, "", "derived: capital in + result − broker")}
+          ${krow("Net worth", patrimonio, "tot", "everything inside the operation today")}
+          ${emprestado ? krow("Borrowed", -emprestado, "", "not yours — leaves when you pay it back") : ""}
+          ${deleEhLucro
+            ? krow("Yours · all of it profit", dele, "tot", "the capital was all borrowed, so everything left over is profit")
+            : krow("Yours", dele, "tot", "net worth minus the debt") + krow("Your own capital", -aporte, "", "your own money in — not profit") + krow("Profit", cashTotal, "tot", "what the operation produced")}
+          ${krow("Working cash", -giro, "", giro ? "stays put to keep the operation running" : "fill it in above — without it everything looks free")}
+          ${locked ? krow("Locked at the firm", locked, "", "floor and cushion: holds the drawdown, counts in nothing above") : ""}
+        </div>
+        <div class="free"><div class="t"><span>Can you spend it</span><b>Free to use</b></div><span class="v n odo" id="freeBig"></span></div>
+      </section>
 
-    ${openPositions(inTheAir, accounts)}
+      <section class="card accounts" id="cAcc" style="--i:3">
+        <h2>Accounts <span>tap one · next lot = spent ÷ to blow</span><button class="add" id="goSetup" type="button">+ New</button></h2>
+        <div id="accWrap"><span class="ringSel" id="ringSel" aria-hidden="true"></span><div id="accList">${accRows}</div></div>
+      </section>
+
+      <section class="card feed" id="cFeed" style="--i:4">
+        <h2>Live feed <span>collector</span><span class="cnt n" id="feedCnt">${
+          sessao.reduce((a, r) => a + Number(r.trades_today || 0), 0)} fills today</span></h2>
+        <div class="fieldbox" id="field"></div>
+        <div class="log" id="log">${feedRows}</div>
+      </section>
+
+      <section class="card air" id="cAir" style="--i:5">
+        <h2>In the air right now <span>open positions · not counted in any total</span></h2>
+        ${inTheAir.length ? openPositions(inTheAir, accounts).replace(/^[\s\S]*?<div class="panel-body">/, "").replace(/<\/div>\s*<\/div>\s*$/, "")
+          : `<div class="quiet"><b>Flat</b>no position open on any account.</div>`}
+      </section>
+    </div>
 
     ${running.length ? `<div class="panel">
       <h2>Live accounts<span class="dim">target · drawdown · today’s multiplier</span></h2>
@@ -937,47 +856,60 @@ async function renderOverview() {
 
     <div class="grid-2">
       <div class="panel">
-        <h2>Equity curve<span class="dim n ${signClass(equityFinal(monthly))}">${
-          money0(equityFinal(monthly))}</span></h2>
-        <div class="panel-body">
-          ${monthly.length ? equityCurve(monthly) : empty("no data yet")}
+        <h2>Monthly close<span class="dim">bar reads P&amp;L against the strongest month</span></h2>
+        <div class="scroll">
+          <table>
+            <thead><tr>
+              <th style="width:96px">Month</th><th></th>
+              <th class="num">Accounts</th><th class="num">P&amp;L</th>
+              <th class="num">Cost</th><th class="num">Payouts</th>
+              <th class="num">Hedge</th><th class="num">No hedge</th>
+              <th class="num">Prop</th><th class="num">Pending</th>
+            </tr></thead>
+            <tbody>${monthRows || `<tr><td colspan="10">${empty("no data")}</td></tr>`}</tbody>
+          </table>
         </div>
       </div>
       <div class="panel">
         <h2>By firm<span class="dim">where it was made and lost</span></h2>
-        <div class="panel-body">
-          ${journal.length ? firmBreakdown(journal) : empty("no data yet")}
-        </div>
-      </div>
-    </div>
-
-    <div class="panel">
-      <h2>Monthly close<span class="dim">bar reads P&amp;L against the strongest month</span></h2>
-      <div class="scroll">
-        <table style="min-width:900px">
-          <thead><tr>
-            <th style="width:96px">Month</th><th></th>
-            <th class="num">Accounts</th><th class="num">P&amp;L</th>
-            <th class="num">Cost</th><th class="num">Payouts</th>
-            <th class="num">Hedge</th><th class="num">No hedge</th>
-            <th class="num">Prop</th><th class="num">Pending</th>
-          </tr></thead>
-          <tbody>${monthRows || `<tr><td colspan="10">${empty("no data")}</td></tr>`}</tbody>
-        </table>
+        <div class="panel-body">${journal.length ? firmBreakdown(journal) : empty("no data yet")}</div>
       </div>
     </div>`);
 
-  // Os dois campos do quadro. Salvam no blur e so quando o numero MUDOU:
-  // tocar no campo e sair sem alterar nada nao precisa escrever no banco.
-  for (const [id, campo, antes] of [["set-seed", "seed_capital", aporte],
-                                    ["set-loan", "borrowed_capital", emprestado],
-                                    ["set-giro", "working_cash", giro]]) {
+  // os numeros rolam
+  const cents = Math.round(Math.abs(total) * 100), w = Math.floor(cents / 100), c = cents % 100;
+  odo(document.getElementById("heroW"), `${total < 0 ? "−" : ""}$${w.toLocaleString("en-US")}`);
+  odo(document.getElementById("heroC"), `.${String(c).padStart(2, "0")}`);
+  odo(document.getElementById("freeBig"), `${livre < 0 ? "−" : ""}$${Math.round(Math.abs(livre)).toLocaleString("en-US")}`);
+  requestAnimationFrame(() => {
+    document.querySelectorAll("#accList .bar i").forEach((i) => { i.style.width = i.dataset.w + "%"; });
+    const l = document.getElementById("mLine");
+    if (l && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      const L = l.getTotalLength(); l.style.strokeDasharray = L; l.style.strokeDashoffset = L;
+      requestAnimationFrame(() => { l.style.transition = "stroke-dashoffset 1.6s cubic-bezier(.2,.8,.2,1)"; l.style.strokeDashoffset = 0; });
+    }
+  });
+  // o quadro vivo: as contas em jogo sao os morros, a live e o vale
+  mountField(document.getElementById("field"), {
+    nodes: running.map((a) => ({ id: a.short_id, status: a.blown ? "failed" : statusOf(a), label: a.short_id })),
+    hubLabel: (liveAccount()?.label || liveAccount()?.login_or_name || "live") + " · live",
+  });
+
+  document.getElementById("goSetup").onclick = () => go("config");
+  document.getElementById("accList").onclick = (e) => {
+    const row = e.target.closest(".acc"); if (!row || !row.dataset.ch) return;
+    openChallenge(Number(row.dataset.ch), journal, firms, progress);
+  };
+  // Os tres campos do quadro. Salvam no blur e so quando o numero MUDOU.
+  for (const [id, campoNome, antes] of [["set-seed", "seed_capital", aporte],
+                                        ["set-loan", "borrowed_capital", emprestado],
+                                        ["set-giro", "working_cash", giro]]) {
     const input = document.getElementById(id);
     input.onblur = async () => {
       const valor = Number(input.value);
       if (!Number.isFinite(valor) || valor === antes) return;
       try {
-        await save.settings({ [campo]: valor });
+        await save.settings({ [campoNome]: valor });
         renderOverview();
       } catch (err) {
         toast(`Error: ${err.message}`);
@@ -1112,14 +1044,23 @@ async function renderChallenges() {
     : cell(value, { id: c.id, field, type: "number", align: true,
                     format: () => cash(value) });
 
-  const rowHtml = (c, { failedRow = false, hidden = false } = {}) => `
+  // Que coluna e de operar e qual e de dinheiro, na ordem da tabela. A
+  // primeira celula de cada linha nao leva marca: ela e a conta, sempre visivel.
+  const COLS = ["acct", "op", "op", "op", "acct", "op", "money", "money", "op", "money",
+    "money", ...(showP2 ? ["money"] : []), "money", "money", "money", "op", "money", "acct", "op", "op"];
+  const markCols = (html, start = 0) => { let i = start; return html.replace(/<t([dh])(?=[\s>])/g, (m, t) => `<t${t} data-col="${COLS[i++] || "acct"}"`); };
+  // A primeira celula das linhas de soma cobre as seis primeiras colunas; em
+  // Money so duas delas ficam visiveis, e o colspan precisa acompanhar.
+  const sumSpan = () => (state.colMode === "op" ? 6 : 2);
+  const rowHtml = (c, { failedRow = false, hidden = false } = {}) => markCols(`
     <tr class="clickable${failedRow ? " failed-row" : ""}${
-      operadosHoje.has(c.id) ? " traded-today" : ""}" data-id="${c.id}"${
+      operadosHoje.has(c.id) ? " traded-today" : ""}${
+      c.status === "passed" ? " passed-row" : ""}" data-id="${c.id}"${
       hidden ? " hidden" : ""}>
       <td title="${esc(porqueHoje(c))}"><strong class="${c.status === "failed" || c.drawdown_blown
         ? "blown" : "bright"}">${esc(c.account_ids || "—")}</strong></td>
       ${cell(c.firm_id, { id: c.id, field: "firm_id", type: "select", options: firmOpts,
-                          format: () => esc(c.firm || "—") })}
+                          format: () => firmMark(c.firm || "—") })}
       <td class="muted">${esc(c.platform || "—")}</td>
       ${cell(c.date_open, { id: c.id, field: "date_open", type: "date",
                             format: () => day(c.date_open) })}
@@ -1155,7 +1096,7 @@ async function renderChallenges() {
                            cls: "note", title: c.comments || "",
                            format: () => `<span class="muted">${esc(c.comments || "—")}</span>` })}
       <td class="num muted">${c.trade_count || (c.import_source ? "imp." : "0")}</td>
-    </tr>`;
+    </tr>`);
 
   // Conta estourada é histórico: não tem mais o que acompanhar, e empurrava
   // as vivas para baixo -- na tela real eram 6 de 11 linhas. Ela sai da frente
@@ -1171,9 +1112,9 @@ async function renderChallenges() {
     <tr class="failed-sum" data-failed-toggle tabindex="0" role="button"
         aria-expanded="${failedOpen}"
         title="Blown accounts, folded. They still count in Total.">
-      <td colspan="6"><span class="chev" aria-hidden="true">›</span><span
+      <td colspan="${sumSpan()}" data-col="acct" data-span><span class="chev" aria-hidden="true">›</span><span
         class="failed-label">${failedRows.length} failed</span></td>
-      <td class="num">${cash(failedSum("eval_prop"))}</td>
+      ${markCols(`<td class="num">${cash(failedSum("eval_prop"))}</td>
       <td class="num">${cash(failedSum("funded_prop"))}</td>
       <td class="num"><span class="dim">—</span></td>
       <td class="num">${cash(failedSum("cost"))}</td>
@@ -1187,7 +1128,7 @@ async function renderChallenges() {
       <td class="num">${cash(failedSum("cash_pnl"))}</td>
       <td class="num"><strong>${cash(failedSum("total_pnl"))}</strong></td>
       <td></td>
-      <td class="num">${failedRows.reduce((a, c) => a + Number(c.trade_count || 0), 0)}</td>
+      <td class="num">${failedRows.reduce((a, c) => a + Number(c.trade_count || 0), 0)}</td>`, 6)}
     </tr>`;
   const body = liveRows.map((c) => rowHtml(c)).join("") + failedSummary
     + failedRows.map((c) => rowHtml(c, { failedRow: true, hidden: !failedOpen })).join("");
@@ -1210,12 +1151,15 @@ async function renderChallenges() {
         <button class="btn" id="new-challenge">New challenge</button>
       </span>
     </div>
-    <div class="count n">${rows.length} of ${journal.length} challenges</div>
+    <div class="lhd"><span class="s count n">${rows.length} of ${journal.length} challenges</span>
+      <div class="mode" role="group" aria-label="Columns"><button type="button" data-m="op" aria-pressed="${
+        state.colMode === "op"}">Operate</button><button type="button" data-m="money" aria-pressed="${
+        state.colMode === "money"}">Money</button></div></div>
 
-    <div class="panel" style="margin-top:0">
-      <div class="scroll">
+    <div class="lgr ${state.colMode}" id="ledger">
+      <div class="wrap scroll">
         <table class="dt n">
-          <thead><tr>
+          <thead>${markCols(`<tr>
             <th>Acct</th><th>Firm</th><th>Platform</th><th>Opened</th><th>Status</th>
             <th class="num" title="Live lot for the next operation. Evaluation: total recovery cost / drawdown.">Next lot</th>
             <th class="num">Prop eval</th><th class="num">Prop funded</th>
@@ -1226,11 +1170,11 @@ async function renderChallenges() {
             <th class="num">Hedge</th>
             <th class="num" title="what this account has already given you: cost, hedge and payouts received">Total PnL</th>
             <th class="num" title="Total PnL plus the funded profit still at the firm">Total</th><th>Notes</th><th class="num">Trades</th>
-          </tr></thead>
+          </tr>`)}</thead>
           <tbody>${body || `<tr><td colspan="${cols}">${empty("no challenges match these filters")}</td></tr>`}</tbody>
           <tfoot><tr style="font-weight:640">
-            <td colspan="6">Total</td>
-            <td class="num">${cash(totals.eval_prop)}</td>
+            <td colspan="${sumSpan()}" data-col="acct" data-span>Total</td>
+            ${markCols(`<td class="num">${cash(totals.eval_prop)}</td>
             <td class="num">${cash(totals.funded_prop)}</td>
             <td class="num">${money0(rows.reduce((a, c) => a + (Number(roomOf(c)) || 0), 0))}</td>
             <td class="num">${cash(totals.cost)}</td>
@@ -1245,13 +1189,29 @@ async function renderChallenges() {
             <td class="num">${cash(totals.lost_hedging)}</td>
             <td class="num">${cash(totals.cash_pnl)}</td>
             <td class="num">${cash(totals.total_pnl)}</td>
-            <td></td><td></td>
+            <td></td><td></td>`, 6)}
           </tr></tfoot>
         </table>
       </div>
     </div>`);
 
   wireEditables(view, saveChallengeField);
+  // Operate / Money: troca o conjunto de colunas com um fade curto, sem reler o banco
+  view.querySelectorAll(".mode button").forEach((b) => {
+    b.onclick = () => {
+      if (b.dataset.m === state.colMode) return;
+      state.colMode = b.dataset.m;
+      const led = document.getElementById("ledger");
+      led.style.opacity = 0;
+      setTimeout(() => {
+        led.className = `lgr ${state.colMode}`;
+        led.querySelectorAll("[data-span]").forEach((td) => { td.colSpan = sumSpan(); });
+        view.querySelectorAll(".mode button").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+        led.style.opacity = 1;
+      }, 160);
+    };
+  });
+  placeBand();
 
   for (const [id, key] of [["f-firm", "firm"], ["f-month", "month"]]) {
     document.getElementById(id).onchange = (e) => {
@@ -1315,6 +1275,17 @@ async function renderChallenges() {
     tr.onclick = () => openChallenge(Number(tr.dataset.id), journal, firms, progress);
   });
 }
+
+// A faixa ambar da linha aprovada corre de uma borda da tela a outra: o CSS
+// precisa saber onde a tabela esta. Mede de novo a cada redesenho e resize.
+function placeBand() {
+  const led = document.getElementById("ledger");
+  const t = led && led.querySelector("table");
+  if (!t) return;
+  led.style.setProperty("--outL", t.getBoundingClientRect().left + "px");
+  led.style.setProperty("--vw", document.documentElement.clientWidth + "px");
+}
+addEventListener("resize", placeBand);
 
 /**
  * Grava uma célula editada da tabela.
@@ -4410,53 +4381,40 @@ const RENDERERS = {
 };
 
 function renderNav() {
-  const abas = PAGES.map((p) => {
-    const count = p.id === "issues" ? state.openIssues
-      : p.id === "config" ? state.pendingSetup : 0;
-    const label = count
-      ? `${p.label} <span class="pill">${count}</span>`
-      : esc(p.label);
-    return `<button data-page="${p.id}" ${
-      p.id === state.page ? 'aria-current="page"' : ""}>${label}</button>`;
-  }).join("");
-
-  // Só com duas máquinas ou mais: com uma, o seletor seria um controle que
-  // nunca muda nada ocupando o menu.
-  const seletor = state.machines.length > 1
-    ? `<select id="machine-pick" title="Which machine's accounts to show">
-         <option value="">All machines</option>
-         ${state.machines.map((m) => `<option value="${esc(m)}" ${
-           m === state.machine ? "selected" : ""}>${esc(m)}</option>`).join("")}
-       </select>`
-    : "";
-
-  document.getElementById("nav").innerHTML = abas + seletor;
-  document.querySelectorAll("[data-page]").forEach((b) => {
-    b.onclick = () => go(b.dataset.page);
-  });
-  const pick = document.getElementById("machine-pick");
-  if (pick) pick.onchange = () => setMachine(pick.value);
-  const section = document.getElementById("section");
-  if (section) section.textContent = PAGES.find((p) => p.id === state.page)?.label ?? "";
+  if (!state.email) { document.getElementById("nav").innerHTML = ""; const m = document.getElementById("mtabs"); if (m) m.innerHTML = ""; return; }
+  renderTabs(PAGES.map((p) => ({
+    id: p.id, label: p.label,
+    count: p.id === "issues" ? state.openIssues : p.id === "config" ? state.pendingSetup : 0,
+  })), state.page, go);
 }
 
+// Uma tela por vez: duas trocas rapidas (toque duplo, "voltar" do navegador)
+// deixavam a mais lenta pintar por cima da que a pessoa pediu por ultimo.
+let goBusy = false, goNext = null;
 async function go(page) {
+  if (goBusy) { goNext = page; return; }
+  goBusy = true;
   state.page = page;
   location.hash = page;
   renderNav();
   render(`<div class="empty">loading</div>`);
   try {
     await RENDERERS[page]();
+    placePill();
   } catch (err) {
     render(`<div class="panel"><h2>Failed</h2><div class="panel-body">
       <p class="muted" style="margin:0">${esc(err.message)}</p>
     </div></div>`);
+  } finally {
+    goBusy = false;
+    if (goNext) { const n = goNext; goNext = null; if (n !== state.page) go(n); }
   }
 }
 
 // Relógio do cabeçalho. Um segundo é a granularidade certa para o que ele
 // mostra e o custo é um innerHTML minúsculo.
-setInterval(renderStatus, 1000);
+setInterval(() => { const utc = document.getElementById("utc"); if (utc) utc.textContent = new Date().toISOString().slice(11, 19); }, 1000);
+document.getElementById("dateLine").textContent = new Date().toLocaleDateString("en-US", { weekday: "long" }) + " · session closes 17:00 NY";
 
 /**
  * Recarrega quando há versão nova publicada.
@@ -4526,14 +4484,13 @@ async function boot() {
   const user = await currentUser();
   bootedFor = user?.id ?? null;
   if (!user) {
-    // Zera o estado: sem isto a barra continua mostrando o nome e o PnL de quem
-    // acabou de sair, na tela de login.
+    // Zera o estado: sem isto a ilha continua mostrando quem acabou de sair.
     state.email = "";
     state.totals = { pnl: null, challenges: null };
     state.openIssues = 0;
-    document.getElementById("nav").innerHTML = "";
-    document.getElementById("status").innerHTML = "";
-    document.getElementById("section").textContent = "auth";
+    state.tradedToday = null;
+    renderNav();
+    renderStatus();
     return renderLogin();
   }
   state.email = user.email ?? "";
@@ -4541,11 +4498,141 @@ async function boot() {
   await loadMachines(user.id);
   renderNav();
   refreshIssueCount();
+  // O cartao do perfil: tema e foto vem do banco (a mesma escolha em todo PC);
+  // o navegador guarda uma copia para pintar certo antes da resposta.
+  let prefs = {};
+  try { prefs = await load.settings(); } catch { prefs = {}; }
+  initProfile({
+    email: state.email,
+    role: "",
+    machines: state.machines, machine: state.machine, onMachine: setMachine,
+    theme: prefs.theme || null, photo: prefs.avatar_data || null,
+    onTheme: (k) => save.settings({ theme: k }).catch(() => {}),
+    onPhoto: (u) => save.settings({ avatar_data: u }).catch(() => {}),
+    onPassword: changePassword,
+    onSignOut: async () => { await signOut(); location.reload(); },
+  });
+  load.isAdmin().then((ok) => { state.isAdmin = ok; const r = document.getElementById("profRole"); if (r) r.textContent = ok ? "admin" : "trader"; }).catch(() => {});
+  initTabsHover();
+  startPulse();
   const initial = location.hash.slice(1);
   await go(RENDERERS[initial] ? initial : "overview");
+  // Link digitado ou botao "voltar": a tela segue o hash. `go()` escreve o
+  // mesmo hash que ja esta ativo, e por isso nao entra em laco.
+  addEventListener("hashchange", () => {
+    const p = location.hash.slice(1);
+    if (RENDERERS[p] && p !== state.page) go(p);
+  });
   // Depois da primeira tela, de propósito: o aviso do que falta cadastrar não
   // pode atrasar o que a pessoa entrou para ver.
   checkPending();
+}
+
+// --------------------------------------------------------------------- pulso
+//
+// O painel nao tem realtime: a cada 20 s ele compara um retrato leve do banco
+// com o anterior e transforma a diferenca em eventos -- trade fechada, perna
+// pareada, conta aprovada ou estourada. Entre duas notificacoes ha um silencio
+// minimo de 10 s; o que chegar antes espera na fila. Fills e heartbeats nao
+// avisam: vao so para o feed da Overview.
+const PULSE_MS = 20 * 1000;
+const SILENCE_MS = 10 * 1000;
+let pulseTimer = 0, lastSnap = null, lastNotified = 0;
+const queue = [];
+
+function startPulse() {
+  clearInterval(pulseTimer);
+  pulseTimer = setInterval(pulse, PULSE_MS);
+  setTimeout(pulse, 4000);
+}
+
+async function pulse() {
+  if (!state.email || document.hidden) return;
+  let snap;
+  try {
+    const [sessao, journal, contas] = await Promise.all([load.tradedToday(), load.journal(), load.accounts()]);
+    const shortOf = new Map(contas.map((a) => [a.id, accountShort(a.login_or_name)]));
+    snap = {
+      trades: new Map(sessao.map((r) => [r.account_id, { n: Number(r.trades_today || 0), open: Boolean(r.open_now), short: shortOf.get(r.account_id) }])),
+      ch: new Map(journal.map((c) => [c.id, { status: c.status, total: Number(c.total_pnl || 0), hedge: Number(c.lost_hedging || 0), acct: (c.account_ids || "").split("/").pop().trim(), firm: c.firm, trades: Number(c.trade_count || 0) }])),
+    };
+  } catch {
+    return;   // offline ou RLS: proximo pulso
+  }
+  if (lastSnap) {
+    for (const [id, now] of snap.trades) {
+      const before = lastSnap.trades.get(id);
+      if (before && now.n > before.n) pushEvent({ kind: "fill", acc: now.short, title: `${now.short} · ${now.n - before.n} trade${now.n - before.n > 1 ? "s" : ""} closed`, tag: "fill", color: "#67E8F9" });
+      else if (before && now.open && !before.open) pushEvent({ kind: "fill", acc: now.short, title: `${now.short} · position open`, tag: "open", color: "#67E8F9" });
+    }
+    for (const [id, now] of snap.ch) {
+      const before = lastSnap.ch.get(id);
+      if (!before) continue;
+      if (now.status !== before.status) {
+        if (now.status === "passed") pushEvent({ kind: "passed", acc: now.acct, ic: "✓", title: `${now.acct} passed · awaiting activation`, sub: `${now.firm} · the firm releases the funded account next`, tag: "passed", color: "#FBBF24" });
+        else if (now.status === "failed") pushEvent({ kind: "blown", acc: now.acct, ic: "✕", title: `${now.acct} blown`, sub: `${now.firm} · drawdown room ≤ 0 · marked failed`, amt: now.total - before.total || null, tag: "blown", color: "#FF5A6A" });
+        else if (now.status === "funded") pushEvent({ kind: "banked", acc: now.acct, ic: "$", title: `${now.acct} is funded`, sub: `${now.firm} · the hedge keeps running on the new account`, tag: "funded", color: "#4ADE80" });
+      } else if (now.trades > before.trades && now.hedge !== before.hedge) {
+        const d = now.total - before.total;
+        pushEvent({ kind: "paired", acc: now.acct, ic: "⇄", title: `${now.acct} paired with live`, sub: `${now.firm} · ${now.trades - before.trades} trade${now.trades - before.trades > 1 ? "s" : ""} · hedge ${money0(now.hedge - before.hedge)}`, amt: Math.round(d) || null, tag: "paired", color: d < 0 ? "#FF5A6A" : "#4ADE80" });
+      }
+    }
+  }
+  lastSnap = snap;
+}
+
+function pushEvent(ev) {
+  ev.when = new Date().toISOString().slice(11, 16);
+  state.feed.unshift(ev);
+  state.feed.length = Math.min(state.feed.length, 30);
+  paintFeed();
+  if (ev.kind === "fill") return;
+  queue.push(ev);
+  drainQueue();
+}
+
+function drainQueue() {
+  if (!queue.length) return;
+  const wait = SILENCE_MS - (Date.now() - lastNotified);
+  if (wait > 0) { setTimeout(drainQueue, wait); return; }
+  lastNotified = Date.now();
+  cascade(queue.shift());
+  if (queue.length) setTimeout(drainQueue, SILENCE_MS);
+}
+
+/** O evento atravessa a tela: conta acende, braco de liquido, ilha, abas. */
+function cascade(ev) {
+  const color = ev.color;
+  islandSay(`${ev.acc} · ${ev.tag}${ev.amt != null ? " " + (ev.amt > 0 ? "+" : "−") + "$" + Math.abs(ev.amt) : ""}`);
+  const row = state.page === "overview" ? document.querySelector(`#accList .acc[data-id="${CSS.escape(ev.acc)}"]`) : null;
+  const arrive = () => {
+    fieldEvent(ev, color);
+    notify(ev);
+    const hero = document.getElementById("heroN");
+    if (ev.amt && hero) { deltaChip(hero, ev.amt); hero.style.color = ev.amt > 0 ? "var(--mint)" : "#FFB3BB"; setTimeout(() => { hero.style.color = ""; }, 420); }
+    // os numeros de verdade: redesenha a tela quando a animacao terminar
+    setTimeout(() => { if (state.page === "overview") renderOverview(); }, 2600);
+  };
+  if (!row) { setTimeout(arrive, 300); return; }
+  landOn(row, color);
+  const r = row.getBoundingClientRect();
+  burst(r.left + r.width - 40, r.top + r.height / 2, color, 10);
+  const box = fieldBox();
+  setTimeout(() => blob({ box, ex: fieldExit(ev.acc), pill: row.querySelector(".lotp") || row, ev, color, done: arrive }), 240);
+}
+
+/** As duas ultimas linhas do feed, sem redesenhar a Overview inteira. */
+function paintFeed() {
+  const log = document.getElementById("log");
+  if (!log) return;
+  const rows = [...log.querySelectorAll(".ev")], before = rows.map((n) => n.getBoundingClientRect().top);
+  const ev = state.feed[0];
+  log.insertAdjacentHTML("afterbegin", `<div class="ev in" style="--c:${ev.color}"><span class="ic"></span><span class="tx"><b>${esc(ev.title)}</b></span>${
+    ev.amt != null ? `<span class="amt n">${ev.amt > 0 ? "+" : "−"}$${Math.abs(Math.round(ev.amt))}</span>` : ""}<span class="tag">${esc(ev.tag)}</span><span class="t">${esc(ev.when)}</span></div>`);
+  rows.forEach((n, i) => { const d = before[i] - n.getBoundingClientRect().top; if (d) n.animate([{ transform: `translateY(${d}px)` }, { transform: "none" }], { duration: 600, easing: "cubic-bezier(.2,.8,.2,1)" }); });
+  log.querySelectorAll(".ev").forEach((n, i) => { if (i >= 2 && !n.classList.contains("bye")) { n.classList.add("bye"); setTimeout(() => n.remove(), 320); } });
+  const card = document.getElementById("cFeed");
+  if (card) { card.classList.remove("land"); void card.offsetWidth; card.classList.add("land"); }
 }
 
 // `onAuthStateChange` dispara em TODO evento de auth, nao so login e logout. E
