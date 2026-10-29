@@ -368,13 +368,13 @@ svg.goo{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-inde
 /* no box: hairlines straight on the ground, two column sets */
 .lgr .wrap{overflow-x:auto}
 /* so quando as 11 colunas cabem a tabela fica aberta (a faixa ambar sai dela); antes disso ela rola de lado */
-@media (min-width:1300px){.lgr .wrap{overflow:visible}}
+@media (min-width:1580px){.lgr .wrap{overflow:visible}}
 .lgr table{border-collapse:collapse;width:100%;min-width:900px}
-.lgr th{text-align:left;font:600 10.5px var(--f);letter-spacing:.07em;text-transform:uppercase;color:var(--fg-3);padding:0 12px 10px;border-bottom:1px solid rgba(var(--wrgb),.18);white-space:nowrap;cursor:pointer;user-select:none;transition:color .2s}
+.lgr th{text-align:left;font:600 10px var(--f);letter-spacing:.06em;text-transform:uppercase;color:var(--fg-3);padding:0 8px 10px;border-bottom:1px solid rgba(var(--wrgb),.18);white-space:nowrap;cursor:pointer;user-select:none;transition:color .2s}
 .lgr th:hover,.lgr th[aria-sort]{color:var(--ink)}
 .lgr th[aria-sort]::after{content:" ↓";color:var(--amber)}.lgr th[aria-sort="ascending"]::after{content:" ↑"}
 .lgr th.r,.lgr td.r{text-align:right}
-.lgr td{padding:0 12px;height:56px;border-bottom:1px solid rgba(var(--wrgb),.08);font-size:13.5px;white-space:nowrap;vertical-align:middle;transition:background .15s}
+.lgr td{padding:0 8px;height:52px;border-bottom:1px solid rgba(var(--wrgb),.08);font-size:13px;white-space:nowrap;vertical-align:middle;transition:background .15s}
 .lgr tbody tr{cursor:pointer;animation:rin .35s var(--ease) both,sweep 1.3s ease-out both;animation-delay:calc(var(--i,0) * 24ms)}
 .lgr tbody tr:hover td{background:rgba(var(--wrgb),.05)}
 .lgr tbody tr.sel td{background:rgba(74,222,128,.09)}
@@ -412,6 +412,7 @@ svg.goo{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-inde
 .lgr tbody tr.passed:hover td.first::before{filter:brightness(.93)}
 .lgr tbody tr.passed.sel td.first::before{filter:brightness(.88)}.lgr tbody tr.passed.sel td:first-child{box-shadow:none}
 .lgr td .pr{min-width:170px}
+.lgr td .btn.ghost{height:32px;padding:0 10px;font-size:12px}
 .lgr tr.dead td{color:var(--fg-3)}.lgr tr.dead td.first{text-decoration:line-through;text-decoration-color:var(--coral)}
 .lgr tr.fold td{height:46px}
 .lgr tfoot td{border-bottom:0;border-top:1px solid rgba(var(--wrgb),.22);height:54px;font-weight:700}
@@ -728,7 +729,7 @@ html.tour-lock{overflow:hidden}
   --color-neutral-500:var(--fg-3);--color-neutral-600:var(--fg-2);--color-neutral-700:var(--fg-2);--color-neutral-800:var(--fg);--color-neutral-900:var(--fg);
   --color-accent-100:var(--amber-dim);--color-accent-200:var(--amber-dim);--color-accent-300:rgba(251,191,36,.35);--color-accent-400:var(--amber);
   --color-accent-500:var(--amber);--color-accent-600:var(--amber);--color-accent-700:var(--amber);--color-accent-800:var(--amber);--color-accent-900:var(--fg);
-  --font-heading:var(--f);--font-body:var(--f);--shadow-sm:none;--shadow-md:0 10px 30px rgba(0,0,0,.25);--shadow-lg:0 30px 80px rgba(0,0,0,.45)}
+  --band-today:#4ADE80;--font-heading:var(--f);--font-body:var(--f);--shadow-sm:none;--shadow-md:0 10px 30px rgba(0,0,0,.25);--shadow-lg:0 30px 80px rgba(0,0,0,.45)}
 /* Regra de autor vence a do navegador: sem isto um display:flex sobrepoe o [hidden] padrao. */
 [hidden]{display:none !important}
 /* A faixa do cabecalho e o braco de liquido saem da pagina de proposito; `clip` impede que isso vire rolagem lateral, mesmo por foco ou script. */
@@ -800,8 +801,6 @@ tfoot td{border-bottom:0;border-top:1px solid rgba(var(--wrgb),.22);font-weight:
 .dt td.note{max-width:220px;overflow:hidden;text-overflow:ellipsis}
 .noP2 th.p2,.noP2 td.p2{display:none}
 /* colunas da tabela de challenges: Operate mostra o que se opera, Money o dinheiro */
-.lgr.op [data-col="money"]{display:none}
-.lgr.money [data-col="op"]{display:none}
 /* linha aprovada: a faixa ambar varre a linha e vai de uma borda da tela a outra */
 .lgr tbody tr.passed-row{animation:rin .35s var(--ease) both}
 .lgr tbody tr.passed-row td{position:relative;color:#2B1500;border-bottom-color:transparent}
@@ -815,6 +814,23 @@ tfoot td{border-bottom:0;border-top:1px solid rgba(var(--wrgb),.22);font-weight:
 .lgr tbody tr.passed-row .badge.passed{animation:inkbg .5s ease-out both;animation-delay:380ms;background:#2B1500;color:var(--amber)}
 .lgr tbody tr.passed-row:hover td{background:transparent}
 .lgr tbody tr.passed-row:hover td:first-child::before{filter:brightness(.93)}
+/* conta operada hoje: a faixa verde varre a linha, igual a ambar da aprovada */
+.lgr tbody tr.today-row{animation:rin .35s var(--ease) both}
+.lgr tbody tr.today-row td{position:relative;color:#03200F;border-bottom-color:transparent}
+.lgr tbody tr.today-row td:first-child{z-index:0}
+.lgr tbody tr.today-row td:first-child::before,.lgr tbody tr.today-row td:first-child::after{content:"";position:absolute;top:0;bottom:0;left:calc(-1 * var(--outL,16px));width:var(--vw,100vw);z-index:-1;pointer-events:none;will-change:transform;animation:slide 1.5s cubic-bezier(.2,.75,.15,1) both;animation-delay:calc(var(--i,0) * 60ms + 120ms)}
+.lgr tbody tr.today-row td:first-child::before{background:linear-gradient(90deg,rgba(74,222,128,0),var(--band-today) 64px,var(--band-today) calc(100% - 64px),rgba(74,222,128,0))}
+.lgr tbody tr.today-row td:first-child::after{background:linear-gradient(90deg,transparent calc(100% - 360px),rgba(225,255,236,.95) calc(100% - 130px),rgba(225,255,236,0));animation-name:slide,landing;animation-duration:1.5s,1.5s;animation-timing-function:cubic-bezier(.2,.75,.15,1),linear}
+.lgr tbody tr.today-row td,.lgr tbody tr.today-row .sz{animation:ink .55s ease-out both;animation-delay:460ms}
+.lgr tbody tr.today-row td.dim,.lgr tbody tr.today-row td.muted,.lgr tbody tr.today-row td .dim,.lgr tbody tr.today-row td .muted{color:rgba(3,32,15,.62)}
+.lgr tbody tr.today-row td.pos,.lgr tbody tr.today-row td .pos{color:#064E2A}.lgr tbody tr.today-row td.neg,.lgr tbody tr.today-row td .neg{color:#8E0F1D}
+.lgr tbody tr.today-row .badge{background:#03200F;color:var(--band-today)}
+.lgr tbody tr.today-row .btn.ghost{color:#03200F;border-color:rgba(3,32,15,.35)}
+.lgr tbody tr.today-row:hover td{background:transparent}
+.lgr tbody tr.today-row:hover td:first-child::before{filter:brightness(.95)}
+/* aprovada e operada hoje: a aprovada manda na cor */
+.lgr tbody tr.passed-row.today-row td:first-child::before{background:linear-gradient(90deg,rgba(251,191,36,0),var(--amber) 64px,var(--amber) calc(100% - 64px),rgba(251,191,36,0))}
+.lgr tbody tr.passed-row.today-row td{color:#2B1500}
 .blown{color:var(--coral);text-decoration:line-through;text-decoration-color:var(--coral)}
 .bright{font-weight:700}.lbl{white-space:nowrap}.num{text-align:right}
 .empty{padding:44px 20px;text-align:center;color:var(--fg-2);font:500 13px var(--f);border:1.5px dashed rgba(var(--wrgb),.2);border-radius:28px}
@@ -956,6 +972,6 @@ dialog.side .panel{margin:12px 0 0;padding:16px 18px}
 
 <dialog id="modal"></dialog>
 
-<script type="module" src="./js/app.js?v=fc78070916"></script>
+<script type="module" src="./js/app.js?v=720407f2a3"></script>
 </body>
 </html>

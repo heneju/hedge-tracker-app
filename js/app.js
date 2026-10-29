@@ -10,31 +10,31 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=fc78070916";
+} from "./db.js?v=720407f2a3";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=fc78070916";
+} from "./util.js?v=720407f2a3";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=fc78070916";
-import { cell, locked, wireEditables } from "./editable.js?v=fc78070916";
-import { exportChallenges } from "./export.js?v=fc78070916";
-import { mountPlanPicker } from "./plan-picker.js?v=fc78070916";
-import { nextLiveLot } from "./next-lot.js?v=fc78070916";
-import { filterForFirm } from "./firm-accounts.js?v=fc78070916";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=fc78070916";
+} from "./charts.js?v=720407f2a3";
+import { cell, locked, wireEditables } from "./editable.js?v=720407f2a3";
+import { exportChallenges } from "./export.js?v=720407f2a3";
+import { mountPlanPicker } from "./plan-picker.js?v=720407f2a3";
+import { nextLiveLot } from "./next-lot.js?v=720407f2a3";
+import { filterForFirm } from "./firm-accounts.js?v=720407f2a3";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=720407f2a3";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges,
-} from "./machine.js?v=fc78070916";
+} from "./machine.js?v=720407f2a3";
 import { loader,
   renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
   initProfile, raf, odo, burst, landOn, blob, deltaChip,
-} from "./skin.js?v=fc78070916";
-import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=fc78070916";
-import { firmMark, logoBg, logoInner } from "./logos.js?v=fc78070916";
-import { startTour } from "./tour.js?v=fc78070916";
+} from "./skin.js?v=720407f2a3";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=720407f2a3";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=720407f2a3";
+import { startTour } from "./tour.js?v=720407f2a3";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -103,7 +103,6 @@ const state = {
   // Quantas contas ja operaram na sessao de hoje (a ilha do cabecalho).
   tradedToday: null,
   // Challenges: Operate mostra o que se opera, Money o dinheiro.
-  colMode: "op",
   // Os ultimos eventos do coletor, para o feed da Overview.
   feed: [],
 };
@@ -182,10 +181,10 @@ function withdrawableWhy(c) {
 function withdrawableNote(c) {
   // Ciclo fechado e a conta operando de novo: o dinheiro caiu e ninguem
   // lancou. Enquanto nao lancar, este numero mostra dinheiro que ja saiu.
-  if (c.traded_after_cycle) return `<div class="sub">⚠ payout not recorded?</div>`;
+  if (c.traded_after_cycle) return `<div class="sub" title="cycle closed and the account traded again: payout not recorded?">⚠ payout?</div>`;
   if (Number(c.winning_days_left) > 0) {
     const total = Number(c.winning_days) + Number(c.winning_days_left);
-    return `<div class="sub">${c.winning_days}/${total} winning days</div>`;
+    return `<div class="sub" title="winning days towards the next payout">${c.winning_days}/${total} days</div>`;
   }
   return Number(c.funded_locked)
     ? `<div class="sub">+${money0(c.funded_locked)} buffer</div>` : "";
@@ -1021,7 +1020,7 @@ async function renderChallenges() {
   // vista usa duas fases, a coluna some em vez de exibir zeros para sempre.
   const showP2 = rows.some((c) => Number(c.eval_phases) === 2);
   const p2 = (html) => (showP2 ? html : "");
-  const cols = showP2 ? 20 : 19;
+  const cols = showP2 ? 18 : 17;
 
   // Resultado da conta da mesa. Em avaliação é só visualização: dinheiro
   // simulado, fora de qualquer soma. Quando a conta vira funded ele passa a
@@ -1059,24 +1058,17 @@ async function renderChallenges() {
     : cell(value, { id: c.id, field, type: "number", align: true,
                     format: () => cash(value) });
 
-  // Que coluna e de operar e qual e de dinheiro, na ordem da tabela. A
-  // primeira celula de cada linha nao leva marca: ela e a conta, sempre visivel.
-  const COLS = ["acct", "op", "op", "op", "acct", "op", "money", "money", "op", "money",
-    "money", ...(showP2 ? ["money"] : []), "money", "money", "money", "op", "money", "acct", "op", "op"];
-  const markCols = (html, start = 0) => { let i = start; return html.replace(/<t([dh])(?=[\s>])/g, (m, t) => `<t${t} data-col="${COLS[i++] || "acct"}"`); };
-  // A primeira celula das linhas de soma cobre as seis primeiras colunas; em
-  // Money so duas delas ficam visiveis, e o colspan precisa acompanhar.
-  const sumSpan = () => (state.colMode === "op" ? 6 : 2);
-  const rowHtml = (c, { failedRow = false, hidden = false } = {}) => markCols(`
+  // Operada hoje leva a faixa verde (today-row), na mesma pegada da ambar da
+  // aprovada; o ponto verde das outras tabelas nao cabe aqui.
+  const rowHtml = (c, { failedRow = false, hidden = false } = {}) => `
     <tr class="clickable${failedRow ? " failed-row" : ""}${
-      operadosHoje.has(c.id) ? " traded-today" : ""}${
+      operadosHoje.has(c.id) ? " today-row" : ""}${
       c.status === "passed" ? " passed-row" : ""}" data-id="${c.id}"${
       hidden ? " hidden" : ""}>
       <td title="${esc(porqueHoje(c))}"><strong class="${c.status === "failed" || c.drawdown_blown
         ? "blown" : "bright"}">${esc(c.account_ids || "—")}</strong></td>
       ${cell(c.firm_id, { id: c.id, field: "firm_id", type: "select", options: firmOpts,
                           format: () => firmMark(c.firm || "—") })}
-      <td class="muted">${esc(c.platform || "—")}</td>
       ${cell(c.date_open, { id: c.id, field: "date_open", type: "date",
                             format: () => day(c.date_open) })}
       ${cell(c.status, { id: c.id, field: "status", type: "select",
@@ -1107,11 +1099,8 @@ async function renderChallenges() {
       <td class="num">${cash(c.lost_hedging)}</td>
       <td class="num" title="${esc(cashWhy(c))}">${cash(c.cash_pnl)}</td>
       <td class="num"><strong>${cash(c.total_pnl)}</strong></td>
-      ${cell(c.comments, { id: c.id, field: "comments", type: "text",
-                           cls: "note", title: c.comments || "",
-                           format: () => `<span class="muted">${esc(c.comments || "—")}</span>` })}
       <td class="num muted">${c.trade_count || (c.import_source ? "imp." : "0")}</td>
-    </tr>`);
+    </tr>`;
 
   // Conta estourada é histórico: não tem mais o que acompanhar, e empurrava
   // as vivas para baixo -- na tela real eram 6 de 11 linhas. Ela sai da frente
@@ -1127,9 +1116,9 @@ async function renderChallenges() {
     <tr class="failed-sum" data-failed-toggle tabindex="0" role="button"
         aria-expanded="${failedOpen}"
         title="Blown accounts, folded. They still count in Total.">
-      <td colspan="${sumSpan()}" data-col="acct" data-span><span class="chev" aria-hidden="true">›</span><span
+      <td colspan="5"><span class="chev" aria-hidden="true">›</span><span
         class="failed-label">${failedRows.length} failed</span></td>
-      ${markCols(`<td class="num">${cash(failedSum("eval_prop"))}</td>
+      <td class="num">${cash(failedSum("eval_prop"))}</td>
       <td class="num">${cash(failedSum("funded_prop"))}</td>
       <td class="num"><span class="dim">—</span></td>
       <td class="num">${cash(failedSum("cost"))}</td>
@@ -1142,8 +1131,7 @@ async function renderChallenges() {
       <td class="num">${cash(failedSum("lost_hedging"))}</td>
       <td class="num">${cash(failedSum("cash_pnl"))}</td>
       <td class="num"><strong>${cash(failedSum("total_pnl"))}</strong></td>
-      <td></td>
-      <td class="num">${failedRows.reduce((a, c) => a + Number(c.trade_count || 0), 0)}</td>`, 6)}
+      <td class="num">${failedRows.reduce((a, c) => a + Number(c.trade_count || 0), 0)}</td>
     </tr>`;
   const body = liveRows.map((c) => rowHtml(c)).join("") + failedSummary
     + failedRows.map((c) => rowHtml(c, { failedRow: true, hidden: !failedOpen })).join("");
@@ -1166,16 +1154,13 @@ async function renderChallenges() {
         <button class="btn" id="new-challenge">New challenge</button>
       </span>
     </div>
-    <div class="lhd"><span class="s count n">${rows.length} of ${journal.length} challenges</span>
-      <div class="mode" role="group" aria-label="Columns"><button type="button" data-m="op" aria-pressed="${
-        state.colMode === "op"}">Operate</button><button type="button" data-m="money" aria-pressed="${
-        state.colMode === "money"}">Money</button></div></div>
+    <div class="lhd"><span class="s count n">${rows.length} of ${journal.length} challenges</span></div>
 
-    <div class="lgr ${state.colMode}" id="ledger">
+    <div class="lgr" id="ledger">
       <div class="wrap scroll">
         <table class="dt n">
-          <thead>${markCols(`<tr>
-            <th>Acct</th><th>Firm</th><th>Platform</th><th>Opened</th><th>Status</th>
+          <thead><tr>
+            <th>Acct</th><th>Firm</th><th>Opened</th><th>Status</th>
             <th class="num" title="Live lot for the next operation. Evaluation: total recovery cost / drawdown.">Next lot</th>
             <th class="num">Prop eval</th><th class="num">Prop funded</th>
             <th class="num" title="how much this account can still lose before it breaches. What was already withdrawn is discounted.">To blow</th>
@@ -1184,12 +1169,12 @@ async function renderChallenges() {
             <th class="num">Payout</th><th class="num" title="what you can request today. The buffer stays in the account and is not in Total">Withdrawable</th>
             <th class="num">Hedge</th>
             <th class="num" title="what this account has already given you: cost, hedge and payouts received">Total PnL</th>
-            <th class="num" title="Total PnL plus the funded profit still at the firm">Total</th><th>Notes</th><th class="num">Trades</th>
-          </tr>`)}</thead>
+            <th class="num" title="Total PnL plus the funded profit still at the firm">Total</th><th class="num">Trades</th>
+          </tr></thead>
           <tbody>${body || `<tr><td colspan="${cols}">${empty("no challenges match these filters")}</td></tr>`}</tbody>
           <tfoot><tr style="font-weight:640">
-            <td colspan="${sumSpan()}" data-col="acct" data-span>Total</td>
-            ${markCols(`<td class="num">${cash(totals.eval_prop)}</td>
+            <td colspan="5">Total</td>
+            <td class="num">${cash(totals.eval_prop)}</td>
             <td class="num">${cash(totals.funded_prop)}</td>
             <td class="num">${money0(rows.reduce((a, c) => a + (Number(roomOf(c)) || 0), 0))}</td>
             <td class="num">${cash(totals.cost)}</td>
@@ -1204,28 +1189,13 @@ async function renderChallenges() {
             <td class="num">${cash(totals.lost_hedging)}</td>
             <td class="num">${cash(totals.cash_pnl)}</td>
             <td class="num">${cash(totals.total_pnl)}</td>
-            <td></td><td></td>`, 6)}
+            <td></td>
           </tr></tfoot>
         </table>
       </div>
     </div>`);
 
   wireEditables(view, saveChallengeField);
-  // Operate / Money: troca o conjunto de colunas com um fade curto, sem reler o banco
-  view.querySelectorAll(".mode button").forEach((b) => {
-    b.onclick = () => {
-      if (b.dataset.m === state.colMode) return;
-      state.colMode = b.dataset.m;
-      const led = document.getElementById("ledger");
-      led.style.opacity = 0;
-      setTimeout(() => {
-        led.className = `lgr ${state.colMode}`;
-        led.querySelectorAll("[data-span]").forEach((td) => { td.colSpan = sumSpan(); });
-        view.querySelectorAll(".mode button").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
-        led.style.opacity = 1;
-      }, 160);
-    };
-  });
   placeBand();
 
   for (const [id, key] of [["f-firm", "firm"], ["f-month", "month"]]) {
