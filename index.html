@@ -719,6 +719,15 @@ input[type=date]::-webkit-calendar-picker-indicator{filter:invert(.6)}
 .row .field{flex:0 1 210px}.row .field.wide{flex:1 1 260px}.row .field.auto{flex:0 0 auto;min-width:0}
 .field label,label.pick-label{font:600 10.5px var(--f);color:var(--fg-2);letter-spacing:.05em;text-transform:uppercase}
 .field input,.field select{width:100%}
+/* caixa de marcar como chave, na altura dos outros campos da fileira */
+.chk{display:flex;align-items:center;gap:10px;height:40px;cursor:pointer;font:500 12px var(--f);color:var(--fg-2);white-space:nowrap;position:relative}
+.chk input{position:absolute;opacity:0;width:0;height:0}
+.chk i{width:40px;height:24px;border-radius:999px;background:rgba(var(--wrgb),.15);position:relative;transition:background .25s;flex:none}
+.chk i::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--ink);transition:transform .3s var(--spring)}
+.chk input:checked+i{background:var(--mint)}.chk input:checked+i::after{transform:translateX(16px)}
+.chk input:focus-visible+i{box-shadow:0 0 0 2px var(--ink)}
+/* nota de apoio numa celula: na mesma linha do numero, nunca uma segunda linha */
+td .sub{display:inline;margin-left:6px;font:500 10.5px var(--f);color:var(--fg-3)}
 .badge{display:inline-flex;align-items:center;gap:6px;border-radius:7px;padding:4px 9px;font:700 10.5px var(--f);letter-spacing:.02em;background:rgba(var(--wrgb),.12);color:var(--fg);white-space:nowrap}
 .badge.funded{background:var(--mint-dim);color:var(--mint)}.badge.passed{background:var(--amber-dim);color:var(--amber)}
 .badge.failed{background:var(--ink);color:var(--acc)}.badge.live{background:var(--cyan-dim);color:var(--cyan)}
@@ -873,6 +882,6 @@ dialog th{background:transparent}
 
 <dialog id="modal"></dialog>
 
-<script type="module" src="./js/app.js?v=5d30430729"></script>
+<script type="module" src="./js/app.js?v=f22a3aebc1"></script>
 </body>
 </html>

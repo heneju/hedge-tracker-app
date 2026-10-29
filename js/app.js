@@ -10,30 +10,30 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=5d30430729";
+} from "./db.js?v=f22a3aebc1";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=5d30430729";
+} from "./util.js?v=f22a3aebc1";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=5d30430729";
-import { cell, locked, wireEditables } from "./editable.js?v=5d30430729";
-import { exportChallenges } from "./export.js?v=5d30430729";
-import { mountPlanPicker } from "./plan-picker.js?v=5d30430729";
-import { nextLiveLot } from "./next-lot.js?v=5d30430729";
-import { filterForFirm } from "./firm-accounts.js?v=5d30430729";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=5d30430729";
+} from "./charts.js?v=f22a3aebc1";
+import { cell, locked, wireEditables } from "./editable.js?v=f22a3aebc1";
+import { exportChallenges } from "./export.js?v=f22a3aebc1";
+import { mountPlanPicker } from "./plan-picker.js?v=f22a3aebc1";
+import { nextLiveLot } from "./next-lot.js?v=f22a3aebc1";
+import { filterForFirm } from "./firm-accounts.js?v=f22a3aebc1";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=f22a3aebc1";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges,
-} from "./machine.js?v=5d30430729";
+} from "./machine.js?v=f22a3aebc1";
 import {
   renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
   initProfile, raf, odo, burst, landOn, blob, deltaChip,
-} from "./skin.js?v=5d30430729";
-import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=5d30430729";
-import { firmMark, logoBg, logoInner } from "./logos.js?v=5d30430729";
+} from "./skin.js?v=f22a3aebc1";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=f22a3aebc1";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=f22a3aebc1";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -2511,10 +2511,7 @@ async function renderConfig() {
           <!-- Do CHALLENGE, não do plano: o add-on é comprado com cada
                avaliação, e o mesmo modelo tem contas com e sem. -->
           <div class="field"><label>Bought with add-on</label>
-            <label class="row" style="gap:6px;align-items:center;margin-top:6px">
-              <input id="onboard-addon" type="checkbox">
-              <span class="muted" style="font-size:11px">uses the add-on cap</span>
-            </label></div>
+            <label class="chk"><input id="onboard-addon" type="checkbox"><i></i><span>uses the add-on cap</span></label></div>
         </div>
 
         <details style="margin-top:12px">
