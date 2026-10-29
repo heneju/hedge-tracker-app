@@ -10,31 +10,31 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=e0c5ceb02b";
+} from "./db.js?v=40ea4aa36b";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=e0c5ceb02b";
+} from "./util.js?v=40ea4aa36b";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=e0c5ceb02b";
-import { cell, locked, wireEditables } from "./editable.js?v=e0c5ceb02b";
-import { exportChallenges } from "./export.js?v=e0c5ceb02b";
-import { mountPlanPicker } from "./plan-picker.js?v=e0c5ceb02b";
-import { nextLiveLot } from "./next-lot.js?v=e0c5ceb02b";
-import { filterForFirm } from "./firm-accounts.js?v=e0c5ceb02b";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=e0c5ceb02b";
+} from "./charts.js?v=40ea4aa36b";
+import { cell, locked, wireEditables } from "./editable.js?v=40ea4aa36b";
+import { exportChallenges } from "./export.js?v=40ea4aa36b";
+import { mountPlanPicker } from "./plan-picker.js?v=40ea4aa36b";
+import { nextLiveLot } from "./next-lot.js?v=40ea4aa36b";
+import { filterForFirm } from "./firm-accounts.js?v=40ea4aa36b";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=40ea4aa36b";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges,
-} from "./machine.js?v=e0c5ceb02b";
+} from "./machine.js?v=40ea4aa36b";
 import { loader,
   renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
   initProfile, raf, odo, burst, landOn, blob, deltaChip,
-} from "./skin.js?v=e0c5ceb02b";
-import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=e0c5ceb02b";
-import { firmMark, logoBg, logoInner } from "./logos.js?v=e0c5ceb02b";
-import { startTour } from "./tour.js?v=e0c5ceb02b";
+} from "./skin.js?v=40ea4aa36b";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=40ea4aa36b";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=40ea4aa36b";
+import { startTour } from "./tour.js?v=40ea4aa36b";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -242,11 +242,16 @@ function parseAccountName(name, pattern) {
   try {
     const m = new RegExp(pattern.replace(/\(\?P</g, "(?<")).exec(name.trim());
     if (!m) return null;
+    const groups = m.groups || {};
     return {
-      funded: Boolean(m.groups?.funded),
+      funded: Boolean(groups.funded),
       // O padrão escreve o tamanho em milhares, como a mesa escreve.
-      size: m.groups?.size ? Number(m.groups.size) * 1000 : null,
-      policy: POLICY_GROUPS.find((nome) => m.groups?.[nome]) || null,
+      size: groups.size ? Number(groups.size) * 1000 : null,
+      policy: POLICY_GROUPS.find((nome) => groups[nome]) || null,
+      // Qualquer outro grupo nomeado que casou é o produto (`firm_plans.product`):
+      // a MyFundedFutures não escreve o tamanho no nome, mas escreve BLDR/REOD.
+      product: Object.keys(groups).find((nome) => groups[nome]
+        && !["size", "funded", ...POLICY_GROUPS].includes(nome)) || null,
     };
   } catch {
     return null;   // Padrão inválido não pode derrubar a tela de pendências.
@@ -293,7 +298,8 @@ function identifySource(source, firms, plans, usage = new Map()) {
     // decide -- quem so opera um tamanho naquela mesa cai no caso de plano
     // unico e resolve do mesmo jeito.
     const candidatos = plans.filter((pl) => pl.firm_id === firm.id
-      && (lido.size == null || Number(pl.account_size) === lido.size));
+      && (lido.size == null || Number(pl.account_size) === lido.size)
+      && (lido.product == null || String(pl.product || "").toLowerCase() === lido.product.toLowerCase()));
 
     let plan = candidatos.find((pl) => pl.is_preferred) || null;
     let why = plan ? "preferred" : "";
