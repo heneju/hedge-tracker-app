@@ -84,8 +84,10 @@ export function placePill() {
   if (!nav || !pill || nav.classList.contains("ntf-on")) return;
   const b = $(".tab[aria-selected=\"true\"]", nav);
   if (!b) { pill.style.width = "0px"; return; }
+  // offsetLeft ja conta o padding da barra; a pilula nasce em left:0, entao
+  // o deslocamento e o proprio offsetLeft (o -4 antigo a jogava 4px pra esquerda).
   pill.style.width = b.offsetWidth + "px";
-  pill.style.transform = `translateX(${b.offsetLeft - 4}px)`;
+  pill.style.transform = `translateX(${b.offsetLeft}px)`;
 }
 
 /**
@@ -106,6 +108,8 @@ export function renderTabs(pages, current, onPick) {
     m.onclick = (e) => { const b = e.target.closest("button"); if (b) onPick(b.dataset.v); };
   }
   requestAnimationFrame(placePill);
+  // A fonte chega depois do primeiro desenho e muda a largura das abas.
+  if (document.fonts?.ready) document.fonts.ready.then(placePill);
 }
 
 /** Contador numa aba (0 tira). */

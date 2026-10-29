@@ -10,30 +10,30 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=f22a3aebc1";
+} from "./db.js?v=b1734aed0d";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=f22a3aebc1";
+} from "./util.js?v=b1734aed0d";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=f22a3aebc1";
-import { cell, locked, wireEditables } from "./editable.js?v=f22a3aebc1";
-import { exportChallenges } from "./export.js?v=f22a3aebc1";
-import { mountPlanPicker } from "./plan-picker.js?v=f22a3aebc1";
-import { nextLiveLot } from "./next-lot.js?v=f22a3aebc1";
-import { filterForFirm } from "./firm-accounts.js?v=f22a3aebc1";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=f22a3aebc1";
+} from "./charts.js?v=b1734aed0d";
+import { cell, locked, wireEditables } from "./editable.js?v=b1734aed0d";
+import { exportChallenges } from "./export.js?v=b1734aed0d";
+import { mountPlanPicker } from "./plan-picker.js?v=b1734aed0d";
+import { nextLiveLot } from "./next-lot.js?v=b1734aed0d";
+import { filterForFirm } from "./firm-accounts.js?v=b1734aed0d";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=b1734aed0d";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges,
-} from "./machine.js?v=f22a3aebc1";
+} from "./machine.js?v=b1734aed0d";
 import {
   renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
   initProfile, raf, odo, burst, landOn, blob, deltaChip,
-} from "./skin.js?v=f22a3aebc1";
-import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=f22a3aebc1";
-import { firmMark, logoBg, logoInner } from "./logos.js?v=f22a3aebc1";
+} from "./skin.js?v=b1734aed0d";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=b1734aed0d";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=b1734aed0d";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");

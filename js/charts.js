@@ -5,7 +5,7 @@
 // `vector-effect="non-scaling-stroke"` mantém a espessura da linha constante
 // mesmo com a escala distorcida, que é o que quebra SVG esticado.
 
-import { money, money0, monthLabel, signClass, esc, CONSISTENCY_SLACK_PCT } from "./util.js?v=f22a3aebc1";
+import { money, money0, monthLabel, signClass, esc, CONSISTENCY_SLACK_PCT } from "./util.js?v=b1734aed0d";
 
 // Cores por token, nunca literais: o painel tem tema claro e escuro, e um hex
 // cravado aqui fica errado em um dos dois. Perda usa o acento da marca -- num
