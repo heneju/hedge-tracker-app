@@ -862,6 +862,25 @@ dialog header .btn{height:36px;padding:0 14px;font-size:12.5px}
 dialog header .spacer{flex:1}
 dialog .panel{background:rgba(var(--wrgb),.05);backdrop-filter:none;-webkit-backdrop-filter:none;margin:14px 0 0;animation:none}
 dialog th{background:transparent}
+/* detalhe do challenge: folha lateral, como no desenho aprovado */
+dialog.side{position:fixed;inset:0 0 0 auto;margin:0;width:min(720px,100vw);max-width:100vw;height:100%;max-height:none;border-radius:28px 0 0 28px;box-shadow:-30px 0 80px rgba(0,0,0,.45);
+  padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px);overflow:auto;overscroll-behavior:contain;backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px)}
+dialog.side[open]{animation:sheetIn .55s var(--ease) both}
+dialog.side.out{animation:sheetOut .23s ease-in both}
+@keyframes sheetIn{from{transform:translateX(104%)}to{transform:none}}
+@keyframes sheetOut{to{transform:translateX(104%)}}
+@keyframes sheetUp{from{transform:translateY(104%)}to{transform:none}}
+@keyframes sheetDown{to{transform:translateY(104%)}}
+dialog.side header{position:sticky;top:0;z-index:3;background:var(--sheet);padding:22px 24px 14px}
+dialog.side header h1{font-size:23px}
+dialog.side .dbody{padding:0 24px 36px}
+dialog.side .dbody > *{animation:mup .5s var(--ease) both}
+dialog.side .dbody > :nth-child(2){animation-delay:.07s}dialog.side .dbody > :nth-child(3){animation-delay:.14s}dialog.side .dbody > :nth-child(4){animation-delay:.21s}dialog.side .dbody > :nth-child(5){animation-delay:.28s}
+dialog.side .cards{grid-template-columns:repeat(3,minmax(0,1fr));margin-top:4px}
+dialog.side .cards > :first-child{grid-column:1/-1;background:#000;--ink:#fff;--fg:#fff;--fg-2:rgba(255,255,255,.62);--fg-3:rgba(255,255,255,.42);--neg:#FF8A95;color:#fff}
+dialog.side .cards > :first-child .value{font-size:40px;line-height:1;letter-spacing:-.03em}
+dialog.side .cards > :first-child .sub{margin-top:6px}
+dialog.side .panel{margin:12px 0 0;padding:16px 18px}
 /* login */
 .login{max-width:380px;margin:12vh auto}
 .login h2{margin:0 0 4px;font:800 22px "Unbounded",var(--f);letter-spacing:-.01em;text-transform:uppercase}
@@ -876,7 +895,7 @@ dialog th{background:transparent}
 .chart .stats b{color:var(--fg);font-weight:700}
 .acc .lotp.off{color:var(--fg-2);font-weight:600;font-size:11px;letter-spacing:.04em}
 .ev .ic b{display:none}
-@media (max-width:899px){dialog{max-width:100vw;max-height:100dvh;border-radius:22px 22px 0 0;margin:auto 0 0}dialog header{padding:16px 16px 10px}dialog header .spacer{display:none}dialog header h1{flex:1 1 100%;font-size:18px}dialog .panel{padding:16px}
+@media (max-width:899px){dialog{max-width:100vw;max-height:100dvh;border-radius:22px 22px 0 0;margin:auto 0 0}dialog.side{inset:auto 0 0 0;width:100%;height:90dvh;border-radius:28px 28px 0 0;box-shadow:0 -30px 80px rgba(0,0,0,.45)}dialog.side[open]{animation-name:sheetUp}dialog.side.out{animation-name:sheetDown}dialog.side header{padding:16px 16px 10px}dialog.side .dbody{padding:0 16px 28px}dialog.side .cards{grid-template-columns:repeat(2,minmax(0,1fr))}dialog header{padding:16px 16px 10px}dialog header .spacer{display:none}dialog header h1{flex:1 1 100%;font-size:18px}dialog .panel{padding:16px}
 .grid-2{grid-template-columns:minmax(0,1fr)}.cards{grid-template-columns:repeat(2,minmax(0,1fr))}.row .field,.row .field.wide{flex:1 1 calc(50% - 6px);min-width:0}.row .field.auto{flex:1 1 100%}.row .field.auto .btn{width:100%}th,td{padding:0 8px}}
 </style>
 </head>
@@ -918,6 +937,6 @@ dialog th{background:transparent}
 
 <dialog id="modal"></dialog>
 
-<script type="module" src="./js/app.js?v=65094e4aff"></script>
+<script type="module" src="./js/app.js?v=72953edbf9"></script>
 </body>
 </html>

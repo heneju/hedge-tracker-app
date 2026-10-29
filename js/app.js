@@ -10,34 +10,48 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=65094e4aff";
+} from "./db.js?v=72953edbf9";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=65094e4aff";
+} from "./util.js?v=72953edbf9";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=65094e4aff";
-import { cell, locked, wireEditables } from "./editable.js?v=65094e4aff";
-import { exportChallenges } from "./export.js?v=65094e4aff";
-import { mountPlanPicker } from "./plan-picker.js?v=65094e4aff";
-import { nextLiveLot } from "./next-lot.js?v=65094e4aff";
-import { filterForFirm } from "./firm-accounts.js?v=65094e4aff";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=65094e4aff";
+} from "./charts.js?v=72953edbf9";
+import { cell, locked, wireEditables } from "./editable.js?v=72953edbf9";
+import { exportChallenges } from "./export.js?v=72953edbf9";
+import { mountPlanPicker } from "./plan-picker.js?v=72953edbf9";
+import { nextLiveLot } from "./next-lot.js?v=72953edbf9";
+import { filterForFirm } from "./firm-accounts.js?v=72953edbf9";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=72953edbf9";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges,
-} from "./machine.js?v=65094e4aff";
+} from "./machine.js?v=72953edbf9";
 import {
   renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
   initProfile, raf, odo, burst, landOn, blob, deltaChip,
-} from "./skin.js?v=65094e4aff";
-import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=65094e4aff";
-import { firmMark, logoBg, logoInner } from "./logos.js?v=65094e4aff";
-import { startTour } from "./tour.js?v=65094e4aff";
+} from "./skin.js?v=72953edbf9";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=72953edbf9";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=72953edbf9";
+import { startTour } from "./tour.js?v=72953edbf9";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
+// O detalhe do challenge e uma folha que entra pela direita (no celular, por
+// baixo); os outros dialogos continuam centrados. A classe vai no proprio
+// <dialog>, entao cada abertura declara a forma que quer.
+function showModal(cls = "") { modal.className = cls; modal.showModal(); }
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+function closeModal() {
+  if (!modal.open) return;
+  if (!modal.classList.contains("side") || reduceMotion) { modal.close(); return; }
+  modal.classList.add("out");
+  setTimeout(() => { modal.classList.remove("out"); modal.close(); }, 230);
+}
+// Esc e clique no fundo fecham a folha com a mesma animacao de saida.
+modal.addEventListener("cancel", (e) => { if (modal.classList.contains("side")) { e.preventDefault(); closeModal(); } });
+modal.addEventListener("click", (e) => { if (e.target === modal && modal.classList.contains("side")) closeModal(); });
 
 const PAGES = [
   { id: "overview",   label: "Overview" },
@@ -1429,7 +1443,7 @@ async function openChallenge(id, journal, firms, progress = []) {
       <button class="btn ghost" id="report-challenge">Report</button>
       <button class="btn ghost" id="close-modal">Close</button>
     </header>
-    <div style="padding:16px;max-height:74vh;overflow:auto">
+    <div class="dbody">
       <div class="cards">
         <div class="card"><div class="label">Total</div>
           <div class="value ${signClass(c.total_pnl)}">${money(c.total_pnl)}</div>
@@ -1511,7 +1525,7 @@ async function openChallenge(id, journal, firms, progress = []) {
         <tbody>${soloRows}</tbody></table></div></div>` : ""}
     </div>`;
 
-  modal.showModal();
+  showModal("side");
   const payoutForm = modal.querySelector("#payout-form");
   const payoutNet = modal.querySelector("#payout-net");
   const payoutGross = modal.querySelector("#payout-gross");
@@ -1575,7 +1589,7 @@ async function openChallenge(id, journal, firms, progress = []) {
       payoutButton.disabled = false;
     }
   };
-  modal.querySelector("#close-modal").onclick = () => modal.close();
+  modal.querySelector("#close-modal").onclick = closeModal;
   modal.querySelector("#edit-challenge").onclick = () => {
     modal.close();
     openChallengeEditor(c, firms);
@@ -1749,7 +1763,7 @@ async function openResetDialog(c, journal, firms) {
     modal.close();
     renderChallenges();
   };
-  modal.showModal();
+  showModal();
 }
 
 async function openChallengeEditor(c, firms) {
@@ -1911,7 +1925,7 @@ async function openChallengeEditor(c, firms) {
       </div>`).join("");
   };
 
-  modal.showModal();
+  showModal();
   renderPhaseFields();
 
   // Uma conta por vez: registrar todas de uma vez traria as antigas junto, e
@@ -3058,7 +3072,7 @@ async function renderConfig() {
       refreshOnboardingAccounts();
     };
     draw();
-    modal.showModal();
+    showModal();
   };
 
   const refreshOnboardingStages = () => {
@@ -3639,7 +3653,7 @@ function openIssueForm(context = {}, afterClose) {
       </div></div>
     </div>`;
 
-  modal.showModal();
+  showModal();
   const done = () => { modal.close(); if (afterClose) afterClose(); };
   modal.querySelector("#close-modal").onclick = done;
 
@@ -4363,7 +4377,7 @@ function openPendingForm(items, plans, accounts, signature) {
                     fresh.items.map((i) => i.key).sort().join(","));
   }
 
-  modal.showModal();
+  showModal();
 }
 
 // -------------------------------------------------------------- calculadora
