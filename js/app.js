@@ -10,31 +10,31 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=b3aa6d57fc";
+} from "./db.js?v=1edf3ef65d";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=b3aa6d57fc";
+} from "./util.js?v=1edf3ef65d";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=b3aa6d57fc";
-import { cell, locked, wireEditables } from "./editable.js?v=b3aa6d57fc";
-import { exportChallenges } from "./export.js?v=b3aa6d57fc";
-import { mountPlanPicker } from "./plan-picker.js?v=b3aa6d57fc";
-import { nextLiveLot } from "./next-lot.js?v=b3aa6d57fc";
-import { filterForFirm } from "./firm-accounts.js?v=b3aa6d57fc";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=b3aa6d57fc";
+} from "./charts.js?v=1edf3ef65d";
+import { cell, locked, wireEditables } from "./editable.js?v=1edf3ef65d";
+import { exportChallenges } from "./export.js?v=1edf3ef65d";
+import { mountPlanPicker } from "./plan-picker.js?v=1edf3ef65d";
+import { nextLiveLot } from "./next-lot.js?v=1edf3ef65d";
+import { filterForFirm } from "./firm-accounts.js?v=1edf3ef65d";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=1edf3ef65d";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges,
-} from "./machine.js?v=b3aa6d57fc";
+} from "./machine.js?v=1edf3ef65d";
 import { loader,
   renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
   initProfile, raf, odo, burst, landOn, blob, deltaChip,
-} from "./skin.js?v=b3aa6d57fc";
-import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=b3aa6d57fc";
-import { firmMark, logoBg, logoInner } from "./logos.js?v=b3aa6d57fc";
-import { startTour } from "./tour.js?v=b3aa6d57fc";
+} from "./skin.js?v=1edf3ef65d";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=1edf3ef65d";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=1edf3ef65d";
+import { startTour } from "./tour.js?v=1edf3ef65d";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");

@@ -8,8 +8,8 @@
 // veio. Para as linhas importadas da planilha não há trade nenhuma, então
 // aquele mesmo campo volta a ser editável.
 
-import { esc } from "./util.js?v=b3aa6d57fc";
-import { loader } from "./skin.js?v=b3aa6d57fc";
+import { esc } from "./util.js?v=1edf3ef65d";
+import { loader } from "./skin.js?v=1edf3ef65d";
 
 /**
  * Marca uma célula como editável. O HTML fica com os dados no dataset e o
