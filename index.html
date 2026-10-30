@@ -736,6 +736,14 @@ html.tour-lock{overflow:hidden}
 html,body{overflow-x:clip}
 main#view{position:relative;min-height:40vh}
 .panel{background:var(--card);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-radius:28px;padding:20px 24px;margin:14px 0 0;animation:mat .7s var(--ease) both;min-width:0}
+/* conta cadastrada pelo coletor esperando o custo */
+.costq h2 .dim{font-weight:500}
+.costq .cqrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 0;border-top:1px solid rgba(var(--wrgb),.08)}
+.costq .cqrow:first-of-type{border-top:0}
+.costq .cqacct{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
+.costq .cqacct b{font:700 13px var(--f);overflow-wrap:anywhere}
+.costq .cqacct .muted{font-size:11.5px}
+.costq .cqrow .inp{width:130px;text-align:right}
 .panel > h2{margin:0 0 12px;font:700 15px var(--f);letter-spacing:-.01em;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
 .panel > h2 .dim{font:500 11.5px var(--f);color:var(--fg-2)}
 .panel-body{padding:0}
@@ -969,6 +977,6 @@ dialog.side .panel{margin:12px 0 0;padding:16px 18px}
 
 <dialog id="modal"></dialog>
 
-<script type="module" src="./js/app.js?v=1edf3ef65d"></script>
+<script type="module" src="./js/app.js?v=4e5caae62e"></script>
 </body>
 </html>

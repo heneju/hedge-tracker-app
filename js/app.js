@@ -10,31 +10,31 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=1edf3ef65d";
+} from "./db.js?v=4e5caae62e";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=1edf3ef65d";
+} from "./util.js?v=4e5caae62e";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=1edf3ef65d";
-import { cell, locked, wireEditables } from "./editable.js?v=1edf3ef65d";
-import { exportChallenges } from "./export.js?v=1edf3ef65d";
-import { mountPlanPicker } from "./plan-picker.js?v=1edf3ef65d";
-import { nextLiveLot } from "./next-lot.js?v=1edf3ef65d";
-import { filterForFirm } from "./firm-accounts.js?v=1edf3ef65d";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=1edf3ef65d";
+} from "./charts.js?v=4e5caae62e";
+import { cell, locked, wireEditables } from "./editable.js?v=4e5caae62e";
+import { exportChallenges } from "./export.js?v=4e5caae62e";
+import { mountPlanPicker } from "./plan-picker.js?v=4e5caae62e";
+import { nextLiveLot } from "./next-lot.js?v=4e5caae62e";
+import { filterForFirm } from "./firm-accounts.js?v=4e5caae62e";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=4e5caae62e";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges,
-} from "./machine.js?v=1edf3ef65d";
+} from "./machine.js?v=4e5caae62e";
 import { loader,
   renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
   initProfile, raf, odo, burst, landOn, blob, deltaChip,
-} from "./skin.js?v=1edf3ef65d";
-import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=1edf3ef65d";
-import { firmMark, logoBg, logoInner } from "./logos.js?v=1edf3ef65d";
-import { startTour } from "./tour.js?v=1edf3ef65d";
+} from "./skin.js?v=4e5caae62e";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=4e5caae62e";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=4e5caae62e";
+import { startTour } from "./tour.js?v=4e5caae62e";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -944,9 +944,10 @@ async function renderOverview() {
 async function renderChallenges() {
   // As contas só são lidas quando há filtro: elas servem só para dizer de que
   // máquina é cada challenge, e sem filtro isso não muda nada na tela.
-  const [todos, firms, progressoTodo, contas, sessao] = await Promise.all([
+  const [todos, firms, progressoTodo, contas, sessao, semCusto] = await Promise.all([
     load.journal(), load.firms(), load.progress(),
-    state.machine ? load.accounts() : [], load.tradedToday()]);
+    state.machine ? load.accounts() : [], load.tradedToday(),
+    load.costPending().catch(() => [])]);
   const progress = keepByAccount(progressoTodo, contas, state.machine);
   const journal = keepChallenges(todos, progressoTodo, contas, state.machine);
   for (const challenge of journal) {
@@ -1160,6 +1161,24 @@ async function renderChallenges() {
         <button class="btn" id="new-challenge">New challenge</button>
       </span>
     </div>
+    ${semCusto.length ? `
+    <div class="panel costq">
+      <h2>What did you pay? <span class="dim">registered by the account name — type the cost
+        and it leaves this list</span></h2>
+      ${semCusto.map((p) => {
+        const conta = p.challenge_phases?.[0]?.accounts?.login_or_name || `#${p.id}`;
+        const plano = p.firm_plans || {};
+        return `<div class="cqrow" data-cost-pending="${p.id}">
+          ${firmMark(p.prop_firms?.name)}
+          <span class="cqacct"><b>${esc(conta)}</b><span class="muted">${esc(plano.name || "")}${
+            plano.account_size ? ` · ${money0(plano.account_size)}` : ""} · opened ${day(p.date_open)}</span></span>
+          <input class="inp" type="number" min="0" step="0.01" inputmode="decimal"
+                 placeholder="${plano.price ? Number(plano.price).toFixed(2) : "0.00"}"
+                 aria-label="What you paid for ${esc(conta)}">
+          <button class="btn" type="button">Save</button>
+        </div>`;
+      }).join("")}
+    </div>` : ""}
     <div class="lhd"><span class="s count n">${rows.length} of ${journal.length} challenges</span></div>
 
     <div class="lgr" id="ledger">
@@ -1203,6 +1222,41 @@ async function renderChallenges() {
 
   wireEditables(view, saveChallengeField);
   placeBand();
+
+  // Custo da conta cadastrada pelo coletor. O lançamento vem antes da baixa da
+  // pendência: se a segunda escrita falhar, a linha continua aqui e o valor já
+  // gravado aparece no ledger -- melhor que a pergunta sumir sem custo nenhum.
+  view.querySelectorAll("[data-cost-pending]").forEach((linha) => {
+    const id = Number(linha.dataset.costPending);
+    const campo = linha.querySelector("input");
+    const botao = linha.querySelector("button");
+    const gravar = async () => {
+      const valor = Number(campo.value);
+      if (!campo.value.trim() || !Number.isFinite(valor) || valor <= 0) {
+        campo.focus();
+        return toast("Type what you paid for this account");
+      }
+      const pendente = semCusto.find((p) => p.id === id);
+      botao.disabled = true;
+      try {
+        await guard(async () => {
+          await save.createCashEvent({
+            challenge_id: id,
+            kind: "cost",
+            amount: signedCash("cost", valor),
+            occurred_on: pendente?.date_open || new Date().toISOString().slice(0, 10),
+            source: "manual",
+          });
+          await save.challenge(id, { cost_pending: false });
+        }, "Cost saved");
+        renderChallenges();
+      } catch {
+        botao.disabled = false;
+      }
+    };
+    botao.onclick = gravar;
+    campo.onkeydown = (e) => { if (e.key === "Enter") gravar(); };
+  });
 
   for (const [id, key] of [["f-firm", "firm"], ["f-month", "month"]]) {
     document.getElementById(id).onchange = (e) => {
