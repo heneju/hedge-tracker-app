@@ -10,31 +10,31 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=4e5caae62e";
+} from "./db.js?v=dec643c419";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=4e5caae62e";
+} from "./util.js?v=dec643c419";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=4e5caae62e";
-import { cell, locked, wireEditables } from "./editable.js?v=4e5caae62e";
-import { exportChallenges } from "./export.js?v=4e5caae62e";
-import { mountPlanPicker } from "./plan-picker.js?v=4e5caae62e";
-import { nextLiveLot } from "./next-lot.js?v=4e5caae62e";
-import { filterForFirm } from "./firm-accounts.js?v=4e5caae62e";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=4e5caae62e";
+} from "./charts.js?v=dec643c419";
+import { cell, locked, wireEditables } from "./editable.js?v=dec643c419";
+import { exportChallenges } from "./export.js?v=dec643c419";
+import { mountPlanPicker } from "./plan-picker.js?v=dec643c419";
+import { nextLiveLot } from "./next-lot.js?v=dec643c419";
+import { filterForFirm } from "./firm-accounts.js?v=dec643c419";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=dec643c419";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges,
-} from "./machine.js?v=4e5caae62e";
+} from "./machine.js?v=dec643c419";
 import { loader,
   renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
   initProfile, raf, odo, burst, landOn, blob, deltaChip,
-} from "./skin.js?v=4e5caae62e";
-import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=4e5caae62e";
-import { firmMark, logoBg, logoInner } from "./logos.js?v=4e5caae62e";
-import { startTour } from "./tour.js?v=4e5caae62e";
+} from "./skin.js?v=dec643c419";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=dec643c419";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=dec643c419";
+import { startTour } from "./tour.js?v=dec643c419";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -1065,8 +1065,8 @@ async function renderChallenges() {
     : cell(value, { id: c.id, field, type: "number", align: true,
                     format: () => cash(value) });
 
-  // Operada hoje leva a faixa verde (today-row), na mesma pegada da ambar da
-  // aprovada; o ponto verde das outras tabelas nao cabe aqui.
+  // Operada hoje (today-row) leva a barra verde do tracker antigo na celula da
+  // conta; o ponto verde das outras tabelas nao cabe aqui.
   const rowHtml = (c, { failedRow = false, hidden = false } = {}) => `
     <tr class="clickable${failedRow ? " failed-row" : ""}${
       operadosHoje.has(c.id) ? " today-row" : ""}${
