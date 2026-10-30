@@ -5,7 +5,7 @@
 // fica so no coletor, no PC.
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { CONFIG } from "./config.js?v=f64f3298f8";
+import { CONFIG } from "./config.js?v=5550644b7d";
 
 export const supabase = createClient(CONFIG.url, CONFIG.anonKey);
 
@@ -87,13 +87,15 @@ export const load = {
   // banco de propósito: ele vira às 17:00 de Nova York, então a trade da noite
   // já conta para o dia seguinte -- refazer esse cálculo no navegador erraria
   // toda vez que o horário de verão americano virasse.
-  // Challenges que o coletor cadastrou pelo nome da conta e que ainda esperam
-  // o dono dizer quanto pagou. Saem desta lista quando o custo é gravado.
+  // Challenges que o coletor cadastrou pelo nome da conta, ou cuja funded foi
+  // ativada num plano com taxa de ativação, e que ainda esperam o dono dizer
+  // quanto pagou. Saem desta lista quando o custo é gravado.
   costPending: () =>
     supabase.from("challenges")
-      .select("id, date_open, prop_firms(name), firm_plans(name, account_size, price), "
+      .select("id, date_open, cost_pending, activation_cost_due, prop_firms(name), "
+        + "firm_plans(name, account_size, price, activation_fee), "
         + "challenge_phases(phase, accounts(login_or_name))")
-      .eq("cost_pending", true).order("id").then(unwrap),
+      .or("cost_pending.eq.true,activation_cost_due.not.is.null").order("id").then(unwrap),
 
   tradedToday: () =>
     supabase.from("account_today")

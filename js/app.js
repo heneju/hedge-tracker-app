@@ -10,31 +10,31 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=f64f3298f8";
+} from "./db.js?v=5550644b7d";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=f64f3298f8";
+} from "./util.js?v=5550644b7d";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=f64f3298f8";
-import { cell, locked, wireEditables } from "./editable.js?v=f64f3298f8";
-import { exportChallenges } from "./export.js?v=f64f3298f8";
-import { mountPlanPicker } from "./plan-picker.js?v=f64f3298f8";
-import { nextLiveLot } from "./next-lot.js?v=f64f3298f8";
-import { filterForFirm } from "./firm-accounts.js?v=f64f3298f8";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=f64f3298f8";
+} from "./charts.js?v=5550644b7d";
+import { cell, locked, wireEditables } from "./editable.js?v=5550644b7d";
+import { exportChallenges } from "./export.js?v=5550644b7d";
+import { mountPlanPicker } from "./plan-picker.js?v=5550644b7d";
+import { nextLiveLot } from "./next-lot.js?v=5550644b7d";
+import { filterForFirm } from "./firm-accounts.js?v=5550644b7d";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=5550644b7d";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges,
-} from "./machine.js?v=f64f3298f8";
+} from "./machine.js?v=5550644b7d";
 import { loader,
   renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
   initProfile, raf, odo, burst, landOn, blob, deltaChip,
-} from "./skin.js?v=f64f3298f8";
-import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=f64f3298f8";
-import { firmMark, logoBg, logoInner } from "./logos.js?v=f64f3298f8";
-import { startTour } from "./tour.js?v=f64f3298f8";
+} from "./skin.js?v=5550644b7d";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=5550644b7d";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=5550644b7d";
+import { startTour } from "./tour.js?v=5550644b7d";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -948,6 +948,12 @@ async function renderChallenges() {
     load.journal(), load.firms(), load.progress(),
     state.machine ? load.accounts() : [], load.tradedToday(),
     load.costPending().catch(() => [])]);
+  // Uma linha por pergunta: o mesmo challenge pode dever o custo da avaliacao
+  // e o da ativacao da funded.
+  const pendencias = semCusto.flatMap((p) => [
+    ...(p.cost_pending ? [{ p, kind: "cost" }] : []),
+    ...(p.activation_cost_due ? [{ p, kind: "activation" }] : []),
+  ]);
   const progress = keepByAccount(progressoTodo, contas, state.machine);
   const journal = keepChallenges(todos, progressoTodo, contas, state.machine);
   for (const challenge of journal) {
@@ -1161,20 +1167,30 @@ async function renderChallenges() {
         <button class="btn" id="new-challenge">New challenge</button>
       </span>
     </div>
-    ${semCusto.length ? `
+    ${pendencias.length ? `
     <div class="panel costq">
-      <h2>What did you pay? <span class="dim">registered by the account name — type the cost
-        and it leaves this list</span></h2>
-      ${semCusto.map((p) => {
-        const conta = p.challenge_phases?.[0]?.accounts?.login_or_name || `#${p.id}`;
+      <h2>What did you pay? <span class="dim">the collector filled these in on its own — confirm
+        the cost and it leaves this list</span></h2>
+      ${pendencias.map(({ p, kind }) => {
         const plano = p.firm_plans || {};
-        return `<div class="cqrow" data-cost-pending="${p.id}">
+        const fases = p.challenge_phases || [];
+        const fase = kind === "activation"
+          ? fases.find((f) => f.phase === "FUNDED")
+          : fases.find((f) => f.phase !== "FUNDED") || fases[0];
+        const conta = fase?.accounts?.login_or_name || `#${p.id}`;
+        // A ativacao ja vem com o valor do plano: a pergunta e "foi isso
+        // mesmo?", e quase sempre a resposta e so o Enter.
+        const sugerido = kind === "activation" ? plano.activation_fee : plano.price;
+        return `<div class="cqrow" data-cost-pending="${p.id}" data-kind="${kind}">
           ${firmMark(p.prop_firms?.name)}
           <span class="cqacct"><b>${esc(conta)}</b><span class="muted">${esc(plano.name || "")}${
-            plano.account_size ? ` · ${money0(plano.account_size)}` : ""} · opened ${day(p.date_open)}</span></span>
+            plano.account_size ? ` · ${money0(plano.account_size)}` : ""}${kind === "activation"
+              ? ` · activation · funded ${day(p.activation_cost_due)}`
+              : ` · opened ${day(p.date_open)}`}</span></span>
           <input class="inp" type="number" min="0" step="0.01" inputmode="decimal"
-                 placeholder="${plano.price ? Number(plano.price).toFixed(2) : "0.00"}"
-                 aria-label="What you paid for ${esc(conta)}">
+                 placeholder="${sugerido ? Number(sugerido).toFixed(2) : "0.00"}"${
+                 kind === "activation" && sugerido ? ` value="${Number(sugerido).toFixed(2)}"` : ""}
+                 aria-label="What you paid ${kind === "activation" ? "to activate" : "for"} ${esc(conta)}">
           <button class="btn" type="button">Save</button>
         </div>`;
       }).join("")}
@@ -1228,6 +1244,7 @@ async function renderChallenges() {
   // gravado aparece no ledger -- melhor que a pergunta sumir sem custo nenhum.
   view.querySelectorAll("[data-cost-pending]").forEach((linha) => {
     const id = Number(linha.dataset.costPending);
+    const ativacao = linha.dataset.kind === "activation";
     const campo = linha.querySelector("input");
     const botao = linha.querySelector("button");
     const gravar = async () => {
@@ -1244,11 +1261,12 @@ async function renderChallenges() {
             challenge_id: id,
             kind: "cost",
             amount: signedCash("cost", valor),
-            occurred_on: pendente?.date_open || new Date().toISOString().slice(0, 10),
+            occurred_on: (ativacao ? pendente?.activation_cost_due : pendente?.date_open)
+              || new Date().toISOString().slice(0, 10),
             source: "manual",
           });
-          await save.challenge(id, { cost_pending: false });
-        }, "Cost saved");
+          await save.challenge(id, ativacao ? { activation_cost_due: null } : { cost_pending: false });
+        }, ativacao ? "Activation saved" : "Cost saved");
         renderChallenges();
       } catch {
         botao.disabled = false;
@@ -2353,6 +2371,11 @@ async function renderConfig() {
       ${cell(pl.profit_split, { id: pl.id, field: "plan:profit_split", type: "number", align: true,
         format: () => (pl.profit_split == null
           ? `<span class="dim">—</span>` : `${num(pl.profit_split, 0)}%`) })}
+      ${cell(pl.activation_fee, { id: pl.id, field: "plan:activation_fee", type: "number", align: true,
+        title: "what the firm charges to activate the funded account after passing. "
+             + "Filled in, every activation asks what you paid, starting from this value.",
+        format: () => (pl.activation_fee == null
+          ? `<span class="dim">—</span>` : money0(pl.activation_fee)) })}
       ${cell(pl.buffer_multiplier, { id: pl.id, field: "plan:buffer_multiplier", type: "number", align: true,
         title: "added to the hedge multiplier (futures)",
         format: () => (Number(pl.buffer_multiplier)
@@ -2664,9 +2687,10 @@ async function renderConfig() {
           <th class="num">Min days</th><th class="num">Consist.</th>
           <th class="num" title="cap with the add-on bought">Add-on</th>
           <th class="num">Split</th>
+          <th class="num" title="fee to activate the funded account">Activation</th>
           <th class="num">Buffer &times;</th><th class="num">Buffer $</th>
           <th>Notes</th><th></th></tr></thead>
-        <tbody>${planRows || `<tr><td colspan="18">${empty("no plans — add one below")}</td></tr>`}</tbody>
+        <tbody>${planRows || `<tr><td colspan="19">${empty("no plans — add one below")}</td></tr>`}</tbody>
       </table></div>
       <div class="panel-body row">
         <div class="field"><label>Firm</label><select id="plan-firm">${
@@ -4154,9 +4178,17 @@ async function activateFunded(challengeId, choice, payoutPolicyId = null) {
     account_id: accountId,
     outcome: "active",
   });
+  // Plano com taxa de ativação (Top One) deixa a pergunta do custo dela no
+  // bloco "What did you pay?" da aba Challenges, como faz o coletor.
+  const [journal, plans] = await Promise.all([load.journal(), load.plans()]);
+  const planId = journal.find((c) => c.id === challengeId)?.plan_id;
+  const taxa = plans.find((p) => p.id === planId)?.activation_fee;
   // O status por último: se a criação da fase falhar, o challenge continua em
   // `passed` e a pergunta volta no ciclo seguinte em vez de sumir pela metade.
-  await save.challenge(challengeId, { status: "funded" });
+  await save.challenge(challengeId, {
+    status: "funded",
+    ...(taxa ? { activation_cost_due: new Date().toISOString().slice(0, 10) } : {}),
+  });
 }
 
 function openPendingForm(items, plans, accounts, signature) {
