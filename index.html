@@ -368,8 +368,16 @@ svg.goo{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-inde
 /* no box: hairlines straight on the ground, two column sets */
 .lgr .wrap{overflow-x:auto}
 /* so quando as 11 colunas cabem a tabela fica aberta (a faixa ambar sai dela); antes disso ela rola de lado */
-@media (min-width:1580px){.lgr .wrap{overflow:visible}}
 .lgr table{border-collapse:collapse;width:100%;min-width:900px}
+/* a tabela de 17 colunas passa dos 1560px do .app; presa na borda esquerda dele
+   ela vazava toda para a direita. Em tela larga a caixa dela ocupa a tela inteira
+   (--vw vem de placeBand) e a tabela centra nela, sem ficar mais estreita que o
+   .app. Se nem assim couber, rola de lado; o corte cai na borda da tela, onde a
+   faixa ambar ja termina */
+@media (min-width:1580px){
+  .lgr .wrap{width:var(--vw,100vw);margin-left:calc(50% - var(--vw,100vw) / 2);padding-inline:16px;box-sizing:border-box}
+  .lgr table{width:max-content;min-width:min(1560px,100%);margin-inline:auto}
+}
 .lgr th{text-align:left;font:600 10px var(--f);letter-spacing:.06em;text-transform:uppercase;color:var(--fg-3);padding:0 8px 10px;border-bottom:1px solid rgba(var(--wrgb),.18);white-space:nowrap;cursor:pointer;user-select:none;transition:color .2s}
 .lgr th:hover,.lgr th[aria-sort]{color:var(--ink)}
 .lgr th[aria-sort]::after{content:" ↓";color:var(--amber)}.lgr th[aria-sort="ascending"]::after{content:" ↑"}
@@ -973,6 +981,6 @@ dialog.side .panel{margin:12px 0 0;padding:16px 18px}
 
 <dialog id="modal"></dialog>
 
-<script type="module" src="./js/app.js?v=dec643c419"></script>
+<script type="module" src="./js/app.js?v=f64f3298f8"></script>
 </body>
 </html>
