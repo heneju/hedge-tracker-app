@@ -5,7 +5,7 @@
 // fica so no coletor, no PC.
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { CONFIG } from "./config.js?v=1cd765a839";
+import { CONFIG } from "./config.js?v=8edcf8e179";
 
 export const supabase = createClient(CONFIG.url, CONFIG.anonKey);
 
@@ -78,7 +78,7 @@ export const load = {
   settings: () =>
     supabase.from("operation_settings")
       .select("seed_capital, borrowed_capital, working_cash, theme, avatar_data, tour_seen_at, "
-        + "goal_profit, goal_since, goal_payouts_week, evals_per_free_slot").maybeSingle()
+        + "goal_profit, goal_since, goal_payouts_week, evals_per_free_slot, max_committed_pct").maybeSingle()
       .then(({ data, error }) => {
         if (error) throw new Error(error.message);
         return data ?? { seed_capital: 0, borrowed_capital: 0, working_cash: 0, theme: null,

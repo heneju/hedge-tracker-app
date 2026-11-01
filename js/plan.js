@@ -190,14 +190,48 @@ export function buildPlan({ journal, progress, accounts, firms, plans, policies,
     const preco = n(plano?.price);
     // Promoção "compra uma, leva outra" (Top One): o preço do plano paga duas.
     const bogo = /\bBOGO\b/i.test(plano?.notes || "");
-    const compras = bogo ? Math.ceil(quantas / 2) : quantas;
     buys.push({
-      key: `buy:${firmId}`, firm: firma.name, firmId, n: quantas, plan: plano?.name || "",
-      price: preco, bogo, cost: preco == null ? null : preco * compras,
-      why: `${vagas} funded slot${vagas === 1 ? "" : "s"} free · ${m.evals} eval${m.evals === 1 ? "" : "s"} running`
-        + (bogo ? ` · BOGO: ${compras} purchase${compras === 1 ? "" : "s"}` : ""),
+      key: `buy:${firmId}`, firm: firma.name, firmId, wanted: quantas, plan: plano?.name || "",
+      price: preco, bogo, slots: vagas, running: m.evals,
     });
   }
+
+  // ------------------------------------------------------------ caixa
+  // Quem limita a compra é o caixa, não a vaga: com 4 Tradeify rodando o Plan
+  // pedia 6, e o hedge de tudo até os saques (~8,6k) passava do caixa inteiro.
+  // Caixa = o "Yours" da Overview: aporte + resultado em dinheiro, sem o
+  // emprestado. Comprometido = o hedge que ainda sai até o saque de tudo que
+  // roda, se tudo bater -- é nesse caso que o dinheiro precisa estar lá, antes
+  // de os saques voltarem.
+  const caixa = (Number(settings.seed_capital) || 0)
+    + journal.reduce((s, c) => s + Number(c.cash_pnl || 0), 0);
+  const pct = Number(settings.max_committed_pct) || 60;
+  const limite = Math.max(caixa, 0) * pct / 100;
+  const comprometido = trades.reduce((s, t) => s + (t.costToPayout || 0), 0);
+  // Uma avaliação nova compromete o que as da mesma mesa já comprometem até o
+  // 1º saque; mesa sem nenhuma rodando usa a mais cara das outras.
+  const avals = trades.filter((t) => t.stage === "eval" && t.costToPayout != null);
+  const maior = (xs) => (xs.length ? Math.max(...xs.map((t) => t.costToPayout)) : null);
+  const qualquer = maior(avals) ?? 1500;
+  let sobra = limite - comprometido;
+  for (const b of buys) {
+    b.hedgeEach = Math.round(maior(avals.filter((t) => t.firm === b.firm)) ?? qualquer);
+    const passo = b.bogo ? 2 : 1;
+    const cabem = sobra > 0 ? Math.floor(sobra / (b.hedgeEach * passo)) * passo : 0;
+    b.n = Math.min(b.wanted, cabem);
+    sobra -= b.n * b.hedgeEach;
+    const compras = b.bogo ? Math.ceil(b.n / 2) : b.n;
+    b.cost = b.price == null ? null : b.price * compras;
+    b.why = `${b.slots} funded slot${b.slots === 1 ? "" : "s"} free · ${b.running} eval${b.running === 1 ? "" : "s"} running`
+      + ` · ~$${b.hedgeEach.toLocaleString("en-US")} of hedge each to the 1st payout`
+      + (b.bogo && compras ? ` · BOGO: ${compras} purchase${compras === 1 ? "" : "s"}` : "");
+  }
+  const cashGuard = {
+    cash: Math.round(caixa), pct, limit: Math.round(limite), committed: Math.round(comprometido),
+    free: Math.round(limite - comprometido),
+    held: buys.reduce((s, b) => s + (b.wanted - b.n), 0),
+    cheapest: buys.length ? Math.min(...buys.map((b) => b.hedgeEach)) : null,
+  };
 
   // ------------------------------------------------------------ deposit
   const pendentes = trades.filter((t) => !t.done);
@@ -236,6 +270,6 @@ export function buildPlan({ journal, progress, accounts, firms, plans, policies,
       expectedThis: forecast.filter((f) => f.day <= semana.end).length,
       expectedNext: forecast.filter((f) => f.day >= proxima.start && f.day <= proxima.end).length,
     },
-    trades, payouts, decisions, buys, deposit, forecast,
+    trades, payouts, decisions, buys: buys.filter((b) => b.n > 0), cashGuard, deposit, forecast,
   };
 }

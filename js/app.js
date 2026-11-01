@@ -10,32 +10,32 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=1cd765a839";
+} from "./db.js?v=8edcf8e179";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=1cd765a839";
+} from "./util.js?v=8edcf8e179";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=1cd765a839";
-import { cell, locked, wireEditables } from "./editable.js?v=1cd765a839";
-import { exportChallenges } from "./export.js?v=1cd765a839";
-import { mountPlanPicker } from "./plan-picker.js?v=1cd765a839";
-import { nextLiveLot } from "./next-lot.js?v=1cd765a839";
-import { buildPlan, sessionDay, weekOf } from "./plan.js?v=1cd765a839";
-import { filterForFirm } from "./firm-accounts.js?v=1cd765a839";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=1cd765a839";
+} from "./charts.js?v=8edcf8e179";
+import { cell, locked, wireEditables } from "./editable.js?v=8edcf8e179";
+import { exportChallenges } from "./export.js?v=8edcf8e179";
+import { mountPlanPicker } from "./plan-picker.js?v=8edcf8e179";
+import { nextLiveLot } from "./next-lot.js?v=8edcf8e179";
+import { buildPlan, sessionDay, weekOf } from "./plan.js?v=8edcf8e179";
+import { filterForFirm } from "./firm-accounts.js?v=8edcf8e179";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=8edcf8e179";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges, collectorAlerts,
-} from "./machine.js?v=1cd765a839";
+} from "./machine.js?v=8edcf8e179";
 import { loader,
   renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
   initProfile, raf, odo, burst, landOn, blob, deltaChip,
-} from "./skin.js?v=1cd765a839";
-import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=1cd765a839";
-import { firmMark, logoBg, logoInner } from "./logos.js?v=1cd765a839";
-import { startTour } from "./tour.js?v=1cd765a839";
+} from "./skin.js?v=8edcf8e179";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=8edcf8e179";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=8edcf8e179";
+import { startTour } from "./tour.js?v=8edcf8e179";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -4579,15 +4579,25 @@ async function renderPlan() {
 
   // --------------------------------------------------------- passo 4
   const totalCompra = plan.buys.reduce((s, b) => s + (b.cost || 0), 0);
-  const passo4 = plan.buys.length ? plan.buys.map((b) => `
+  const cg = plan.cashGuard;
+  // A compra que o caixa segura: o Plan diz quanto falta liberar em vez de
+  // sugerir comprometer mais do que o teto que o dono escolheu.
+  const espera = !cg.held ? ""
+    : cg.free <= 0
+      ? `Wait — the hedge already committed to the payouts is ${money0(cg.committed)}, ${
+          money0(-cg.free)} over your ${num(cg.pct, 0)}% line (${money0(cg.limit)} of ${money0(cg.cash)}).`
+        + " It frees up as payouts land and evaluations end."
+      : `${cg.held} more wait for cash — ${money0(cg.free)} left under your ${num(cg.pct, 0)}% line, an evaluation`
+        + ` commits ~${money0(cg.cheapest)} of hedge to its 1st payout.`;
+  const passo4 = (plan.buys.map((b) => `
     <div class="ptask">
       <span class="pck" aria-hidden="true"></span>
       ${logo(b.firm)}
       <span class="ptx"><b>${esc(b.firm)}${b.plan ? ` ${esc(b.plan)}` : ""} × ${b.n}</b>
         <span class="muted">${esc(b.why)}${b.price != null ? ` · ~${money0(b.price)} each` : ""}</span></span>
       <span class="ptgt n">${b.cost != null ? money0(b.cost) : "—"}</span>
-    </div>`).join("")
-    : `<div class="pquiet">Every funded slot is covered — nothing to buy.</div>`;
+    </div>`).join("") + (espera ? `<div class="pquiet">${esc(espera)}</div>` : ""))
+    || `<div class="pquiet">Every funded slot is covered — nothing to buy.</div>`;
 
   render(`
     <div class="tool">
@@ -4613,15 +4623,18 @@ async function renderPlan() {
     <div class="panel pstepbox">${stepHead(1, "Before trading", "the hedge account must cover everything today can cost")}${passo1}</div>
     <div class="panel pstepbox">${stepHead(2, "Trade", "target goes in NinjaTrader · multiplier goes in the Copyator · a row ticks itself when the account trades")}${passo2}</div>
     <div class="panel pstepbox">${stepHead(3, "Request payouts", "as soon as a cycle closes · mark it when you ask the firm")}${passo3}${passo3b}</div>
-    <div class="panel pstepbox">${stepHead(4, "Buy", `to fill the free funded slots · ${porVaga} evaluations per slot${
+    <div class="panel pstepbox">${stepHead(4, "Buy", `to fill the free funded slots · ${money0(cg.committed)} of ${
+      money0(cg.limit)} committed (${num(cg.pct, 0)}% of ${money0(cg.cash)})${
       totalCompra ? ` · ~${money0(totalCompra)} today` : ""}`)}${passo4}</div>
     <details class="padjust">
-      <summary><span>Goal ${money0(g.target)} · ${w.goal} payouts a week · ${porVaga} evaluations per free slot</span><b>Adjust ›</b></summary>
+      <summary><span>Goal ${money0(g.target)} · ${w.goal} payouts a week · ${porVaga} evaluations per free slot · ${
+        num(cg.pct, 0)}% of cash max committed</span><b>Adjust ›</b></summary>
       <div class="pset">
         <label>Goal <input class="inp n" id="pg-goal" type="number" min="0" step="100" value="${g.target}"></label>
         <label>Since <input class="inp n" id="pg-since" type="date" value="${esc(g.since || "")}"></label>
         <label>Payouts a week <input class="inp n" id="pg-week" type="number" min="1" step="1" value="${w.goal}"></label>
         <label>Evaluations per free slot <input class="inp n" id="pg-slot" type="number" min="1" step="1" value="${porVaga}"></label>
+        <label>Max committed, % of cash <input class="inp n" id="pg-cap" type="number" min="5" max="100" step="5" value="${num(cg.pct, 0)}"></label>
         <span class="muted">Rules by firm — farm day, burn after N payouts, max funded — live in Setup → Firms.</span>
       </div>
     </details>`);
@@ -4655,6 +4668,7 @@ async function renderPlan() {
   salvar("pg-since", "goal_since", (v) => v || null);
   salvar("pg-week", "goal_payouts_week", (v) => Math.max(1, Number(v) || 2));
   salvar("pg-slot", "evals_per_free_slot", (v) => Math.max(1, Number(v) || 3));
+  salvar("pg-cap", "max_committed_pct", (v) => Math.min(100, Math.max(5, Number(v) || 60)));
 }
 
 function addDays(iso, n) {
