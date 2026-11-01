@@ -5,7 +5,7 @@
 // fica so no coletor, no PC.
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { CONFIG } from "./config.js?v=654eae0d48";
+import { CONFIG } from "./config.js?v=1cd765a839";
 
 export const supabase = createClient(CONFIG.url, CONFIG.anonKey);
 
@@ -254,6 +254,15 @@ export function manualPatch(row, patch) {
   return { ...patch, manual_cols: [...marked] };
 }
 
+// Custo gravado por qualquer caminho responde o "What did you pay?". So o
+// quadro desligava a pergunta: quem informava o custo no modal do challenge,
+// na celula ou no Pending do Setup via a mesma conta perguntada de novo.
+async function costAnswered(challengeId, kind, amount) {
+  if (kind !== "cost" || !challengeId || !Number(amount)) return;
+  await supabase.from("challenges").update({ cost_pending: false })
+    .eq("id", challengeId).eq("cost_pending", true).then(unwrap);
+}
+
 export const save = {
   challenge: (id, patch) =>
     supabase.from("challenges").update(patch).eq("id", id).then(unwrap),
@@ -273,11 +282,19 @@ export const save = {
   deletePhase: (id) =>
     supabase.from("challenge_phases").delete().eq("id", id).then(unwrap),
 
-  createCashEvent: (row) =>
-    supabase.from("cash_events").insert(row).select().single().then(unwrap),
+  // `activation`: o lancamento e a taxa de ativacao da funded, que tem a
+  // pergunta dela (`activation_cost_due`) e nao responde a da avaliacao.
+  createCashEvent: async (row, { activation = false } = {}) => {
+    const criado = await supabase.from("cash_events").insert(row).select().single().then(unwrap);
+    if (!activation) await costAnswered(row.challenge_id, row.kind, row.amount);
+    return criado;
+  },
 
-  updateCashEvent: (id, row) =>
-    supabase.from("cash_events").update(row).eq("id", id).select().single().then(unwrap),
+  updateCashEvent: async (id, row) => {
+    const salvo = await supabase.from("cash_events").update(row).eq("id", id).select().single().then(unwrap);
+    await costAnswered(salvo?.challenge_id, salvo?.kind, salvo?.amount);
+    return salvo;
+  },
 
   deleteCashEvent: (id) =>
     supabase.from("cash_events").delete().eq("id", id).then(unwrap),
@@ -349,14 +366,14 @@ export const save = {
   // drill-down, e por isso a celula so aceita edicao quando ha no maximo um
   // lancamento; com varios ela fica travada para nao apagar o historico.
   setCashTotal: async (challengeId, kind, amount, existingId) => {
-    if (existingId) {
-      return supabase.from("cash_events").update({ amount })
-        .eq("id", existingId).then(unwrap);
-    }
-    return supabase.from("cash_events").insert({
-      challenge_id: challengeId, kind, amount,
-      occurred_on: new Date().toISOString().slice(0, 10), source: "manual",
-    }).then(unwrap);
+    const feito = existingId
+      ? await supabase.from("cash_events").update({ amount }).eq("id", existingId).then(unwrap)
+      : await supabase.from("cash_events").insert({
+        challenge_id: challengeId, kind, amount,
+        occurred_on: new Date().toISOString().slice(0, 10), source: "manual",
+      }).then(unwrap);
+    await costAnswered(challengeId, kind, amount);
+    return feito;
   },
 
   // Upsert pelo dono: a linha nasce no primeiro salvamento. O `owner_id` vai
