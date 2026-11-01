@@ -63,8 +63,11 @@ export const esc = (s) =>
 // Os 4 últimos dígitos: é assim que o NinjaTrader identifica a conta na própria
 // interface, e é o que distingue contas da mesma mesa, cujos números só diferem
 // no fim.
-export const accountShort = (loginOrName) =>
-  String(loginOrName ?? "").slice(-4) || "—";
+// Conta da Vest e "VEST|<uuid>": o fim e um pedaco do uuid, e quem a reconhece
+// e o nome que o dono da na mesa ("Account 03") -- o mesmo que a view usa.
+export const accountShort = (loginOrName, label) =>
+  (String(loginOrName ?? "").includes("|") && label) ? String(label)
+    : (String(loginOrName ?? "").slice(-4) || "—");
 
 export const STATUS_LABEL = {
   phase1: "Phase 1", phase2: "Phase 2",
@@ -127,7 +130,9 @@ export const nt8SenderId = (accountName) => fnv1a32(accountName) & 0x7fffffff;
 // contaOrigem cabe em 32 bits nos dois casos, entao source_part e ela mesma:
 // NT8 usa o senderId; MT5, o numero de login.
 export function magicSourcePart(platform, loginOrName) {
-  if (platform === "NT8") return nt8SenderId(loginOrName);
+  // PERP ("VEST|<uuid>"): o Copyator Perp usa o mesmo FNV-1a mascarado do NT8
+  // sobre essa string -- collector/core/magic.py, perp_sender_id.
+  if (platform === "NT8" || platform === "PERP") return nt8SenderId(loginOrName);
   const login = Number(loginOrName);
   return Number.isFinite(login) ? login : null;
 }

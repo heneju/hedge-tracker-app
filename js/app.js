@@ -10,32 +10,32 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=50ac094add";
+} from "./db.js?v=d3311c6f4f";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=50ac094add";
+} from "./util.js?v=d3311c6f4f";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=50ac094add";
-import { cell, locked, wireEditables } from "./editable.js?v=50ac094add";
-import { exportChallenges } from "./export.js?v=50ac094add";
-import { mountPlanPicker } from "./plan-picker.js?v=50ac094add";
-import { nextLiveLot } from "./next-lot.js?v=50ac094add";
-import { buildPlan, sessionDay, weekOf } from "./plan.js?v=50ac094add";
-import { filterForFirm } from "./firm-accounts.js?v=50ac094add";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=50ac094add";
+} from "./charts.js?v=d3311c6f4f";
+import { cell, locked, wireEditables } from "./editable.js?v=d3311c6f4f";
+import { exportChallenges } from "./export.js?v=d3311c6f4f";
+import { mountPlanPicker } from "./plan-picker.js?v=d3311c6f4f";
+import { nextLiveLot } from "./next-lot.js?v=d3311c6f4f";
+import { buildPlan, sessionDay, weekOf } from "./plan.js?v=d3311c6f4f";
+import { filterForFirm } from "./firm-accounts.js?v=d3311c6f4f";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=d3311c6f4f";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges,
-} from "./machine.js?v=50ac094add";
+} from "./machine.js?v=d3311c6f4f";
 import { loader,
   renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
   initProfile, raf, odo, burst, landOn, blob, deltaChip,
-} from "./skin.js?v=50ac094add";
-import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=50ac094add";
-import { firmMark, logoBg, logoInner } from "./logos.js?v=50ac094add";
-import { startTour } from "./tour.js?v=50ac094add";
+} from "./skin.js?v=d3311c6f4f";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=d3311c6f4f";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=d3311c6f4f";
+import { startTour } from "./tour.js?v=d3311c6f4f";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -573,7 +573,7 @@ function openPositions(rows, accounts) {
       <div style="display:flex;align-items:baseline;gap:10px;
                   border-bottom:2px solid var(--color-divider);padding-bottom:12px">
         <span style="font-family:var(--font-heading);font-weight:800;font-size:22px">${
-          esc(accountShort(account.login_or_name))}</span>
+          esc(accountShort(account.login_or_name, account.label))}</span>
         <span style="font-size:11px;color:var(--color-neutral-700)">${
           esc(p.symbol)} ${esc(p.side)} ${num(p.qty, 0)}</span>
         <span style="margin-left:auto">${naked
@@ -1462,7 +1462,7 @@ async function openChallenge(id, journal, firms, progress = []) {
   const phaseRows = phases.map((p) => `
     <tr>
       <td>${esc(phaseLabel(p.phase, c.eval_phases))}</td>
-      <td><strong>${esc(accountShort(p.accounts?.login_or_name || p.account_ref))}</strong>
+      <td><strong>${esc(accountShort(p.accounts?.login_or_name || p.account_ref, p.accounts?.label))}</strong>
           <span class="dim">${esc(p.accounts?.login_or_name || p.account_ref || "—")}</span></td>
       <td class="muted">${esc(p.accounts?.platform || "—")}</td>
       <td>${p.started_at ? day(p.started_at) : "—"} → ${p.ended_at ? day(p.ended_at) : "aberta"}</td>
@@ -1889,10 +1889,10 @@ async function openChallengeEditor(c, firms) {
     a.kind === "prop" && a.is_active && (!a.in_use || mine.has(a.account_id)));
 
   // Contas que o coletor viu na maquina mas que ninguem classificou ainda.
-  // Sao sempre NT8: a perna live e MT5, entao uma conta NT8 nova e prop.
+  // NT8 e PERP (Vest) sao sempre prop: a perna live e MT5.
   const registered = new Set(stats.map((a) => `${a.platform}:${a.login_or_name}`));
   const unregistered = discovered.filter((d) =>
-    d.platform === "NT8" && !registered.has(`${d.platform}:${d.login_or_name}`));
+    (d.platform === "NT8" || d.platform === "PERP") && !registered.has(`${d.platform}:${d.login_or_name}`));
 
   // O número inteiro é quase igual entre contas da mesma mesa; o que
   // diferencia são os 4 últimos dígitos e o resultado acumulado.
@@ -1954,7 +1954,7 @@ async function openChallengeEditor(c, firms) {
             ${unregistered.map((d) => `
               <button class="btn ghost" data-claim-one="${esc(d.login_or_name)}"
                       title="${esc(d.login_or_name)}">
-                + ${esc(accountShort(d.login_or_name))}</button>`).join("")}
+                + ${esc(accountShort(d.login_or_name, d.label))}</button>`).join("")}
           </div>` : `
           <p class="neg" style="margin:0 0 12px;font-size:10px">
             Every prop account on this PC is already tied to a challenge. Free one
@@ -1994,7 +1994,7 @@ async function openChallengeEditor(c, firms) {
         terminal_hash: d.terminal_hash,
         terminal_path: d.terminal_path,
         magic_source_part: magicSourcePart(d.platform, d.login_or_name),
-      }), `${accountShort(d.login_or_name)} registered`);
+      }), `${accountShort(d.login_or_name, d.label)} registered`);
       modal.close();
       openChallengeEditor(c, firms);
     };
@@ -2186,13 +2186,13 @@ async function renderConfig() {
       value: `source:${d.id}`,
       platform: d.platform,
       name: d.login_or_name,
-      label: `${d.platform} · ${accountShort(d.login_or_name)} · ${d.label} · found`,
+      label: `${d.platform} · ${accountShort(d.login_or_name, d.label)} · ${d.label} · found`,
     })),
     ...freeRegistered.map((a) => ({
       value: `account:${a.id}`,
       platform: a.platform,
       name: a.login_or_name,
-      label: `${a.platform} · ${accountShort(a.login_or_name)} · ${a.label || a.login_or_name} · registered`,
+      label: `${a.platform} · ${accountShort(a.login_or_name, a.label)} · ${a.label || a.login_or_name} · registered`,
     })),
   ];
 
@@ -2209,7 +2209,7 @@ async function renderConfig() {
       <td>${badge(a.kind, a.kind)}${a.is_active === false
         ? ` <span class="badge">archived</span>` : ""}</td>
       <td><strong class="${blown.has(a.id) ? "blown" : "bright"}">${
-        esc(accountShort(a.login_or_name))}</strong></td>
+        esc(accountShort(a.login_or_name, a.label))}</strong></td>
       <td>${esc(a.platform)}</td>
       ${cell(a.login_or_name, { id: a.id, field: "account:login_or_name", type: "text",
         title: "account number/name on the platform — it is what generates the magic",
@@ -2286,7 +2286,7 @@ async function renderConfig() {
       ${cell(f.name, { id: f.id, field: "firm:name", type: "text",
         format: () => `<strong class="bright">${esc(f.name)}</strong>` })}
       ${cell(f.platform, { id: f.id, field: "firm:platform", type: "select",
-        options: ["NT8", "MT5", "Tradovate", "Other"].map((v) => ({ value: v, label: v })),
+        options: ["NT8", "MT5", "Tradovate", "PERP", "Other"].map((v) => ({ value: v, label: v })),
         format: () => esc(f.platform) })}
       ${cell(f.eval_phases, { id: f.id, field: "firm:eval_phases", type: "select",
         options: [{ value: 1, label: "1 — straight to funded" },
@@ -2657,7 +2657,7 @@ async function renderConfig() {
       <div class="panel-body row">
         <div class="field"><label>Name</label><input id="firm-name" placeholder="Tradeify"></div>
         <div class="field"><label>Platform</label><select id="firm-platform">
-          <option>NT8</option><option>MT5</option><option>Tradovate</option><option>Other</option>
+          <option>NT8</option><option>MT5</option><option>Tradovate</option><option>PERP</option><option>Other</option>
         </select></div>
         <div class="field"><label>Eval phases</label><select id="firm-phases">
           <option value="2">2 — phase 1 + phase 2</option>
@@ -3006,7 +3006,7 @@ async function renderConfig() {
       selected.kind === "source" && selected.row.platform === "MT5");
     const selected = selectedOnboardingAccounts();
     const shown = selected.slice(0, 6).map((item) =>
-      `${item.row.platform} ${accountShort(item.row.login_or_name)}`);
+      `${item.row.platform} ${accountShort(item.row.login_or_name, item.row.label)}`);
     const extra = selected.length > shown.length ? ` · +${selected.length - shown.length} more` : "";
     onboardAccountSummary.innerHTML = selected.length
       ? `<strong class="bright">${selected.length} account${selected.length === 1 ? "" : "s"} selected</strong><br>
@@ -3440,7 +3440,7 @@ async function renderConfig() {
         area: "setup",
         targetTable: "accounts",
         targetId: a.id,
-        targetLabel: `${accountShort(a.login_or_name)} · ${a.platform} · ${a.login_or_name}`,
+        targetLabel: `${accountShort(a.login_or_name, a.label)} · ${a.platform} · ${a.login_or_name}`,
       }, () => renderConfig());
     };
   });
