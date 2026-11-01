@@ -131,11 +131,13 @@ export function buildPlan({ journal, progress, accounts, firms, plans, policies,
 
     const ciclo = (Number(c.payout_entries) || 0) + 1;
     const exigidos = Number(c.payout_winning_days) || 0;
+    // O ciclo só é dito a partir do 2º: no 1º ele é ruído na linha.
+    const sufixoCiclo = ciclo > 1 ? ` · cycle ${ciclo}` : "";
     const label = stage === "eval"
       ? `Eval · day ${(Number(prog.days_traded) || 0) + (operou ? 0 : 1)}`
       : stage === "big"
-        ? `Big trade · cycle ${ciclo}`
-        : `Farm · day ${Math.min((Number(c.winning_days) || 0) + (operou ? 0 : 1), exigidos || 5)}/${exigidos || 5} · cycle ${ciclo}`;
+        ? `Big trade${sufixoCiclo}`
+        : `Farm · day ${Math.min((Number(c.winning_days) || 0) + (operou ? 0 : 1), exigidos || 5)} of ${exigidos || 5}${sufixoCiclo}`;
     // Avaliação ainda tem a funded inteira pela frente: ~5 passos a mais.
     const stepsLeft = passos.length + (stage === "eval" ? 5 : 0);
     trades.push({

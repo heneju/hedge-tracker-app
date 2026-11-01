@@ -752,29 +752,67 @@ main#view{position:relative;min-height:40vh}
 .costq .cqacct b{font:700 13px var(--f);overflow-wrap:anywhere}
 .costq .cqacct .muted{font-size:11.5px}
 .costq .cqrow .inp{width:130px;text-align:right}
-/* aba Plan: meta e semana lado a lado, a lista do dia embaixo */
-.plan-top{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+/* aba Plan: meta e semana no topo, o dia em quatro passos numerados */
+.plan-top{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:14px}
 .plan-top .panel{margin:0}
 @media (max-width:860px){.plan-top{grid-template-columns:minmax(0,1fr)}}
 .pbig{font:800 30px var(--f);letter-spacing:-.02em;margin:2px 0 10px}
 .pbig .dim{font:600 13px var(--f);color:var(--fg-2);letter-spacing:0}
-.pset{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
-.pset label{display:flex;flex-direction:column;gap:4px;font:600 10.5px var(--f);letter-spacing:.04em;text-transform:uppercase;color:var(--fg-3)}
-.pset .inp{width:130px;height:34px;font-size:12.5px}
-.pforecast{display:flex;flex-direction:column;margin-top:10px}
-.pfc{display:grid;grid-template-columns:96px minmax(0,1fr) auto auto;gap:10px;align-items:baseline;padding:7px 0;border-top:1px solid rgba(var(--wrgb),.08);font-size:12.5px}
-.pfc b{font-weight:700;overflow-wrap:anywhere}
-.ptask{display:flex;align-items:center;gap:12px;padding:11px 0;border-top:1px solid rgba(var(--wrgb),.08)}
-.ptask:first-of-type{border-top:0}
+.pgoal .muted,.pweek .muted{font:500 12px var(--f);color:var(--fg-2);margin-top:10px}
+.pdays{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.pday{border-radius:14px;background:rgba(var(--wrgb),.06);padding:9px 10px;min-height:68px;display:flex;flex-direction:column;gap:3px;min-width:0;transition:background .2s}
+.pday.has{background:var(--mint-dim);box-shadow:inset 0 0 0 1px rgba(74,222,128,.25)}
+.pday.now{box-shadow:inset 0 0 0 1.5px rgba(var(--wrgb),.35)}
+.pday .pwd{font:700 10.5px var(--f);letter-spacing:.06em;text-transform:uppercase;color:var(--fg-3)}
+.pday b{font:800 13px var(--f);margin-top:3px}
+.pday .pwho{font:500 10.5px var(--f);color:var(--fg-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pstepbox{padding:16px 22px 10px}
+.pstep{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 6px}
+.pstep h2{margin:0;font:700 15px var(--f);letter-spacing:-.01em}
+.pstep .dim{font:500 11.5px var(--f);color:var(--fg-2)}
+.pstep .pn{width:22px;height:22px;border-radius:7px;background:var(--ink);color:var(--acc);display:inline-grid;place-items:center;font:800 11px var(--f);flex:none}
+.phead{display:grid;grid-template-columns:36px minmax(0,1fr) 96px 76px;gap:14px;padding:6px 6px 4px;font:600 10px var(--f);letter-spacing:.06em;text-transform:uppercase;color:var(--fg-3)}
+.phead .r{text-align:right}.phead .c{text-align:center}
+.ptask,.prow{display:flex;align-items:center;gap:14px;padding:12px 6px;border-top:1px solid rgba(var(--wrgb),.08);animation:rin .35s var(--ease) both}
+.prow{width:100%;border-left:0;border-right:0;border-bottom:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;border-radius:12px;transition:background .15s}
+.prow:hover{background:rgba(var(--wrgb),.05)}
+.prow[aria-expanded="true"]{background:rgba(var(--wrgb),.04)}
+.ptask .ic,.prow .ic{width:36px;height:36px;border-radius:12px;display:grid;place-items:center;font:800 10px var(--f);flex:none;position:relative}
+.ptask .ic .lgi,.prow .ic .lgi{position:absolute;inset:0;border-radius:inherit;overflow:hidden;display:grid;place-items:center}
+.ptask .ic .lgi img,.prow .ic .lgi img{width:100%;height:100%;object-fit:cover;display:block;border-radius:inherit}
 .ptask .pck{width:20px;height:20px;flex:none;border-radius:50%;box-shadow:inset 0 0 0 1.5px rgba(var(--wrgb),.3);display:grid;place-items:center;font:800 11px var(--f);color:#03200F}
 .ptask.done .pck{background:var(--mint);box-shadow:none}
-.ptask .pnofirm{width:22px;flex:none}
-.ptask .ptx{display:flex;flex-direction:column;gap:3px;flex:1;min-width:0}
-.ptask .ptx b{font:700 13px var(--f);overflow-wrap:anywhere}
-.ptask .ptx .muted{font-size:11.5px;overflow-wrap:anywhere}
-.ptask .pnum{font:800 14px var(--f);white-space:nowrap}
-.ptask.done .ptx b,.ptask.done .pnum{color:var(--fg-3)}
+.ptx{display:flex;flex-direction:column;gap:3px;flex:1;min-width:0}
+.ptx b{font:700 13.5px var(--f);overflow-wrap:anywhere}
+.ptx b em{font-style:normal;font-weight:500;color:var(--fg-2);font-size:12.5px}
+.ptx .muted{font:500 11.5px var(--f);color:var(--fg-2);overflow-wrap:anywhere}
+.ptgt{font:800 16px var(--f);min-width:96px;text-align:right;letter-spacing:-.01em}
+.pmx{font:800 12.5px var(--f);color:var(--cyan);background:var(--cyan-dim);border-radius:9px;padding:6px 0;min-width:76px;text-align:center}
+.ptask.done .ptx b,.prow.done .ptx b,.ptask.done .ptgt,.prow.done .ptgt{color:var(--fg-3)}
+.prow.done .pmx{opacity:.5}
+.pwhy{padding:0 6px 14px 56px;font:500 12.5px/1.55 var(--f);color:var(--fg-2);animation:rin .3s var(--ease) both}
+.pquiet{padding:12px 6px 10px;border-top:1px solid rgba(var(--wrgb),.08);font:500 12.5px var(--f);color:var(--fg-2)}
 .ptask .btn{height:32px;padding:0 14px;font-size:12px;flex:none}
+.padjust{margin:14px 0 0;background:rgba(var(--krgb),.18);border-radius:20px;padding:0 22px}
+.padjust summary{cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 0;font:500 12.5px var(--f);color:var(--fg-2)}
+.padjust summary::-webkit-details-marker{display:none}
+.padjust summary b{color:var(--fg);font-weight:700}
+.pset{display:flex;flex-wrap:wrap;gap:12px;padding:2px 0 18px}
+.pset label{display:flex;flex-direction:column;gap:5px;font:600 10.5px var(--f);letter-spacing:.05em;text-transform:uppercase;color:var(--fg-3)}
+.pset .inp{width:140px;height:36px;font-size:12.5px}
+.pset .muted{flex-basis:100%;font:500 12px var(--f);color:var(--fg-2);text-transform:none;letter-spacing:0}
+/* celular: os numeros encolhem e o nome da conta fica numa linha, o resto embaixo */
+@media (max-width:560px){
+  .phead{display:none}
+  .ptask,.prow{gap:10px;padding:12px 2px}
+  .ptgt{min-width:0;font-size:15px}
+  .pmx{min-width:58px;padding:5px 0;font-size:11.5px}
+  .ptx b{display:flex;flex-direction:column;gap:2px}
+  .ptx b em{font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pwhy{padding-left:2px}
+  .pstepbox{padding:14px 16px 8px}
+  .pdays{gap:6px}.pday{padding:8px 7px;min-height:60px}
+}
 .panel > h2{margin:0 0 12px;font:700 15px var(--f);letter-spacing:-.01em;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
 .panel > h2 .dim{font:500 11.5px var(--f);color:var(--fg-2)}
 .panel-body{padding:0}
@@ -1004,6 +1042,6 @@ dialog.side .panel{margin:12px 0 0;padding:16px 18px}
 
 <dialog id="modal"></dialog>
 
-<script type="module" src="./js/app.js?v=91f8ed99a5"></script>
+<script type="module" src="./js/app.js?v=50ac094add"></script>
 </body>
 </html>

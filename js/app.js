@@ -10,32 +10,32 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=91f8ed99a5";
+} from "./db.js?v=50ac094add";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=91f8ed99a5";
+} from "./util.js?v=50ac094add";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=91f8ed99a5";
-import { cell, locked, wireEditables } from "./editable.js?v=91f8ed99a5";
-import { exportChallenges } from "./export.js?v=91f8ed99a5";
-import { mountPlanPicker } from "./plan-picker.js?v=91f8ed99a5";
-import { nextLiveLot } from "./next-lot.js?v=91f8ed99a5";
-import { buildPlan, sessionDay, weekOf, maxPayoutProfit, farmTarget, burnAfter } from "./plan.js?v=91f8ed99a5";
-import { filterForFirm } from "./firm-accounts.js?v=91f8ed99a5";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=91f8ed99a5";
+} from "./charts.js?v=50ac094add";
+import { cell, locked, wireEditables } from "./editable.js?v=50ac094add";
+import { exportChallenges } from "./export.js?v=50ac094add";
+import { mountPlanPicker } from "./plan-picker.js?v=50ac094add";
+import { nextLiveLot } from "./next-lot.js?v=50ac094add";
+import { buildPlan, sessionDay, weekOf } from "./plan.js?v=50ac094add";
+import { filterForFirm } from "./firm-accounts.js?v=50ac094add";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=50ac094add";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges,
-} from "./machine.js?v=91f8ed99a5";
+} from "./machine.js?v=50ac094add";
 import { loader,
   renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
   initProfile, raf, odo, burst, landOn, blob, deltaChip,
-} from "./skin.js?v=91f8ed99a5";
-import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=91f8ed99a5";
-import { firmMark, logoBg, logoInner } from "./logos.js?v=91f8ed99a5";
-import { startTour } from "./tour.js?v=91f8ed99a5";
+} from "./skin.js?v=50ac094add";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=50ac094add";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=50ac094add";
+import { startTour } from "./tour.js?v=50ac094add";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -4466,7 +4466,7 @@ async function renderPlan() {
   const semana = weekOf(session);
   const desde = settings.goal_since || null;
   const corte = desde && desde < semana.start ? desde : semana.start;
-  const janela = new Date(Date.parse(`${session}T00:00:00Z`) - 45 * 864e5).toISOString().slice(0, 10);
+  const janela = addDays(session, -45);
   const liveIds = accounts.filter((a) => a.kind === "live").map((a) => a.id);
   const [checkRows, cashRows, liveDays] = await Promise.all([
     load.planChecks(janela).catch(() => []),
@@ -4476,140 +4476,148 @@ async function renderPlan() {
     journal, progress, accounts, firms, plans, policies, today, settings,
     checks: new Set(checkRows.map((r) => r.task_key)), cash: cashRows, liveDays,
   });
-
+  const g = plan.goal, w = plan.week, d = plan.deposit;
+  const porVaga = Number(settings.evals_per_free_slot) || 3;
   const mult = (m) => (m == null ? "—" : `×${num(m, 2)}`);
-  const linha = ({ done, firm, title, detail, value, check }) => `
-    <div class="ptask${done ? " done" : ""}">
-      <span class="pck" aria-hidden="true">${done ? "✓" : ""}</span>
-      ${firm ? firmMark(firm) : `<span class="pnofirm"></span>`}
-      <span class="ptx"><b>${title}</b>${detail ? `<span class="muted">${detail}</span>` : ""}</span>
-      ${value != null ? `<span class="pnum n">${value}</span>` : ""}
-      ${check ? `<button class="btn ghost" type="button" data-check="${esc(check)}"
-        data-done="${done ? 1 : 0}">${done ? "Undo" : "Done"}</button>` : ""}
+  const logo = (firm) => `<span class="ic" style="background:${logoBg(firm)}"><span class="lgi">${logoInner(firm)}</span></span>`;
+  const weekday = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" });
+  const longDay = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  const stepHead = (n, title, hint) => `
+    <div class="pstep"><span class="pn" aria-hidden="true">${n}</span><h2>${title}</h2><span class="dim">${hint}</span></div>`;
+
+  // --------------------------------------------------------- a semana
+  const dias = [];
+  for (let i = 0; i < 5; i += 1) {
+    const iso = addDays(semana.start, i);
+    const no = plan.forecast.filter((f) => f.day === iso);
+    dias.push(`<div class="pday${no.length ? " has" : ""}${iso === session ? " now" : ""}">
+      <span class="pwd">${weekday(iso).slice(0, 3)}</span>${no.map((f) => `
+      <b class="n">${f.amount != null ? money0(f.amount) : "—"}</b><span class="pwho">${esc(f.short)} ${esc(f.firm || "")}</span>`).join("")}</div>`);
+  }
+  const faltam = g.done == null ? null : Math.max(g.target - g.done, 0);
+  const porSaque = plan.forecast.length
+    ? plan.forecast.reduce((s, f) => s + (f.amount || 0), 0) / plan.forecast.length : 1800;
+
+  // --------------------------------------------------------- passo 1
+  const passo1 = d.missing ? `
+    <div class="ptask">
+      <span class="pck" aria-hidden="true"></span>
+      <span class="ptx"><b>Deposit ${money0(d.missing)} into the hedge account</b>
+        <span class="muted">it has ${money0(d.equity)} · today can cost up to ${money0(d.need)}${
+          d.lead ? ` (${esc(d.lead.short)} to its payout, plus today's hedge on the others)` : ""}</span></span>
+    </div>` : `
+    <div class="ptask done">
+      <span class="pck" aria-hidden="true">✓</span>
+      <span class="ptx"><b>Hedge covered</b>
+        <span class="muted">${money0(d.equity)} in the live account · today can cost up to ${money0(d.need)}</span></span>
     </div>`;
 
-  const d = plan.deposit;
-  const tarefas = [
-    d.missing ? linha({
-      title: `Deposit ~${money0(d.missing)} into the hedge`,
-      detail: `live equity ${money0(d.equity)} · today needs ${money0(d.need)}`
-        + (d.lead ? ` (leader ${esc(d.lead.short)} to its payout ${money0(d.lead.costToPayout)}`
-          + " + today's hedge of the others)" : ""),
-    }) : "",
-    ...plan.payouts.map((p) => linha({
-      done: p.done, firm: p.firm, check: p.key,
-      title: `${esc(p.short)} · request payout`,
-      detail: `${esc(p.firm || "")} · cycle closed, ${p.amount != null ? `${money0(p.amount)} expected` : "amount on the firm's dashboard"}`,
-    })),
-    ...plan.trades.map((t) => linha({
-      done: t.done, firm: t.firm,
-      title: `${esc(t.short)} · ${esc(t.label)}`,
-      detail: [
-        t.target != null ? `target ${money0(t.target)}` : null,
-        t.multiplier != null ? `hedge ${mult(t.multiplier)}${t.hedge ? ` (${money0(t.hedge)} if it hits)` : ""}` : null,
-        t.costToPayout != null ? `${money0(t.costToPayout)} of hedge to the payout` : null,
-        t.payoutNet != null ? `payout ~${money0(t.payoutNet)}` : null,
-        t.note ? esc(t.note) : null,
-        t.done ? "traded today" : null,
-      ].filter(Boolean).join(" · "),
-      value: t.target != null ? money0(t.target) : null,
-    })),
-    ...plan.decisions.map((x) => linha({
-      done: x.done, firm: x.firm, check: x.key,
-      title: `${esc(x.short)} · burn, or keep going`,
-      detail: `${esc(x.why)}${x.nextBig ? ` · next cycle starts with a ${money0(x.nextBig)} trade` : ""}`,
-    })),
-    ...plan.buys.map((b) => linha({
-      firm: b.firm,
-      title: `Buy ${b.n} × ${esc(b.firm)}${b.plan ? ` ${esc(b.plan)}` : ""}`,
-      detail: `${esc(b.why)}${b.price != null ? ` · ~${money0(b.price)} each` : ""}`,
-      value: b.cost != null ? money0(b.cost) : null,
-    })),
-  ].filter(Boolean);
-  const aFazer = plan.trades.filter((t) => !t.done).length + plan.payouts.filter((p) => !p.done).length
-    + plan.decisions.filter((x) => !x.done).length + plan.buys.length + (d.missing ? 1 : 0);
+  // --------------------------------------------------------- passo 2
+  const why = (t) => {
+    const partes = [];
+    if (t.stage === "eval") partes.push("Passes the evaluation if it hits.");
+    if (t.payoutNet != null && t.stage !== "eval") partes.push(`Payout of ~${money0(t.payoutNet)} at the end of the cycle.`);
+    if (t.payoutNet != null && t.stage === "eval") partes.push(`Then the funded account pays ~${money0(t.payoutNet)} on its first cycle.`);
+    if (t.costToPayout != null) partes.push(`Hedge still to spend to the payout: ${money0(t.costToPayout)}.`);
+    if (t.hedge != null) partes.push(`If today hits, the live side loses ~${money0(t.hedge)}.`);
+    if (t.note) partes.push(esc(t.note));
+    return partes.join(" ");
+  };
+  const STAGE_WORD = { Eval: "evaluation", Farm: "farm", "Big trade": "big trade" };
+  const linhas = plan.trades.map((t, i) => `
+    <button class="prow${t.done ? " done" : ""}" type="button" data-row="${i}" aria-expanded="false">
+      ${logo(t.firm)}
+      <span class="ptx"><b>${esc(t.short)} <em>${esc(t.firm || "")} · ${esc(t.label.replace(/^(Eval|Farm|Big trade)/,
+        (m) => STAGE_WORD[m]).toLowerCase())}</em></b>${t.done ? `<span class="muted">traded today</span>` : ""}</span>
+      <span class="ptgt n">${t.target != null ? money0(t.target) : "—"}</span>
+      <span class="pmx n">${mult(t.multiplier)}</span>
+    </button>
+    <div class="pwhy" hidden>${why(t)}</div>`).join("");
+  const passo2 = plan.trades.length ? `
+    <div class="phead"><span></span><span>Account</span><span class="r">Target</span><span class="c">Hedge</span></div>${linhas}`
+    : `<div class="pquiet">No account to trade today.</div>`;
 
-  const g = plan.goal;
-  const w = plan.week;
-  const previsao = plan.forecast.slice(0, 8).map((f) => `
-    <div class="pfc"><span class="n">${day(f.day)}</span><b>${esc(f.short)}</b>
-      <span class="muted">${esc(f.firm || "")}</span>
-      <span class="n">${f.amount != null ? money0(f.amount) : "—"}</span></div>`).join("");
+  // --------------------------------------------------------- passo 3
+  const amanha = addDays(session, 1);
+  const fecha = plan.trades.find((t) => t.stage === "farm" && !t.done
+    && plan.forecast.some((f) => f.challengeId === t.challengeId && f.day === amanha));
+  const passo3 = plan.payouts.length ? plan.payouts.map((p) => `
+    <div class="ptask${p.done ? " done" : ""}">
+      <span class="pck" aria-hidden="true">${p.done ? "✓" : ""}</span>
+      ${logo(p.firm)}
+      <span class="ptx"><b>${esc(p.short)} · request the payout</b>
+        <span class="muted">${esc(p.firm || "")} · cycle closed${p.amount != null ? ` · ~${money0(p.amount)} expected` : ""}</span></span>
+      <button class="btn${p.done ? " ghost" : ""}" type="button" data-check="${esc(p.key)}" data-done="${p.done ? 1 : 0}">${
+        p.done ? "Undo" : "Requested"}</button>
+    </div>`).join("")
+    : `<div class="pquiet">Nothing to request yet.${fecha
+      ? ` ${esc(fecha.short)} closes its cycle with today's trade — it shows up here tomorrow.` : ""}</div>`;
+  const passo3b = plan.decisions.map((x) => `
+    <div class="ptask${x.done ? " done" : ""}">
+      <span class="pck" aria-hidden="true">${x.done ? "✓" : ""}</span>
+      ${logo(x.firm)}
+      <span class="ptx"><b>${esc(x.short)} · burn it, or keep going</b>
+        <span class="muted">${esc(x.why)}${x.nextBig ? ` · the next cycle starts with a ${money0(x.nextBig)} trade` : ""}</span></span>
+      <button class="btn${x.done ? " ghost" : ""}" type="button" data-check="${esc(x.key)}" data-done="${x.done ? 1 : 0}">${
+        x.done ? "Undo" : "Decided"}</button>
+    </div>`).join("");
 
-  // Mesas que o dono opera: as que têm challenge. As regras que a mesa não diz
-  // são o que se edita aqui; o resto vem de Setup.
-  const usadas = new Set(journal.map((c) => c.firm_id).filter(Boolean));
-  const regras = policies.filter((p) => usadas.has(p.firm_id))
-    .sort((a, b) => String(firms.find((f) => f.id === a.firm_id)?.name).localeCompare(
-      String(firms.find((f) => f.id === b.firm_id)?.name)) || Number(a.account_size) - Number(b.account_size));
-  const regraRows = regras.map((p) => {
-    const firma = firms.find((f) => f.id === p.firm_id) || {};
-    const pstar = maxPayoutProfit(p);
-    return `<tr>
-      <td>${firmMark(firma.name)} ${esc(firma.name || "—")}</td>
-      <td class="muted">${esc(p.label || p.policy)} · ${money0(p.account_size)}</td>
-      <td class="num" title="buffer + cap ÷ share of profit">${pstar == null ? "—" : money0(pstar)}</td>
-      ${cell(p.farm_day_target, { id: p.id, field: "policy:farm_day_target", type: "number", align: true,
-        title: "empty = the firm's minimum winning day + $50",
-        format: () => (p.farm_day_target == null
-          ? `<span class="dim">${money0(farmTarget(p))}</span>` : money0(p.farm_day_target)) })}
-      ${cell(p.burn_after_payouts, { id: p.id, field: "policy:burn_after_payouts", type: "number", align: true,
-        title: "payouts before burning the account; empty = 3",
-        format: () => (p.burn_after_payouts == null
-          ? `<span class="dim">${burnAfter(p)}</span>` : String(p.burn_after_payouts)) })}
-      ${p.cap == null ? cell(p.cycle_target, { id: p.id, field: "policy:cycle_target", type: "number", align: true,
-        title: "no payout cap: profit to build each cycle",
-        format: () => (p.cycle_target == null ? `<span class="dim">set</span>` : money0(p.cycle_target)) })
-        : `<td class="num dim" title="capped policy: the cap decides">—</td>`}
-      ${cell(firma.max_funded, { id: firma.id, field: "firm:max_funded", type: "number", align: true,
-        title: "funded accounts at the same time in this firm",
-        format: () => String(firma.max_funded ?? 2) })}
-    </tr>`;
-  }).join("");
+  // --------------------------------------------------------- passo 4
+  const totalCompra = plan.buys.reduce((s, b) => s + (b.cost || 0), 0);
+  const passo4 = plan.buys.length ? plan.buys.map((b) => `
+    <div class="ptask">
+      <span class="pck" aria-hidden="true"></span>
+      ${logo(b.firm)}
+      <span class="ptx"><b>${esc(b.firm)}${b.plan ? ` ${esc(b.plan)}` : ""} × ${b.n}</b>
+        <span class="muted">${esc(b.why)}${b.price != null ? ` · ~${money0(b.price)} each` : ""}</span></span>
+      <span class="ptgt n">${b.cost != null ? money0(b.cost) : "—"}</span>
+    </div>`).join("")
+    : `<div class="pquiet">Every funded slot is covered — nothing to buy.</div>`;
 
   render(`
     <div class="tool">
       <h2>Plan</h2>
-      <span class="hint">what to do today to reach the goal · session of ${day(plan.session)}</span>
+      <span class="hint">what to do today · ${weekday(session)}, ${longDay(session)}</span>
     </div>
     <div class="plan-top">
       <div class="panel pgoal">
-        <h2>Goal <span class="dim">cash profit since the start date</span></h2>
-        <div class="pbig n">${g.done == null ? "—" : money0(g.done)}
-          <span class="dim">of ${money0(g.target)}</span></div>
+        <h2>Goal <span class="dim">cash profit${g.since ? ` since ${longDay(g.since)}` : ""}</span></h2>
+        <div class="pbig n">${g.done == null ? "—" : money0(g.done)} <span class="dim">of ${money0(g.target)}</span></div>
         <div class="bar2"><i class="ok" style="--w:${g.pct ?? 0}%"></i></div>
-        <div class="pset">
-          <label>Goal <input class="inp n" id="pg-goal" type="number" min="0" step="100"
-            value="${g.target}"></label>
-          <label>Since <input class="inp n" id="pg-since" type="date" value="${esc(g.since || "")}"></label>
-          <label>Payouts / week <input class="inp n" id="pg-week" type="number" min="1" step="1"
-            value="${w.goal}"></label>
-          <label>Evals per free slot <input class="inp n" id="pg-slot" type="number" min="1" step="1"
-            value="${Number(settings.evals_per_free_slot) || 3}"></label>
-        </div>
+        <div class="muted">${g.done == null
+          ? "Set the start date under Adjust to start counting."
+          : faltam <= 0 ? "Goal reached."
+          : `About ${Math.ceil(faltam / porSaque)} payouts away. ${w.expectedThis} on the way this week.`}</div>
       </div>
       <div class="panel pweek">
-        <h2>This week <span class="dim">${day(w.start)} → ${day(w.end)}</span></h2>
-        <div class="pbig n">${w.payouts} <span class="dim">of ${w.goal} payouts</span></div>
-        <div class="muted">${w.expectedThis} more expected this week · ${w.expectedNext} next week</div>
-        <div class="pforecast">${previsao || `<span class="muted">No funded account in a payout cycle.</span>`}</div>
+        <h2>This week <span class="dim">${w.payouts} of ${w.goal} payouts</span></h2>
+        <div class="pdays">${dias.join("")}</div>
+        <div class="muted">Each payout lands the trading day after its cycle closes.</div>
       </div>
     </div>
-    <div class="panel ptasks">
-      <h2>Today <span class="dim">${aFazer} to do · the most advanced account first</span></h2>
-      ${tarefas.join("") || empty("Nothing to do today.")}
-    </div>
-    <div class="panel prules">
-      <h2>Rules by firm <span class="dim">only what the firm's payout rules don't say · the big trade is
-        always max-payout profit − profit in the account − farm days left</span></h2>
-      <div class="scroll"><table class="dt n">
-        <thead><tr><th>Firm</th><th>Policy</th><th class="num">Max payout at</th>
-          <th class="num">Farm day</th><th class="num">Burn after</th><th class="num">Cycle target</th>
-          <th class="num">Max funded</th></tr></thead>
-        <tbody>${regraRows || `<tr><td colspan="7">${empty("No payout policy for the firms you trade.")}</td></tr>`}</tbody>
-      </table></div>
-    </div>`);
+    <div class="panel pstepbox">${stepHead(1, "Before trading", "the hedge account must cover everything today can cost")}${passo1}</div>
+    <div class="panel pstepbox">${stepHead(2, "Trade", "target goes in NinjaTrader · multiplier goes in the Copyator · a row ticks itself when the account trades")}${passo2}</div>
+    <div class="panel pstepbox">${stepHead(3, "Request payouts", "as soon as a cycle closes · mark it when you ask the firm")}${passo3}${passo3b}</div>
+    <div class="panel pstepbox">${stepHead(4, "Buy", `to fill the free funded slots · ${porVaga} evaluations per slot${
+      totalCompra ? ` · ~${money0(totalCompra)} today` : ""}`)}${passo4}</div>
+    <details class="padjust">
+      <summary><span>Goal ${money0(g.target)} · ${w.goal} payouts a week · ${porVaga} evaluations per free slot</span><b>Adjust ›</b></summary>
+      <div class="pset">
+        <label>Goal <input class="inp n" id="pg-goal" type="number" min="0" step="100" value="${g.target}"></label>
+        <label>Since <input class="inp n" id="pg-since" type="date" value="${esc(g.since || "")}"></label>
+        <label>Payouts a week <input class="inp n" id="pg-week" type="number" min="1" step="1" value="${w.goal}"></label>
+        <label>Evaluations per free slot <input class="inp n" id="pg-slot" type="number" min="1" step="1" value="${porVaga}"></label>
+        <span class="muted">Rules by firm — farm day, burn after N payouts, max funded — live in Setup → Firms.</span>
+      </div>
+    </details>`);
 
+  view.querySelectorAll("[data-row]").forEach((b) => {
+    b.onclick = () => {
+      const aberto = b.getAttribute("aria-expanded") === "true";
+      b.setAttribute("aria-expanded", String(!aberto));
+      b.nextElementSibling.hidden = aberto;
+    };
+  });
   view.querySelectorAll("[data-check]").forEach((b) => {
     b.onclick = async () => {
       b.disabled = true;
@@ -4621,7 +4629,6 @@ async function renderPlan() {
       }
     };
   });
-
   const salvar = (id, coluna, ler) => {
     const el = document.getElementById(id);
     el.onchange = async () => {
@@ -4633,15 +4640,10 @@ async function renderPlan() {
   salvar("pg-since", "goal_since", (v) => v || null);
   salvar("pg-week", "goal_payouts_week", (v) => Math.max(1, Number(v) || 2));
   salvar("pg-slot", "evals_per_free_slot", (v) => Math.max(1, Number(v) || 3));
+}
 
-  wireEditables(view.querySelector(".prules"), async (field, id, raw) => {
-    const [tabela, coluna] = field.split(":");
-    const valor = raw === "" ? null : Number(raw);
-    await guard(() => (tabela === "firm"
-      ? save.firm(Number(id), { [coluna]: valor ?? 2 })
-      : save.policy(Number(id), { [coluna]: valor })), "Saved");
-    renderPlan();
-  });
+function addDays(iso, n) {
+  return new Date(Date.parse(`${iso}T00:00:00Z`) + n * 864e5).toISOString().slice(0, 10);
 }
 
 // ------------------------------------------------------------------ router
