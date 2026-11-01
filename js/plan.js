@@ -147,7 +147,12 @@ export function buildPlan({ journal, progress, accounts, firms, plans, policies,
       payoutNet: n(conta.rec_payout_net), note: conta.rec_note || null,
       done: operou, stepsLeft,
     });
-    if (fase === "FUNDED" && passos.length) {
+    // Saque possível só quando falta farm: os dias pequenos ($200 Lucid/
+    // Tradeify, $300 Top One) quase sempre batem, a trade grande não. Contar a
+    // Top One com um dia de $1.400 pela frente como saque da semana prometia
+    // dinheiro que é cara ou coroa. Avaliação também fica de fora.
+    if (fase === "FUNDED" && stage === "farm" && passos.length
+        && passos.every((s) => s.kind !== "big")) {
       // O último passo fecha o ciclo; o saque cai no pregão seguinte.
       const ultimo = addTradingDays(session, passos.length - (operou ? 0 : 1));
       forecast.push({ ...base, kind: "payout", amount: n(conta.rec_payout_net),

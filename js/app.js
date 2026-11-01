@@ -10,32 +10,32 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=b094dbcc6e";
+} from "./db.js?v=82ecd2c89e";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=b094dbcc6e";
+} from "./util.js?v=82ecd2c89e";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=b094dbcc6e";
-import { cell, locked, wireEditables } from "./editable.js?v=b094dbcc6e";
-import { exportChallenges } from "./export.js?v=b094dbcc6e";
-import { mountPlanPicker } from "./plan-picker.js?v=b094dbcc6e";
-import { nextLiveLot } from "./next-lot.js?v=b094dbcc6e";
-import { buildPlan, sessionDay, weekOf } from "./plan.js?v=b094dbcc6e";
-import { filterForFirm } from "./firm-accounts.js?v=b094dbcc6e";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=b094dbcc6e";
+} from "./charts.js?v=82ecd2c89e";
+import { cell, locked, wireEditables } from "./editable.js?v=82ecd2c89e";
+import { exportChallenges } from "./export.js?v=82ecd2c89e";
+import { mountPlanPicker } from "./plan-picker.js?v=82ecd2c89e";
+import { nextLiveLot } from "./next-lot.js?v=82ecd2c89e";
+import { buildPlan, sessionDay, weekOf } from "./plan.js?v=82ecd2c89e";
+import { filterForFirm } from "./firm-accounts.js?v=82ecd2c89e";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=82ecd2c89e";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges, collectorAlerts,
-} from "./machine.js?v=b094dbcc6e";
+} from "./machine.js?v=82ecd2c89e";
 import { loader,
   renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
   initProfile, raf, odo, burst, landOn, blob, deltaChip,
-} from "./skin.js?v=b094dbcc6e";
-import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=b094dbcc6e";
-import { firmMark, logoBg, logoInner } from "./logos.js?v=b094dbcc6e";
-import { startTour } from "./tour.js?v=b094dbcc6e";
+} from "./skin.js?v=82ecd2c89e";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=82ecd2c89e";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=82ecd2c89e";
+import { startTour } from "./tour.js?v=82ecd2c89e";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -4607,7 +4607,7 @@ async function renderPlan() {
       <div class="panel pweek">
         <h2>This week <span class="dim">${w.payouts} of ${w.goal} payouts</span></h2>
         <div class="pdays">${dias.join("")}</div>
-        <div class="muted">Each payout lands the trading day after its cycle closes.</div>
+        <div class="muted">Only funded accounts already on farm days count. Each payout lands the trading day after its cycle closes.</div>
       </div>
     </div>
     <div class="panel pstepbox">${stepHead(1, "Before trading", "the hedge account must cover everything today can cost")}${passo1}</div>
