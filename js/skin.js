@@ -83,11 +83,16 @@ export function placePill() {
   const nav = tabsEl(), pill = pillEl();
   if (!nav || !pill || nav.classList.contains("ntf-on")) return;
   const b = $(".tab[aria-selected=\"true\"]", nav);
-  if (!b) { pill.style.width = "0px"; return; }
+  if (!b || !b.offsetWidth) { pill.style.width = "0px"; return; }
+  // A primeira vez que ela aparece e no lugar, sem deslizar desde left:0:
+  // abrir a pagina nao e trocar de aba.
+  const primeira = !parseFloat(pill.style.width);
+  if (primeira) pill.style.transition = "none";
   // offsetLeft ja conta o padding da barra; a pilula nasce em left:0, entao
   // o deslocamento e o proprio offsetLeft (o -4 antigo a jogava 4px pra esquerda).
   pill.style.width = b.offsetWidth + "px";
   pill.style.transform = `translateX(${b.offsetLeft}px)`;
+  if (primeira) { void pill.offsetWidth; pill.style.transition = ""; }
 }
 
 /**
@@ -105,10 +110,17 @@ export function loader(cls = "") {
 
 export function renderTabs(pages, current, onPick) {
   const nav = tabsEl();
-  nav.innerHTML = '<span class="tab-pill" id="tabPill"></span>'
-    + pages.map((p) => `<button type="button" class="tab" role="tab" data-v="${p.id}" aria-selected="${
-      p.id === current}">${esc(p.label)}${p.count ? ` <span class="c">${p.count}</span>` : ""}</button>`).join("")
-    + '<div class="ntf" id="ntf"><span class="ic"></span><span class="tx"><b></b><small></small></span><span class="amt n"></span></div>';
+  // Pilula e notificacao nascem uma vez e so os botoes sao trocados. Reescrever
+  // a barra inteira recriava a pilula em left:0 a cada troca de aba -- ela
+  // deslizava desde o comeco em vez de sair da aba anterior -- e no carregamento,
+  // com a barra redesenhada a cada contador que chega, ia e voltava varias vezes.
+  if (!pillEl()) nav.insertAdjacentHTML("afterbegin", '<span class="tab-pill" id="tabPill"></span>');
+  if (!$("#ntf", nav)) {
+    nav.insertAdjacentHTML("beforeend", '<div class="ntf" id="ntf"><span class="ic"></span><span class="tx"><b></b><small></small></span><span class="amt n"></span></div>');
+  }
+  nav.querySelectorAll(".tab").forEach((b) => b.remove());
+  pillEl().insertAdjacentHTML("afterend", pages.map((p) => `<button type="button" class="tab" role="tab" data-v="${p.id}" aria-selected="${
+    p.id === current}">${esc(p.label)}${p.count ? ` <span class="c">${p.count}</span>` : ""}</button>`).join(""));
   nav.onclick = (e) => { const b = e.target.closest(".tab"); if (b) onPick(b.dataset.v); };
   const m = $("#mtabs");
   if (m) {

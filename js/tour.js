@@ -2,7 +2,7 @@
 // pessoa ate a foto da conta, abre o cartao e mostra onde ficam tema, senha e
 // foto. Roda uma vez por conta (operation_settings.tour_seen_at) e pode ser
 // repetido pelo link no cartao do perfil.
-import { openProf, closeProf } from "./skin.js?v=82ecd2c89e";
+import { openProf, closeProf } from "./skin.js?v=654eae0d48";
 
 const $ = (s, r = document) => r.querySelector(s);
 const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
