@@ -5,7 +5,7 @@
 // fica so no coletor, no PC.
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { CONFIG } from "./config.js?v=7c3d2f8662";
+import { CONFIG } from "./config.js?v=b094dbcc6e";
 
 export const supabase = createClient(CONFIG.url, CONFIG.anonKey);
 
@@ -137,6 +137,19 @@ export const load = {
   machines: (ownerId) =>
     supabase.from("collector_status").select("machine, last_cycle_at")
       .eq("owner_id", ownerId).order("machine").then(unwrap),
+
+  // Saude dos coletores para o aviso do Setup. Sem filtro de dono, ao
+  // contrario de `machines`: o admin precisa ver a maquina parada dos outros;
+  // quem nao e admin recebe so as suas pela RLS.
+  collectorHealth: () =>
+    supabase.from("collector_status")
+      .select("owner_id, machine, commit_sha, update_blocked, last_cycle_at").then(unwrap),
+
+  // Validade do token de atualizacao (`update_source`, so membros). A coluna
+  // do token fica de fora: a tela nao precisa dele. `null` = nenhum publicado.
+  updateTokenExpiry: () =>
+    supabase.from("update_source").select("expires_on").limit(1)
+      .then(unwrap).then((rows) => rows[0] ?? null),
 
   discovered: () =>
     supabase.from("discovered_sources").select("*").order("platform").order("label").then(unwrap),

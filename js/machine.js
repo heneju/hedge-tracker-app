@@ -83,3 +83,63 @@ export function keepChallenges(journal, progress, accounts, machine) {
     return nomes.includes(machine);
   });
 }
+
+// ------------------------------------------------------------- saude dos coletores
+
+// Maquina sem ciclo ha mais que isso esta desligada ou com a tarefa parada. Um
+// PC desligado a noite nao e problema; um dia inteiro sem ciclo e.
+const OFFLINE_HOURS = 24;
+// O GitHub nao avisa ninguem quando o token vence: o Setup avisa antes.
+const TOKEN_WARN_DAYS = 14;
+
+// O motivo vem do coletor (`collector/updater.py`, `_fail`), em portugues; a
+// tela e em ingles.
+function updateProblem(motivo) {
+  const m = String(motivo).toLowerCase();
+  if (m.includes("token do github recusado")) return {
+    label: "Token refused",
+    hint: "The GitHub token on that PC expired or was revoked. Publish a new one "
+      + "(python -m importer.update_token set) and the machine swaps it in on its own.",
+  };
+  if (m.startsWith("arquivo rastreado modificado") || m.startsWith("alteracao local")) return {
+    label: "Local changes",
+    hint: "Files edited on that PC block the update. Commit or discard them there.",
+  };
+  return { label: "Can't update", hint: String(motivo) };
+}
+
+/**
+ * O que o Setup precisa avisar sobre os coletores. Vazio = nada a fazer.
+ *
+ * `statuses`: `collector_status` (o admin le todas as maquinas, os outros as
+ * suas). `token`: a linha de `update_source` (so `expires_on`), `null` quando
+ * nao ha nenhuma publicada, `undefined` quando nao deu para saber -- ai nada e
+ * dito sobre o token.
+ */
+export function collectorAlerts(statuses = [], token, { admin = false, now = new Date() } = {}) {
+  const out = [];
+  for (const s of statuses) {
+    if (s.update_blocked) {
+      out.push({ machine: s.machine, kind: "update", ...updateProblem(s.update_blocked),
+                 commit: s.commit_sha || null });
+    } else if (s.last_cycle_at && now - new Date(s.last_cycle_at) > OFFLINE_HOURS * 3600e3) {
+      out.push({ machine: s.machine, kind: "offline", label: "Offline",
+                 hint: "No cycle for over a day: the PC is off or its task stopped.",
+                 since: s.last_cycle_at });
+    }
+  }
+  if (admin && token === null) {
+    out.push({ machine: null, kind: "token", label: "No update token",
+               hint: "Machines keep the token they were installed with. "
+                 + "Publish one with python -m importer.update_token set." });
+  } else if (admin && token?.expires_on) {
+    const dias = Math.floor((new Date(`${token.expires_on}T00:00:00Z`) - now) / 864e5);
+    if (dias <= TOKEN_WARN_DAYS) {
+      out.push({ machine: null, kind: "token",
+                 label: dias < 0 ? "Update token expired" : `Update token: ${dias} days left`,
+                 hint: "Make a new read-only token on GitHub and run "
+                   + "python -m importer.update_token set before it runs out." });
+    }
+  }
+  return out;
+}

@@ -10,32 +10,32 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=7c3d2f8662";
+} from "./db.js?v=b094dbcc6e";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=7c3d2f8662";
+} from "./util.js?v=b094dbcc6e";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=7c3d2f8662";
-import { cell, locked, wireEditables } from "./editable.js?v=7c3d2f8662";
-import { exportChallenges } from "./export.js?v=7c3d2f8662";
-import { mountPlanPicker } from "./plan-picker.js?v=7c3d2f8662";
-import { nextLiveLot } from "./next-lot.js?v=7c3d2f8662";
-import { buildPlan, sessionDay, weekOf } from "./plan.js?v=7c3d2f8662";
-import { filterForFirm } from "./firm-accounts.js?v=7c3d2f8662";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=7c3d2f8662";
+} from "./charts.js?v=b094dbcc6e";
+import { cell, locked, wireEditables } from "./editable.js?v=b094dbcc6e";
+import { exportChallenges } from "./export.js?v=b094dbcc6e";
+import { mountPlanPicker } from "./plan-picker.js?v=b094dbcc6e";
+import { nextLiveLot } from "./next-lot.js?v=b094dbcc6e";
+import { buildPlan, sessionDay, weekOf } from "./plan.js?v=b094dbcc6e";
+import { filterForFirm } from "./firm-accounts.js?v=b094dbcc6e";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=b094dbcc6e";
 import {
-  ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges,
-} from "./machine.js?v=7c3d2f8662";
+  ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges, collectorAlerts,
+} from "./machine.js?v=b094dbcc6e";
 import { loader,
   renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
   initProfile, raf, odo, burst, landOn, blob, deltaChip,
-} from "./skin.js?v=7c3d2f8662";
-import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=7c3d2f8662";
-import { firmMark, logoBg, logoInner } from "./logos.js?v=7c3d2f8662";
-import { startTour } from "./tour.js?v=7c3d2f8662";
+} from "./skin.js?v=b094dbcc6e";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=b094dbcc6e";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=b094dbcc6e";
+import { startTour } from "./tour.js?v=b094dbcc6e";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -2134,9 +2134,13 @@ async function renderUnassigned() {
 // ------------------------------------------------------------- configuração
 
 async function renderConfig() {
-  const [todasContas, stats, todasFontes, firms, plans, progress] = await Promise.all([
+  const [todasContas, stats, todasFontes, firms, plans, progress, saude, token, isAdmin] = await Promise.all([
     load.accounts(), load.accountStats(), load.discovered(), load.firms(),
-    load.plans(), load.progress()]);
+    load.plans(), load.progress(), load.collectorHealth().catch(() => []),
+    load.updateTokenExpiry().catch(() => undefined), load.isAdmin()]);
+  // Maquina que nao atualiza, parada ou token perto de vencer: antes nada disso
+  // aparecia em lugar nenhum, e duas maquinas ficaram semanas no codigo velho.
+  const alertas = collectorAlerts(saude, token, { admin: isAdmin });
   const accounts = keepOfMachine(todasContas, state.machine);
   const discovered = keepOfMachine(todasFontes, state.machine);
 
@@ -2446,6 +2450,17 @@ async function renderConfig() {
         `<button type="button" data-setup-tab="${id}" aria-pressed="${id === tab}">${
           esc(label)}</button>`).join("")}</span>
     </div>
+    ${alertas.length ? `
+    <div class="panel costq">
+      <h2>Collectors <span class="dim">machines that stopped updating or reporting</span></h2>
+      ${alertas.map((a) => `<div class="cqrow">
+        <span class="warn">${esc(a.label)}</span>
+        <span class="cqacct"><b>${esc(a.machine || "All machines")}${a.commit
+          ? ` <span class="dim">running ${esc(a.commit)}</span>` : ""}${a.since
+          ? ` <span class="dim">last cycle ${esc(stamp(a.since))}</span>` : ""}</b>
+          <span class="muted">${esc(a.hint)}</span></span>
+      </div>`).join("")}
+    </div>` : ""}
 
     <div class="panel" data-setup="new" ${tab === "new" ? "" : "hidden"}>
       <h2>New accounts <span class="dim">recognised by name — confirm and they
