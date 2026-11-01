@@ -10,31 +10,32 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=5550644b7d";
+} from "./db.js?v=91f8ed99a5";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=5550644b7d";
+} from "./util.js?v=91f8ed99a5";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=5550644b7d";
-import { cell, locked, wireEditables } from "./editable.js?v=5550644b7d";
-import { exportChallenges } from "./export.js?v=5550644b7d";
-import { mountPlanPicker } from "./plan-picker.js?v=5550644b7d";
-import { nextLiveLot } from "./next-lot.js?v=5550644b7d";
-import { filterForFirm } from "./firm-accounts.js?v=5550644b7d";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=5550644b7d";
+} from "./charts.js?v=91f8ed99a5";
+import { cell, locked, wireEditables } from "./editable.js?v=91f8ed99a5";
+import { exportChallenges } from "./export.js?v=91f8ed99a5";
+import { mountPlanPicker } from "./plan-picker.js?v=91f8ed99a5";
+import { nextLiveLot } from "./next-lot.js?v=91f8ed99a5";
+import { buildPlan, sessionDay, weekOf, maxPayoutProfit, farmTarget, burnAfter } from "./plan.js?v=91f8ed99a5";
+import { filterForFirm } from "./firm-accounts.js?v=91f8ed99a5";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=91f8ed99a5";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges,
-} from "./machine.js?v=5550644b7d";
+} from "./machine.js?v=91f8ed99a5";
 import { loader,
   renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
   initProfile, raf, odo, burst, landOn, blob, deltaChip,
-} from "./skin.js?v=5550644b7d";
-import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=5550644b7d";
-import { firmMark, logoBg, logoInner } from "./logos.js?v=5550644b7d";
-import { startTour } from "./tour.js?v=5550644b7d";
+} from "./skin.js?v=91f8ed99a5";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=91f8ed99a5";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=91f8ed99a5";
+import { startTour } from "./tour.js?v=91f8ed99a5";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -56,6 +57,7 @@ modal.addEventListener("click", (e) => { if (e.target === modal && modal.classLi
 const PAGES = [
   { id: "overview",   label: "Overview" },
   { id: "challenges", label: "Challenges" },
+  { id: "plan",       label: "Plan" },
   { id: "unassigned", label: "Unassigned" },
   { id: "config",     label: "Setup" },
   { id: "issues",     label: "Report" },
@@ -4447,11 +4449,207 @@ function openPendingForm(items, plans, accounts, signature) {
 
 // -------------------------------------------------------------- calculadora
 
+// -------------------------------------------------------------------- plan
+
+/**
+ * O que fazer hoje para chegar na meta. A lista sai de `buildPlan`
+ * (web/js/plan.js); os alvos e o multiplicador de cada conta vêm do coletor.
+ * O que o tracker enxerga se marca sozinho -- a conta operou, as avaliações
+ * foram compradas, o hedge cobre --; o que ele não vê ("pedi o saque",
+ * "queimei") tem botão.
+ */
+async function renderPlan() {
+  const [journal, progress, accounts, firms, plans, policies, today, settings] = await Promise.all([
+    load.journal(), load.progress(), load.accounts(), load.firms(), load.plans(),
+    load.payoutPolicies().catch(() => []), load.tradedToday().catch(() => []), load.settings()]);
+  const session = sessionDay();
+  const semana = weekOf(session);
+  const desde = settings.goal_since || null;
+  const corte = desde && desde < semana.start ? desde : semana.start;
+  const janela = new Date(Date.parse(`${session}T00:00:00Z`) - 45 * 864e5).toISOString().slice(0, 10);
+  const liveIds = accounts.filter((a) => a.kind === "live").map((a) => a.id);
+  const [checkRows, cashRows, liveDays] = await Promise.all([
+    load.planChecks(janela).catch(() => []),
+    load.cashSince(corte).catch(() => []),
+    desde ? load.liveDaysSince(desde, liveIds).catch(() => []) : []]);
+  const plan = buildPlan({
+    journal, progress, accounts, firms, plans, policies, today, settings,
+    checks: new Set(checkRows.map((r) => r.task_key)), cash: cashRows, liveDays,
+  });
+
+  const mult = (m) => (m == null ? "—" : `×${num(m, 2)}`);
+  const linha = ({ done, firm, title, detail, value, check }) => `
+    <div class="ptask${done ? " done" : ""}">
+      <span class="pck" aria-hidden="true">${done ? "✓" : ""}</span>
+      ${firm ? firmMark(firm) : `<span class="pnofirm"></span>`}
+      <span class="ptx"><b>${title}</b>${detail ? `<span class="muted">${detail}</span>` : ""}</span>
+      ${value != null ? `<span class="pnum n">${value}</span>` : ""}
+      ${check ? `<button class="btn ghost" type="button" data-check="${esc(check)}"
+        data-done="${done ? 1 : 0}">${done ? "Undo" : "Done"}</button>` : ""}
+    </div>`;
+
+  const d = plan.deposit;
+  const tarefas = [
+    d.missing ? linha({
+      title: `Deposit ~${money0(d.missing)} into the hedge`,
+      detail: `live equity ${money0(d.equity)} · today needs ${money0(d.need)}`
+        + (d.lead ? ` (leader ${esc(d.lead.short)} to its payout ${money0(d.lead.costToPayout)}`
+          + " + today's hedge of the others)" : ""),
+    }) : "",
+    ...plan.payouts.map((p) => linha({
+      done: p.done, firm: p.firm, check: p.key,
+      title: `${esc(p.short)} · request payout`,
+      detail: `${esc(p.firm || "")} · cycle closed, ${p.amount != null ? `${money0(p.amount)} expected` : "amount on the firm's dashboard"}`,
+    })),
+    ...plan.trades.map((t) => linha({
+      done: t.done, firm: t.firm,
+      title: `${esc(t.short)} · ${esc(t.label)}`,
+      detail: [
+        t.target != null ? `target ${money0(t.target)}` : null,
+        t.multiplier != null ? `hedge ${mult(t.multiplier)}${t.hedge ? ` (${money0(t.hedge)} if it hits)` : ""}` : null,
+        t.costToPayout != null ? `${money0(t.costToPayout)} of hedge to the payout` : null,
+        t.payoutNet != null ? `payout ~${money0(t.payoutNet)}` : null,
+        t.note ? esc(t.note) : null,
+        t.done ? "traded today" : null,
+      ].filter(Boolean).join(" · "),
+      value: t.target != null ? money0(t.target) : null,
+    })),
+    ...plan.decisions.map((x) => linha({
+      done: x.done, firm: x.firm, check: x.key,
+      title: `${esc(x.short)} · burn, or keep going`,
+      detail: `${esc(x.why)}${x.nextBig ? ` · next cycle starts with a ${money0(x.nextBig)} trade` : ""}`,
+    })),
+    ...plan.buys.map((b) => linha({
+      firm: b.firm,
+      title: `Buy ${b.n} × ${esc(b.firm)}${b.plan ? ` ${esc(b.plan)}` : ""}`,
+      detail: `${esc(b.why)}${b.price != null ? ` · ~${money0(b.price)} each` : ""}`,
+      value: b.cost != null ? money0(b.cost) : null,
+    })),
+  ].filter(Boolean);
+  const aFazer = plan.trades.filter((t) => !t.done).length + plan.payouts.filter((p) => !p.done).length
+    + plan.decisions.filter((x) => !x.done).length + plan.buys.length + (d.missing ? 1 : 0);
+
+  const g = plan.goal;
+  const w = plan.week;
+  const previsao = plan.forecast.slice(0, 8).map((f) => `
+    <div class="pfc"><span class="n">${day(f.day)}</span><b>${esc(f.short)}</b>
+      <span class="muted">${esc(f.firm || "")}</span>
+      <span class="n">${f.amount != null ? money0(f.amount) : "—"}</span></div>`).join("");
+
+  // Mesas que o dono opera: as que têm challenge. As regras que a mesa não diz
+  // são o que se edita aqui; o resto vem de Setup.
+  const usadas = new Set(journal.map((c) => c.firm_id).filter(Boolean));
+  const regras = policies.filter((p) => usadas.has(p.firm_id))
+    .sort((a, b) => String(firms.find((f) => f.id === a.firm_id)?.name).localeCompare(
+      String(firms.find((f) => f.id === b.firm_id)?.name)) || Number(a.account_size) - Number(b.account_size));
+  const regraRows = regras.map((p) => {
+    const firma = firms.find((f) => f.id === p.firm_id) || {};
+    const pstar = maxPayoutProfit(p);
+    return `<tr>
+      <td>${firmMark(firma.name)} ${esc(firma.name || "—")}</td>
+      <td class="muted">${esc(p.label || p.policy)} · ${money0(p.account_size)}</td>
+      <td class="num" title="buffer + cap ÷ share of profit">${pstar == null ? "—" : money0(pstar)}</td>
+      ${cell(p.farm_day_target, { id: p.id, field: "policy:farm_day_target", type: "number", align: true,
+        title: "empty = the firm's minimum winning day + $50",
+        format: () => (p.farm_day_target == null
+          ? `<span class="dim">${money0(farmTarget(p))}</span>` : money0(p.farm_day_target)) })}
+      ${cell(p.burn_after_payouts, { id: p.id, field: "policy:burn_after_payouts", type: "number", align: true,
+        title: "payouts before burning the account; empty = 3",
+        format: () => (p.burn_after_payouts == null
+          ? `<span class="dim">${burnAfter(p)}</span>` : String(p.burn_after_payouts)) })}
+      ${p.cap == null ? cell(p.cycle_target, { id: p.id, field: "policy:cycle_target", type: "number", align: true,
+        title: "no payout cap: profit to build each cycle",
+        format: () => (p.cycle_target == null ? `<span class="dim">set</span>` : money0(p.cycle_target)) })
+        : `<td class="num dim" title="capped policy: the cap decides">—</td>`}
+      ${cell(firma.max_funded, { id: firma.id, field: "firm:max_funded", type: "number", align: true,
+        title: "funded accounts at the same time in this firm",
+        format: () => String(firma.max_funded ?? 2) })}
+    </tr>`;
+  }).join("");
+
+  render(`
+    <div class="tool">
+      <h2>Plan</h2>
+      <span class="hint">what to do today to reach the goal · session of ${day(plan.session)}</span>
+    </div>
+    <div class="plan-top">
+      <div class="panel pgoal">
+        <h2>Goal <span class="dim">cash profit since the start date</span></h2>
+        <div class="pbig n">${g.done == null ? "—" : money0(g.done)}
+          <span class="dim">of ${money0(g.target)}</span></div>
+        <div class="bar2"><i class="ok" style="--w:${g.pct ?? 0}%"></i></div>
+        <div class="pset">
+          <label>Goal <input class="inp n" id="pg-goal" type="number" min="0" step="100"
+            value="${g.target}"></label>
+          <label>Since <input class="inp n" id="pg-since" type="date" value="${esc(g.since || "")}"></label>
+          <label>Payouts / week <input class="inp n" id="pg-week" type="number" min="1" step="1"
+            value="${w.goal}"></label>
+          <label>Evals per free slot <input class="inp n" id="pg-slot" type="number" min="1" step="1"
+            value="${Number(settings.evals_per_free_slot) || 3}"></label>
+        </div>
+      </div>
+      <div class="panel pweek">
+        <h2>This week <span class="dim">${day(w.start)} → ${day(w.end)}</span></h2>
+        <div class="pbig n">${w.payouts} <span class="dim">of ${w.goal} payouts</span></div>
+        <div class="muted">${w.expectedThis} more expected this week · ${w.expectedNext} next week</div>
+        <div class="pforecast">${previsao || `<span class="muted">No funded account in a payout cycle.</span>`}</div>
+      </div>
+    </div>
+    <div class="panel ptasks">
+      <h2>Today <span class="dim">${aFazer} to do · the most advanced account first</span></h2>
+      ${tarefas.join("") || empty("Nothing to do today.")}
+    </div>
+    <div class="panel prules">
+      <h2>Rules by firm <span class="dim">only what the firm's payout rules don't say · the big trade is
+        always max-payout profit − profit in the account − farm days left</span></h2>
+      <div class="scroll"><table class="dt n">
+        <thead><tr><th>Firm</th><th>Policy</th><th class="num">Max payout at</th>
+          <th class="num">Farm day</th><th class="num">Burn after</th><th class="num">Cycle target</th>
+          <th class="num">Max funded</th></tr></thead>
+        <tbody>${regraRows || `<tr><td colspan="7">${empty("No payout policy for the firms you trade.")}</td></tr>`}</tbody>
+      </table></div>
+    </div>`);
+
+  view.querySelectorAll("[data-check]").forEach((b) => {
+    b.onclick = async () => {
+      b.disabled = true;
+      try {
+        await guard(() => save.planCheck(plan.session, b.dataset.check, b.dataset.done !== "1"));
+        renderPlan();
+      } catch {
+        b.disabled = false;
+      }
+    };
+  });
+
+  const salvar = (id, coluna, ler) => {
+    const el = document.getElementById(id);
+    el.onchange = async () => {
+      await guard(() => save.settings({ [coluna]: ler(el.value) }), "Saved");
+      renderPlan();
+    };
+  };
+  salvar("pg-goal", "goal_profit", (v) => (v === "" ? null : Number(v)));
+  salvar("pg-since", "goal_since", (v) => v || null);
+  salvar("pg-week", "goal_payouts_week", (v) => Math.max(1, Number(v) || 2));
+  salvar("pg-slot", "evals_per_free_slot", (v) => Math.max(1, Number(v) || 3));
+
+  wireEditables(view.querySelector(".prules"), async (field, id, raw) => {
+    const [tabela, coluna] = field.split(":");
+    const valor = raw === "" ? null : Number(raw);
+    await guard(() => (tabela === "firm"
+      ? save.firm(Number(id), { [coluna]: valor ?? 2 })
+      : save.policy(Number(id), { [coluna]: valor })), "Saved");
+    renderPlan();
+  });
+}
+
 // ------------------------------------------------------------------ router
 
 const RENDERERS = {
   overview: renderOverview,
   challenges: renderChallenges,
+  plan: renderPlan,
   unassigned: renderUnassigned,
   config: renderConfig,
   issues: renderIssues,

@@ -5,7 +5,7 @@
 // fica so no coletor, no PC.
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { CONFIG } from "./config.js?v=5550644b7d";
+import { CONFIG } from "./config.js?v=91f8ed99a5";
 
 export const supabase = createClient(CONFIG.url, CONFIG.anonKey);
 
@@ -77,16 +77,32 @@ export const load = {
   // de mostrar qualquer coisa.
   settings: () =>
     supabase.from("operation_settings")
-      .select("seed_capital, borrowed_capital, working_cash, theme, avatar_data, tour_seen_at").maybeSingle()
+      .select("seed_capital, borrowed_capital, working_cash, theme, avatar_data, tour_seen_at, "
+        + "goal_profit, goal_since, goal_payouts_week, evals_per_free_slot").maybeSingle()
       .then(({ data, error }) => {
         if (error) throw new Error(error.message);
-        return data ?? { seed_capital: 0, borrowed_capital: 0, working_cash: 0, theme: null, avatar_data: null, tour_seen_at: null };
+        return data ?? { seed_capital: 0, borrowed_capital: 0, working_cash: 0, theme: null,
+          avatar_data: null, tour_seen_at: null, goal_profit: null, goal_since: null,
+          goal_payouts_week: 2, evals_per_free_slot: 3 };
       }),
 
-  // Quais contas já foram operadas no dia de sessão corrente. O dia vem do
-  // banco de propósito: ele vira às 17:00 de Nova York, então a trade da noite
-  // já conta para o dia seguinte -- refazer esse cálculo no navegador erraria
-  // toda vez que o horário de verão americano virasse.
+  // Aba Plan: o que foi marcado a mão ("pedi o saque", "queimei"), o dinheiro
+  // que entrou e saiu desde o início da meta, e o resultado da live no mesmo
+  // período -- a meta é lucro de CAIXA, não o que está preso na mesa.
+  planChecks: (since) =>
+    supabase.from("plan_checks").select("session_day, task_key")
+      .gte("session_day", since).then(unwrap),
+
+  cashSince: (since) =>
+    supabase.from("cash_events").select("challenge_id, kind, amount, occurred_on")
+      .gte("occurred_on", since).then(unwrap),
+
+  liveDaysSince: (since, accountIds) =>
+    accountIds.length === 0
+      ? Promise.resolve([])
+      : supabase.from("account_days").select("account_id, day, day_pnl")
+          .in("account_id", accountIds).gte("day", since).then(unwrap),
+
   // Challenges que o coletor cadastrou pelo nome da conta, ou cuja funded foi
   // ativada num plano com taxa de ativação, e que ainda esperam o dono dizer
   // quanto pagou. Saem desta lista quando o custo é gravado.
@@ -97,6 +113,10 @@ export const load = {
         + "challenge_phases(phase, accounts(login_or_name))")
       .or("cost_pending.eq.true,activation_cost_due.not.is.null").order("id").then(unwrap),
 
+  // Quais contas já foram operadas no dia de sessão corrente. O dia vem do
+  // banco de propósito: ele vira às 17:00 de Nova York, então a trade da noite
+  // já conta para o dia seguinte -- refazer esse cálculo no navegador erraria
+  // toda vez que o horário de verão americano virasse.
   tradedToday: () =>
     supabase.from("account_today")
       .select("account_id, traded_today, trades_today, open_now, last_day").then(unwrap),
@@ -271,6 +291,25 @@ export const save = {
 
   plan: (id, patch) =>
     supabase.from("firm_plans").update(patch).eq("id", id).then(unwrap),
+
+  policy: (id, patch) =>
+    supabase.from("payout_policies").update(patch).eq("id", id).then(unwrap),
+
+  // Check de tarefa da aba Plan. A chave é do dono + dia + tarefa: marcar duas
+  // vezes não duplica, desmarcar apaga.
+  planCheck: async (sessionDay, taskKey, done) => {
+    if (!done) {
+      return supabase.from("plan_checks").delete()
+        .eq("session_day", sessionDay).eq("task_key", taskKey).then(unwrap);
+    }
+    // `owner_id` explícito pelo mesmo motivo do `settings`: é parte da chave
+    // do conflito, e deixá-lo para o default não dá ao upsert o que casar.
+    const user = await currentUser();
+    if (!user) throw new Error("sessão expirada");
+    return supabase.from("plan_checks")
+      .upsert({ owner_id: user.id, session_day: sessionDay, task_key: taskKey },
+              { onConflict: "owner_id,session_day,task_key" }).then(unwrap);
+  },
 
   deletePlan: (id) =>
     supabase.from("firm_plans").delete().eq("id", id).then(unwrap),
