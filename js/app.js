@@ -10,32 +10,32 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=8edcf8e179";
+} from "./db.js?v=7003cc0b82";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=8edcf8e179";
+} from "./util.js?v=7003cc0b82";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=8edcf8e179";
-import { cell, locked, wireEditables } from "./editable.js?v=8edcf8e179";
-import { exportChallenges } from "./export.js?v=8edcf8e179";
-import { mountPlanPicker } from "./plan-picker.js?v=8edcf8e179";
-import { nextLiveLot } from "./next-lot.js?v=8edcf8e179";
-import { buildPlan, sessionDay, weekOf } from "./plan.js?v=8edcf8e179";
-import { filterForFirm } from "./firm-accounts.js?v=8edcf8e179";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=8edcf8e179";
+} from "./charts.js?v=7003cc0b82";
+import { cell, locked, wireEditables } from "./editable.js?v=7003cc0b82";
+import { exportChallenges } from "./export.js?v=7003cc0b82";
+import { mountPlanPicker } from "./plan-picker.js?v=7003cc0b82";
+import { nextLiveLot } from "./next-lot.js?v=7003cc0b82";
+import { buildPlan, sessionDay, weekOf } from "./plan.js?v=7003cc0b82";
+import { filterForFirm } from "./firm-accounts.js?v=7003cc0b82";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=7003cc0b82";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges, collectorAlerts,
-} from "./machine.js?v=8edcf8e179";
+} from "./machine.js?v=7003cc0b82";
 import { loader,
   renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
   initProfile, raf, odo, burst, landOn, blob, deltaChip,
-} from "./skin.js?v=8edcf8e179";
-import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=8edcf8e179";
-import { firmMark, logoBg, logoInner } from "./logos.js?v=8edcf8e179";
-import { startTour } from "./tour.js?v=8edcf8e179";
+} from "./skin.js?v=7003cc0b82";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=7003cc0b82";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=7003cc0b82";
+import { startTour } from "./tour.js?v=7003cc0b82";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -969,9 +969,10 @@ async function renderChallenges() {
   // "qual eu ja fiz e qual falta", e ela so se respondia abrindo challenge por
   // challenge para olhar a data da ultima trade.
   //
-  // O challenge conta como operado quando QUALQUER conta dele operou: a linha
-  // junta avaliacao e funded ("0012 / 0007") e o que se quer saber e se aquela
-  // linha ja teve a operacao do dia, nao em qual das duas contas ela caiu.
+  // A linha junta avaliacao e funded ("0012 / 0007"), mas so a conta da fase
+  // corrente marca. Antes valia qualquer conta: a avaliacao da Top One que
+  // aprovou de manha pintava a linha da funded ativada a tarde, que ainda tinha
+  // a trade do dia pela frente.
   //
   // Posicao ABERTA tambem marca. `trades` so recebe round-trip fechado, entao
   // a conta em que ele acabou de entrar apareceria como "falta fazer" --
@@ -980,7 +981,7 @@ async function renderChallenges() {
   const operadosHoje = new Map();
   for (const p of progressoTodo) {
     const hoje = sessaoPorConta.get(p.account_id);
-    if (!p.challenge_id || !hoje || !(hoje.traded_today || hoje.open_now)) continue;
+    if (!p.challenge_id || !isCurrentPhase(p) || !hoje || !(hoje.traded_today || hoje.open_now)) continue;
     const antes = operadosHoje.get(p.challenge_id) || { trades: 0, aberta: false };
     operadosHoje.set(p.challenge_id, {
       trades: antes.trades + Number(hoje.trades_today || 0),
