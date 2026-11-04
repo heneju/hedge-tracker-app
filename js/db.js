@@ -5,7 +5,7 @@
 // fica so no coletor, no PC.
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { CONFIG } from "./config.js?v=7003cc0b82";
+import { CONFIG } from "./config.js?v=e90d0cb86b";
 
 export const supabase = createClient(CONFIG.url, CONFIG.anonKey);
 
@@ -137,6 +137,27 @@ export const load = {
   machines: (ownerId) =>
     supabase.from("collector_status").select("machine, last_cycle_at")
       .eq("owner_id", ownerId).order("machine").then(unwrap),
+
+  // Contabilidade: a linha existir é o que liga a aba e os avisos. Quem não
+  // tem recebe null e nunca vê nada disto.
+  accountingSettings: () =>
+    supabase.from("accounting_settings").select("*").maybeSingle()
+      .then(({ data, error }) => {
+        if (error) throw new Error(error.message);
+        return data ?? null;
+      }),
+
+  // A fila de avisos. `pending` e `failed` são o que a faixa de alerta mostra;
+  // o resto é histórico da aba.
+  accountingOutbox: (since) =>
+    supabase.from("accounting_outbox").select("*")
+      .gte("created_at", since).order("id", { ascending: false }).then(unwrap),
+
+  // O livro-caixa de um mês: custos, ativações, saques e depósitos da live.
+  accountingMoves: (from, to) =>
+    supabase.from("accounting_moves").select("*")
+      .gte("occurred_on", from).lt("occurred_on", to)
+      .order("occurred_on").order("created_at").then(unwrap),
 
   // Saude dos coletores para o aviso do Setup. Sem filtro de dono, ao
   // contrario de `machines`: o admin precisa ver a maquina parada dos outros;
@@ -285,6 +306,8 @@ export const save = {
   // `activation`: o lancamento e a taxa de ativacao da funded, que tem a
   // pergunta dela (`activation_cost_due`) e nao responde a da avaliacao.
   createCashEvent: async (row, { activation = false } = {}) => {
+    // A marca é o que separa ativação de compra no livro-caixa da contabilidade.
+    if (activation && !row.ref) row = { ...row, ref: "activation" };
     const criado = await supabase.from("cash_events").insert(row).select().single().then(unwrap);
     if (!activation) await costAnswered(row.challenge_id, row.kind, row.amount);
     return criado;
@@ -343,6 +366,18 @@ export const save = {
 
   deletePlan: (id) =>
     supabase.from("firm_plans").delete().eq("id", id).then(unwrap),
+
+  // "Tentar de novo" volta a linha para a fila zerada; "mandei na mão" fecha
+  // sem o coletor. As duas saem da faixa de alerta na hora.
+  outboxRetry: (id) =>
+    supabase.from("accounting_outbox")
+      .update({ status: "pending", attempts: 0, last_attempt_at: null, last_error: null })
+      .eq("id", id).then(unwrap),
+
+  outboxManual: (id) =>
+    supabase.from("accounting_outbox")
+      .update({ status: "manual", sent_at: new Date().toISOString(), last_error: null })
+      .eq("id", id).then(unwrap),
 
   // Apaga tambem as execucoes e trades da conta (cascade). Quem chama avisa.
   deleteAccount: (id) =>

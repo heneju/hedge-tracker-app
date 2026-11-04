@@ -10,32 +10,32 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=7003cc0b82";
+} from "./db.js?v=e90d0cb86b";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=7003cc0b82";
+} from "./util.js?v=e90d0cb86b";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=7003cc0b82";
-import { cell, locked, wireEditables } from "./editable.js?v=7003cc0b82";
-import { exportChallenges } from "./export.js?v=7003cc0b82";
-import { mountPlanPicker } from "./plan-picker.js?v=7003cc0b82";
-import { nextLiveLot } from "./next-lot.js?v=7003cc0b82";
-import { buildPlan, sessionDay, weekOf } from "./plan.js?v=7003cc0b82";
-import { filterForFirm } from "./firm-accounts.js?v=7003cc0b82";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=7003cc0b82";
+} from "./charts.js?v=e90d0cb86b";
+import { cell, locked, wireEditables } from "./editable.js?v=e90d0cb86b";
+import { exportChallenges } from "./export.js?v=e90d0cb86b";
+import { mountPlanPicker } from "./plan-picker.js?v=e90d0cb86b";
+import { nextLiveLot } from "./next-lot.js?v=e90d0cb86b";
+import { buildPlan, sessionDay, weekOf } from "./plan.js?v=e90d0cb86b";
+import { filterForFirm } from "./firm-accounts.js?v=e90d0cb86b";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=e90d0cb86b";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges, collectorAlerts,
-} from "./machine.js?v=7003cc0b82";
+} from "./machine.js?v=e90d0cb86b";
 import { loader,
   renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
   initProfile, raf, odo, burst, landOn, blob, deltaChip,
-} from "./skin.js?v=7003cc0b82";
-import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=7003cc0b82";
-import { firmMark, logoBg, logoInner } from "./logos.js?v=7003cc0b82";
-import { startTour } from "./tour.js?v=7003cc0b82";
+} from "./skin.js?v=e90d0cb86b";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=e90d0cb86b";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=e90d0cb86b";
+import { startTour } from "./tour.js?v=e90d0cb86b";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -107,6 +107,9 @@ const state = {
   // Challenges: Operate mostra o que se opera, Money o dinheiro.
   // Os ultimos eventos do coletor, para o feed da Overview.
   feed: [],
+  // Linha de accounting_settings do dono. `undefined` = ainda nao perguntou;
+  // null = nao usa contabilidade (a faixa e a aba nunca aparecem).
+  accounting: undefined,
 };
 
 function readMachine() {
@@ -4115,6 +4118,81 @@ async function loadPending() {
 }
 
 /** Roda depois da primeira tela: o aviso não pode atrasar o que já ia carregar. */
+// ------------------------------------------------------------ contabilidade
+//
+// A faixa acima da tela: aviso para a contabilidade que ainda nao saiu. Sem
+// API nao existe "entregue" -- o que o coletor sabe e se viu a mensagem na
+// conversa. Pendente ha pouco e normal (o coletor tenta em ate 15 s); a faixa
+// so aparece quando ja passou tempo demais ou quando ele desistiu.
+const NOTICE_GRACE_MS = 30 * 60e3;
+const NOTICE_WINDOW_DAYS = 45;
+const WHY_LOCKED = "tela bloqueada";
+
+function noticeWhat(r) {
+  const p = r.payload || {};
+  if (r.kind === "payout_notice") {
+    return `Payout notice · ${p.short || "?"}${p.firm ? ` · ${p.firm}` : ""}${
+      p.amount != null ? ` · ${money0(p.amount)}` : ""}`;
+  }
+  if (r.kind === "monthly_report") return `Monthly statement · ${monthLabel(r.period)}`;
+  if (r.kind === "monthly_supplement") return `Statement supplement · ${monthLabel(r.period)}`;
+  return "Test message";
+}
+
+function noticeWhy(r) {
+  if (r.last_error === WHY_LOCKED) return "the sending PC is locked or off";
+  const tries = `${r.attempts} attempt${r.attempts === 1 ? "" : "s"}`;
+  if (r.status === "failed") return `gave up after ${tries}${r.last_error ? ` — ${r.last_error}` : ""}`;
+  if (r.last_error) return `${tries} — ${r.last_error}`;
+  return "the collector hasn't picked it up yet";
+}
+
+function noticeRow(r) {
+  return `<div class="notice">
+    <span class="warn">Accounting</span>
+    <span class="ntx"><b>${esc(noticeWhat(r))} hasn't reached the office</b>
+      <span class="muted">${esc(noticeWhy(r))} · since ${esc(stamp(r.last_attempt_at || r.created_at))}</span></span>
+    <button class="btn ghost" type="button" data-outbox="${r.id}" data-act="retry">Retry</button>
+    <button class="btn ghost" type="button" data-outbox="${r.id}" data-act="manual">Sent by hand</button>
+  </div>`;
+}
+
+async function refreshAccounting() {
+  const box = document.getElementById("notices");
+  if (!box) return;
+  if (!state.email) { box.innerHTML = ""; return; }
+  let rows;
+  try {
+    if (state.accounting === undefined) state.accounting = await load.accountingSettings();
+    if (!state.accounting) { box.innerHTML = ""; return; }
+    rows = await load.accountingOutbox(new Date(Date.now() - NOTICE_WINDOW_DAYS * 864e5).toISOString());
+  } catch (err) {
+    console.error("accounting:", err);
+    return;   // offline: a faixa que esta fica
+  }
+  const now = Date.now();
+  // Pendente com erro aparece na hora: o motivo ja e informacao (PC bloqueado,
+  // contato errado). Sem erro, espera a folga -- o coletor pode so nao ter
+  // passado ainda.
+  const stuck = rows.filter((r) => r.status === "failed"
+    || (r.status === "pending" && (r.last_error || now - new Date(r.created_at) > NOTICE_GRACE_MS)));
+  box.innerHTML = stuck.map(noticeRow).join("");
+  box.querySelectorAll("[data-outbox]").forEach((b) => {
+    b.onclick = async () => {
+      b.disabled = true;
+      const retry = b.dataset.act === "retry";
+      try {
+        await guard(() => (retry ? save.outboxRetry : save.outboxManual)(Number(b.dataset.outbox)),
+          retry ? "Back in the queue" : "Marked as sent by hand");
+      } catch {
+        b.disabled = false;
+        return;
+      }
+      refreshAccounting();
+    };
+  });
+}
+
 async function checkPending() {
   // Offline não é motivo para atrapalhar quem já está com a tela aberta. Mas
   // engolir calado também não serve: sem o console, uma falha aqui vira "o
@@ -4651,7 +4729,12 @@ async function renderPlan() {
     b.onclick = async () => {
       b.disabled = true;
       try {
-        await guard(() => save.planCheck(plan.session, b.dataset.check, b.dataset.done !== "1"));
+        const marcar = b.dataset.done !== "1";
+        await guard(() => save.planCheck(plan.session, b.dataset.check, marcar));
+        // O coletor transforma este check no aviso de saque para a contabilidade.
+        if (marcar && state.accounting && b.dataset.check.startsWith("payout:")) {
+          toast("The accounting office gets a WhatsApp notice in a minute");
+        }
         renderPlan();
       } catch {
         b.disabled = false;
@@ -4796,8 +4879,10 @@ async function boot() {
     state.totals = { pnl: null, challenges: null };
     state.openIssues = 0;
     state.tradedToday = null;
+    state.accounting = undefined;
     renderNav();
     renderStatus();
+    refreshAccounting();
     return renderLogin();
   }
   state.email = user.email ?? "";
@@ -4805,6 +4890,7 @@ async function boot() {
   await loadMachines(user.id);
   renderNav();
   refreshIssueCount();
+  refreshAccounting();
   // O cartao do perfil: tema e foto vem do banco (a mesma escolha em todo PC);
   // o navegador guarda uma copia para pintar certo antes da resposta.
   let prefs = {};
@@ -4894,6 +4980,7 @@ async function pulse() {
     }
   }
   lastSnap = snap;
+  refreshAccounting();
 }
 
 function pushEvent(ev) {

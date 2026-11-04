@@ -752,6 +752,13 @@ main#view{position:relative;min-height:40vh}
 .costq .cqacct b{font:700 13px var(--f);overflow-wrap:anywhere}
 .costq .cqacct .muted{font-size:11.5px}
 .costq .cqrow .inp{width:130px;text-align:right}
+/* Faixa acima da tela: aviso para a contabilidade que ainda nao saiu. */
+.notices:empty{display:none}
+.notice{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 18px;margin:0 0 6px;border-radius:20px;background:var(--amber-dim);animation:mat .7s var(--ease) both}
+.notice .ntx{display:flex;flex-direction:column;gap:2px;flex:1 1 220px;min-width:0}
+.notice .ntx b{font:700 13px var(--f);overflow-wrap:anywhere}
+.notice .ntx .muted{font-size:11.5px}
+.notice .btn{height:32px;padding:0 14px;font-size:12px;flex:none}
 /* aba Plan: meta e semana no topo, o dia em quatro passos numerados */
 .plan-top{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:14px}
 .plan-top .panel{margin:0}
@@ -1017,6 +1024,7 @@ dialog.side .panel{margin:12px 0 0;padding:16px 18px}
     </div>
     <div class="ntf2" id="ntf2"><i class="dot"></i><b></b><small></small><span class="amt n"></span></div>
   </header>
+  <div class="notices" id="notices" aria-live="polite"></div>
   <main id="view"><div class="loader" role="status" aria-label="loading"><div class="blobs"><i></i><i></i><i></i><i></i><i></i></div><span>loading</span></div></main>
   <nav class="mtabs" id="mtabs" aria-label="Sections"></nav>
 </div>
@@ -1042,6 +1050,6 @@ dialog.side .panel{margin:12px 0 0;padding:16px 18px}
 
 <dialog id="modal"></dialog>
 
-<script type="module" src="./js/app.js?v=7003cc0b82"></script>
+<script type="module" src="./js/app.js?v=e90d0cb86b"></script>
 </body>
 </html>
