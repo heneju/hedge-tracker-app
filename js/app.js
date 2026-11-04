@@ -10,32 +10,32 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=e90d0cb86b";
+} from "./db.js?v=51b2925bba";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=e90d0cb86b";
+} from "./util.js?v=51b2925bba";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=e90d0cb86b";
-import { cell, locked, wireEditables } from "./editable.js?v=e90d0cb86b";
-import { exportChallenges } from "./export.js?v=e90d0cb86b";
-import { mountPlanPicker } from "./plan-picker.js?v=e90d0cb86b";
-import { nextLiveLot } from "./next-lot.js?v=e90d0cb86b";
-import { buildPlan, sessionDay, weekOf } from "./plan.js?v=e90d0cb86b";
-import { filterForFirm } from "./firm-accounts.js?v=e90d0cb86b";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=e90d0cb86b";
+} from "./charts.js?v=51b2925bba";
+import { cell, locked, wireEditables } from "./editable.js?v=51b2925bba";
+import { exportChallenges } from "./export.js?v=51b2925bba";
+import { mountPlanPicker } from "./plan-picker.js?v=51b2925bba";
+import { nextLiveLot } from "./next-lot.js?v=51b2925bba";
+import { buildPlan, sessionDay, weekOf } from "./plan.js?v=51b2925bba";
+import { filterForFirm } from "./firm-accounts.js?v=51b2925bba";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=51b2925bba";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges, collectorAlerts,
-} from "./machine.js?v=e90d0cb86b";
+} from "./machine.js?v=51b2925bba";
 import { loader,
   renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
   initProfile, raf, odo, burst, landOn, blob, deltaChip,
-} from "./skin.js?v=e90d0cb86b";
-import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=e90d0cb86b";
-import { firmMark, logoBg, logoInner } from "./logos.js?v=e90d0cb86b";
-import { startTour } from "./tour.js?v=e90d0cb86b";
+} from "./skin.js?v=51b2925bba";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=51b2925bba";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=51b2925bba";
+import { startTour } from "./tour.js?v=51b2925bba";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -60,6 +60,8 @@ const PAGES = [
   { id: "plan",       label: "Plan" },
   { id: "unassigned", label: "Unassigned" },
   { id: "config",     label: "Setup" },
+  // So para quem tem linha em accounting_settings -- ver renderNav.
+  { id: "accounting", label: "Accounting" },
   { id: "issues",     label: "Report" },
 ];
 
@@ -4163,7 +4165,10 @@ async function refreshAccounting() {
   if (!state.email) { box.innerHTML = ""; return; }
   let rows;
   try {
-    if (state.accounting === undefined) state.accounting = await load.accountingSettings();
+    if (state.accounting === undefined) {
+      state.accounting = await load.accountingSettings();
+      renderNav();   // a aba Accounting so existe para quem tem a linha
+    }
     if (!state.accounting) { box.innerHTML = ""; return; }
     rows = await load.accountingOutbox(new Date(Date.now() - NOTICE_WINDOW_DAYS * 864e5).toISOString());
   } catch (err) {
@@ -4761,18 +4766,248 @@ function addDays(iso, n) {
 
 // ------------------------------------------------------------------ router
 
+// ------------------------------------------------------------ aba Accounting
+//
+// O que o escritorio recebe e de onde saiu: o livro-caixa do mes (compras,
+// ativacoes, reembolsos, saques e depositos na corretora, com o sinal da
+// carteira), a fila de envios com o texto que foi, e a configuracao do
+// WhatsApp. Os numeros vem da view accounting_moves -- a mesma do Excel.
+
+const MOVE_LABEL = {
+  cost: "Evaluation purchase", activation: "Funded activation", refund: "Refund",
+  payout: "Payout received", deposit: "Hedge deposit", withdrawal: "Hedge withdrawal",
+  adjustment: "Broker adjustment",
+};
+const OUTBOX_LABEL = { sent: ["funded", "sent"], manual: ["closed", "sent by hand"],
+  pending: ["passed", "pending"], failed: ["failed", "failed"], cancelled: ["closed", "cancelled"] };
+
+function monthShift(ym, n) {
+  const [y, m] = ym.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + n, 1));
+  return d.toISOString().slice(0, 7);
+}
+
+function moveDescription(m) {
+  const size = m.account_size ? ` ${Math.round(Number(m.account_size) / 1000)}k` : "";
+  const conta = m.account ? `, conta final ${m.account}` : "";
+  const firm = m.firm || "";
+  const plan = m.plan ? ` ${m.plan}` : "";
+  switch (m.kind) {
+    case "cost": return `Compra de avaliação ${firm}${plan}${size}${conta}`;
+    case "activation": return `Ativação da conta funded ${firm}${plan}${size}${conta}`;
+    case "refund": return `Reembolso ${firm}${conta}`;
+    case "payout": return `Saque de lucro ${firm}${conta}`;
+    case "deposit": return `Depósito na conta de hedge ${firm}${conta}`;
+    case "withdrawal": return `Saque da conta de hedge ${firm}${conta}`;
+    default: return `${m.kind} ${firm}${conta}`;
+  }
+}
+
+function movesCsv(moves) {
+  const cell = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const head = ["Data", "Tipo", "Entrada (US$)", "Saída (US$)", "Prop firm / corretora", "Plano",
+    "Conta", "Descrição", "Observação"];
+  const rows = moves.map((m) => {
+    const v = Number(m.amount) || 0;
+    return [m.occurred_on, MOVE_LABEL[m.kind] || m.kind, v > 0 ? v.toFixed(2) : "",
+      v < 0 ? (-v).toFixed(2) : "", m.firm || "", m.plan || "", m.account || "",
+      moveDescription(m), m.note || ""].map(cell).join(";");
+  });
+  return [head.map(cell).join(";"), ...rows].join("\r\n");
+}
+
+function downloadBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement("a"), { href: url, download: name });
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+async function renderAccounting() {
+  if (state.accounting === undefined) state.accounting = await load.accountingSettings();
+  const s = state.accounting;
+  if (!s) {
+    render(`<div class="panel"><h2>Accounting</h2><div class="panel-body">
+      <p class="muted" style="margin:0">Not set up for this account.</p></div></div>`);
+    return;
+  }
+  const hoje = new Date().toISOString().slice(0, 10);
+  const month = state.acctMonth || hoje.slice(0, 7);
+  const since = `${monthShift(hoje.slice(0, 7), -11)}-01`;
+  const [todos, outbox] = await Promise.all([
+    load.accountingMoves(since, `${monthShift(hoje.slice(0, 7), 1)}-01`),
+    load.accountingOutbox(new Date(Date.now() - 180 * 864e5).toISOString()).catch(() => [])]);
+
+  // Meses com movimento, mais o corrente: o seletor nunca aponta para o vazio.
+  const porMes = new Map();
+  for (const m of todos) {
+    const k = String(m.occurred_on).slice(0, 7);
+    if (!porMes.has(k)) porMes.set(k, []);
+    porMes.get(k).push(m);
+  }
+  if (!porMes.has(hoje.slice(0, 7))) porMes.set(hoje.slice(0, 7), []);
+  const meses = [...porMes.keys()].sort().reverse();
+  const moves = porMes.get(month) || [];
+  const out = moves.filter((m) => Number(m.amount) < 0);
+  const inn = moves.filter((m) => Number(m.amount) > 0);
+  const soma = (xs) => xs.reduce((t, m) => t + Math.abs(Number(m.amount) || 0), 0);
+  const conta = (xs, kind) => xs.filter((m) => m.kind === kind).length;
+  const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+  const telefone = String(s.whatsapp_phone || "").replace(/^(\d{2})(\d{2})(\d{4,5})(\d{4})$/, "+$1 $2 $3-$4");
+
+  const linha = (m) => `<tr>
+    <td class="n">${day(m.occurred_on)}</td>
+    <td>${esc(MOVE_LABEL[m.kind] || m.kind)}</td>
+    <td>${esc(m.firm || "—")}${m.plan ? ` <span class="dim">${esc(m.plan)}${
+      m.account_size ? ` ${Math.round(Number(m.account_size) / 1000)}k` : ""}</span>` : ""}</td>
+    <td class="n">${esc(m.account || "—")}</td>
+    <td class="n ${signClass(m.amount)}" style="text-align:right">${money(m.amount)}</td>
+    <td class="muted">${esc(m.note || "")}</td>
+  </tr>`;
+
+  const envio = (r) => {
+    const [cls, label] = OUTBOX_LABEL[r.status] || ["closed", r.status];
+    const acoes = [];
+    if (r.status === "pending" || r.status === "failed") {
+      acoes.push(`<button class="btn ghost" type="button" data-outbox="${r.id}" data-act="retry">Retry</button>`,
+        `<button class="btn ghost" type="button" data-outbox="${r.id}" data-act="manual">Sent by hand</button>`);
+    }
+    if (r.file_path) acoes.push(`<button class="btn ghost" type="button" data-xlsx="${esc(r.file_path)}">Excel</button>`);
+    if (r.body) acoes.push(`<button class="btn ghost" type="button" data-body="${r.id}">Text</button>`);
+    return `<tr>
+      <td class="n">${esc(r.ref || `#${r.id}`)}</td>
+      <td>${esc(noticeWhat(r))}</td>
+      <td class="n muted">${esc(stamp(r.sent_at || r.created_at))}</td>
+      <td class="wrap"><span class="badge ${cls}">${esc(label)}</span>${r.last_error && r.status !== "sent"
+        ? `<span class="muted" style="margin-left:8px">${esc(noticeWhy(r))}</span>` : ""}</td>
+      <td style="text-align:right;white-space:nowrap">${acoes.join(" ")}</td>
+    </tr>${r.body ? `<tr class="xbody" data-body-of="${r.id}" hidden><td colspan="5"><pre>${esc(r.body)}</pre></td></tr>` : ""}`;
+  };
+
+  const maquinas = [...new Set([...(state.machines || []), s.sender_machine].filter(Boolean))];
+  render(`
+    <div class="tool">
+      <h2>Accounting</h2>
+      <span class="hint">what the office gets · WhatsApp to <b>${esc(s.contact_name || "—")}</b> ${esc(telefone)} · sent from <b>${esc(s.sender_machine || "—")}</b></span>
+      <span class="right">
+        <select class="inp" id="acct-month" aria-label="Month" style="height:36px;padding:0 30px 0 12px;font-size:12.5px;border-radius:10px">${
+          meses.map((k) => `<option value="${k}"${k === month ? " selected" : ""}>${monthLabel(`${k}-01`)}</option>`).join("")}</select>
+        <button class="btn ghost" type="button" id="acct-csv"${moves.length ? "" : " disabled"}>Download .csv</button>
+      </span>
+    </div>
+    <div class="plan-top">
+      <div class="panel pgoal">
+        <h2>Out of the wallet <span class="dim">${monthLabel(`${month}-01`)}</span></h2>
+        <div class="pbig n neg">${money0(soma(out))}</div>
+        <div class="muted">${plural(conta(out, "cost"), "evaluation")} · ${plural(conta(out, "activation"), "activation")} · ${
+          plural(conta(out, "deposit"), "hedge deposit")}</div>
+      </div>
+      <div class="panel pweek">
+        <h2>Into the wallet <span class="dim">net ${money0(soma(inn) - soma(out))}</span></h2>
+        <div class="pbig n pos">${money0(soma(inn))}</div>
+        <div class="muted">${plural(conta(inn, "payout"), "payout")} · ${plural(conta(inn, "refund"), "refund")} · ${
+          plural(conta(inn, "withdrawal"), "hedge withdrawal")}</div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Ledger <span class="dim">one row per wallet movement · the office gets this as Excel on the 2nd-to-last day of the month</span></h2>
+      <div class="scroll"><table class="dt">
+        <thead><tr><th>Date</th><th>What</th><th>Firm · plan</th><th>Account</th><th style="text-align:right">Amount</th><th>Note</th></tr></thead>
+        <tbody>${moves.map(linha).join("") || `<tr><td colspan="6">${empty("nothing this month")}</td></tr>`}</tbody>
+      </table></div>
+    </div>
+    <div class="panel">
+      <h2>Sent to the office <span class="dim">payout notices as they are requested · the monthly Excel · retry or close by hand what did not go</span></h2>
+      <div class="scroll"><table class="dt">
+        <thead><tr><th>Ref</th><th>What</th><th>When</th><th>Status</th><th></th></tr></thead>
+        <tbody>${outbox.map(envio).join("") || `<tr><td colspan="5">${empty("nothing sent yet")}</td></tr>`}</tbody>
+      </table></div>
+    </div>
+    <details class="padjust">
+      <summary><span>${s.enabled ? "On" : "Off"} · ${esc(s.company_name || "—")} · report at ${s.report_hour ?? 18}h on the 2nd-to-last day · notices since ${esc(day(s.notify_since))}</span><b>Settings ›</b></summary>
+      <div class="pset">
+        <label>WhatsApp (digits, with country code) <input class="inp n" id="ac-phone" type="text" inputmode="numeric" value="${esc(s.whatsapp_phone || "")}"></label>
+        <label>Contact name in WhatsApp <input class="inp" id="ac-contact" type="text" value="${esc(s.contact_name || "")}"></label>
+        <label>Sends from <select class="inp" id="ac-machine">${maquinas.map((m) => `<option value="${esc(m)}"${m === s.sender_machine ? " selected" : ""}>${esc(m)}</option>`).join("")}</select></label>
+        <label>Company <input class="inp" id="ac-company" type="text" value="${esc(s.company_name || "")}"></label>
+        <label>Wallet, as the office knows it <input class="inp" id="ac-wallet" type="text" value="${esc(s.wallet_label || "")}" style="width:240px"></label>
+        <label>Report hour (São Paulo) <input class="inp n" id="ac-hour" type="number" min="0" max="23" step="1" value="${s.report_hour ?? 18}"></label>
+        <label>Notices since <input class="inp n" id="ac-since" type="date" value="${esc(s.notify_since || "")}"></label>
+        <label>Enabled <select class="inp" id="ac-on"><option value="1"${s.enabled ? " selected" : ""}>yes</option><option value="0"${s.enabled ? "" : " selected"}>no</option></select></label>
+        <span class="muted">The contact name must match the chat title exactly: the collector checks it before pressing Enter. The sending PC needs WhatsApp Desktop logged in and the screen unlocked.</span>
+      </div>
+    </details>`);
+
+  document.getElementById("acct-month").onchange = (e) => { state.acctMonth = e.target.value; renderAccounting(); };
+  document.getElementById("acct-csv").onclick = () =>
+    downloadBlob(new Blob(["﻿" + movesCsv(moves)], { type: "text/csv;charset=utf-8" }),
+      `${(s.company_name || "HS Labs").replace(/\s+/g, "-")}-movimentos-${month}.csv`);
+  view.querySelectorAll("[data-xlsx]").forEach((b) => {
+    b.onclick = async () => {
+      b.disabled = true;
+      try {
+        const blob = await guard(() => load.accountingFile(b.dataset.xlsx));
+        downloadBlob(blob, b.dataset.xlsx.split("/").pop());
+      } finally {
+        b.disabled = false;
+      }
+    };
+  });
+  view.querySelectorAll("[data-body]").forEach((b) => {
+    b.onclick = () => {
+      const row = view.querySelector(`[data-body-of="${b.dataset.body}"]`);
+      if (row) row.hidden = !row.hidden;
+    };
+  });
+  view.querySelectorAll("[data-outbox]").forEach((b) => {
+    b.onclick = async () => {
+      b.disabled = true;
+      const retry = b.dataset.act === "retry";
+      try {
+        await guard(() => (retry ? save.outboxRetry : save.outboxManual)(Number(b.dataset.outbox)),
+          retry ? "Back in the queue" : "Marked as sent by hand");
+      } catch {
+        b.disabled = false;
+        return;
+      }
+      refreshAccounting();
+      renderAccounting();
+    };
+  });
+  const salvar = (id, coluna, ler) => {
+    const el = document.getElementById(id);
+    el.onchange = async () => {
+      const valor = ler(el.value);
+      const salvo = await guard(() => save.accountingSettings({ [coluna]: valor }), "Saved");
+      if (salvo) state.accounting = salvo;
+      renderAccounting();
+    };
+  };
+  salvar("ac-phone", "whatsapp_phone", (v) => v.replace(/\D/g, ""));
+  salvar("ac-contact", "contact_name", (v) => v.trim() || null);
+  salvar("ac-machine", "sender_machine", (v) => v || null);
+  salvar("ac-company", "company_name", (v) => v.trim() || null);
+  salvar("ac-wallet", "wallet_label", (v) => v.trim() || null);
+  salvar("ac-hour", "report_hour", (v) => Math.min(23, Math.max(0, Number(v) || 18)));
+  salvar("ac-since", "notify_since", (v) => v || new Date().toISOString().slice(0, 10));
+  salvar("ac-on", "enabled", (v) => v === "1");
+}
+
 const RENDERERS = {
   overview: renderOverview,
   challenges: renderChallenges,
   plan: renderPlan,
   unassigned: renderUnassigned,
   config: renderConfig,
+  accounting: renderAccounting,
   issues: renderIssues,
 };
 
 function renderNav() {
   if (!state.email) { document.getElementById("nav").innerHTML = ""; const m = document.getElementById("mtabs"); if (m) m.innerHTML = ""; return; }
-  renderTabs(PAGES.map((p) => ({
+  renderTabs(PAGES.filter((p) => p.id !== "accounting" || state.accounting).map((p) => ({
     id: p.id, label: p.label,
     count: p.id === "issues" ? state.openIssues : p.id === "config" ? state.pendingSetup : 0,
   })), state.page, go);

@@ -5,7 +5,7 @@
 // fica so no coletor, no PC.
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { CONFIG } from "./config.js?v=e90d0cb86b";
+import { CONFIG } from "./config.js?v=51b2925bba";
 
 export const supabase = createClient(CONFIG.url, CONFIG.anonKey);
 
@@ -153,11 +153,18 @@ export const load = {
     supabase.from("accounting_outbox").select("*")
       .gte("created_at", since).order("id", { ascending: false }).then(unwrap),
 
-  // O livro-caixa de um mês: custos, ativações, saques e depósitos da live.
+  // O livro-caixa de um período: custos, ativações, saques e depósitos da live.
   accountingMoves: (from, to) =>
     supabase.from("accounting_moves").select("*")
       .gte("occurred_on", from).lt("occurred_on", to)
       .order("occurred_on").order("created_at").then(unwrap),
+
+  // O Excel que o coletor gerou, do bucket do dono (RLS pela pasta).
+  accountingFile: async (path) => {
+    const { data, error } = await supabase.storage.from("accounting").download(path);
+    if (error) throw new Error(error.message);
+    return data;
+  },
 
   // Saude dos coletores para o aviso do Setup. Sem filtro de dono, ao
   // contrario de `machines`: o admin precisa ver a maquina parada dos outros;
@@ -378,6 +385,18 @@ export const save = {
     supabase.from("accounting_outbox")
       .update({ status: "manual", sent_at: new Date().toISOString(), last_error: null })
       .eq("id", id).then(unwrap),
+
+  // Mesmo desenho de `settings`: upsert pelo dono, que é a chave do conflito.
+  accountingSettings: async (patch) => {
+    const user = await currentUser();
+    if (!user) throw new Error("sessão expirada");
+    const { data, error } = await supabase.from("accounting_settings")
+      .upsert({ owner_id: user.id, ...patch, updated_at: new Date().toISOString() },
+              { onConflict: "owner_id" })
+      .select().single();
+    if (error) throw new Error(error.message);
+    return data;
+  },
 
   // Apaga tambem as execucoes e trades da conta (cascade). Quem chama avisa.
   deleteAccount: (id) =>
