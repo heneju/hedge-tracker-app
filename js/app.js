@@ -10,32 +10,32 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=51b2925bba";
+} from "./db.js?v=dfe514432e";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=51b2925bba";
+} from "./util.js?v=dfe514432e";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=51b2925bba";
-import { cell, locked, wireEditables } from "./editable.js?v=51b2925bba";
-import { exportChallenges } from "./export.js?v=51b2925bba";
-import { mountPlanPicker } from "./plan-picker.js?v=51b2925bba";
-import { nextLiveLot } from "./next-lot.js?v=51b2925bba";
-import { buildPlan, sessionDay, weekOf } from "./plan.js?v=51b2925bba";
-import { filterForFirm } from "./firm-accounts.js?v=51b2925bba";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=51b2925bba";
+} from "./charts.js?v=dfe514432e";
+import { cell, locked, wireEditables } from "./editable.js?v=dfe514432e";
+import { exportChallenges } from "./export.js?v=dfe514432e";
+import { mountPlanPicker } from "./plan-picker.js?v=dfe514432e";
+import { nextLiveLot } from "./next-lot.js?v=dfe514432e";
+import { buildPlan, sessionDay, weekOf } from "./plan.js?v=dfe514432e";
+import { filterForFirm } from "./firm-accounts.js?v=dfe514432e";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=dfe514432e";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges, collectorAlerts,
-} from "./machine.js?v=51b2925bba";
+} from "./machine.js?v=dfe514432e";
 import { loader,
   renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
   initProfile, raf, odo, burst, landOn, blob, deltaChip,
-} from "./skin.js?v=51b2925bba";
-import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=51b2925bba";
-import { firmMark, logoBg, logoInner } from "./logos.js?v=51b2925bba";
-import { startTour } from "./tour.js?v=51b2925bba";
+} from "./skin.js?v=dfe514432e";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=dfe514432e";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=dfe514432e";
+import { startTour } from "./tour.js?v=dfe514432e";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -4850,14 +4850,19 @@ async function renderAccounting() {
   if (!porMes.has(hoje.slice(0, 7))) porMes.set(hoje.slice(0, 7), []);
   const meses = [...porMes.keys()].sort().reverse();
   const moves = porMes.get(month) || [];
-  const out = moves.filter((m) => Number(m.amount) < 0);
-  const inn = moves.filter((m) => Number(m.amount) > 0);
+  // A contabilidade comeca em `notify_since`: o que veio antes fica na lista,
+  // apagado, e fora dos totais, do .csv e do Excel que o escritorio recebe.
+  const desde = s.notify_since || "";
+  const daEmpresa = (m) => !desde || String(m.occurred_on) >= desde;
+  const vis = moves.filter(daEmpresa);
+  const out = vis.filter((m) => Number(m.amount) < 0);
+  const inn = vis.filter((m) => Number(m.amount) > 0);
   const soma = (xs) => xs.reduce((t, m) => t + Math.abs(Number(m.amount) || 0), 0);
   const conta = (xs, kind) => xs.filter((m) => m.kind === kind).length;
   const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
   const telefone = String(s.whatsapp_phone || "").replace(/^(\d{2})(\d{2})(\d{4,5})(\d{4})$/, "+$1 $2 $3-$4");
 
-  const linha = (m) => `<tr>
+  const linha = (m) => `<tr${daEmpresa(m) ? "" : ` style="opacity:.42" title="before ${esc(day(desde))} — not the company's"`}>
     <td class="n">${day(m.occurred_on)}</td>
     <td>${esc(MOVE_LABEL[m.kind] || m.kind)}</td>
     <td>${esc(m.firm || "—")}${m.plan ? ` <span class="dim">${esc(m.plan)}${
@@ -4894,7 +4899,7 @@ async function renderAccounting() {
       <span class="right">
         <select class="inp" id="acct-month" aria-label="Month" style="height:36px;padding:0 30px 0 12px;font-size:12.5px;border-radius:10px">${
           meses.map((k) => `<option value="${k}"${k === month ? " selected" : ""}>${monthLabel(`${k}-01`)}</option>`).join("")}</select>
-        <button class="btn ghost" type="button" id="acct-csv"${moves.length ? "" : " disabled"}>Download .csv</button>
+        <button class="btn ghost" type="button" id="acct-csv"${vis.length ? "" : " disabled"}>Download .csv</button>
       </span>
     </div>
     <div class="plan-top">
@@ -4912,7 +4917,8 @@ async function renderAccounting() {
       </div>
     </div>
     <div class="panel">
-      <h2>Ledger <span class="dim">one row per wallet movement · the office gets this as Excel on the 2nd-to-last day of the month</span></h2>
+      <h2>Ledger <span class="dim">one row per wallet movement · the office gets this as Excel on the 2nd-to-last day of the month${
+        desde ? ` · from ${esc(day(desde))} on` : ""}</span></h2>
       <div class="scroll"><table class="dt">
         <thead><tr><th>Date</th><th>What</th><th>Firm · plan</th><th>Account</th><th style="text-align:right">Amount</th><th>Note</th></tr></thead>
         <tbody>${moves.map(linha).join("") || `<tr><td colspan="6">${empty("nothing this month")}</td></tr>`}</tbody>
@@ -4942,7 +4948,7 @@ async function renderAccounting() {
 
   document.getElementById("acct-month").onchange = (e) => { state.acctMonth = e.target.value; renderAccounting(); };
   document.getElementById("acct-csv").onclick = () =>
-    downloadBlob(new Blob(["﻿" + movesCsv(moves)], { type: "text/csv;charset=utf-8" }),
+    downloadBlob(new Blob(["﻿" + movesCsv(vis)], { type: "text/csv;charset=utf-8" }),
       `${(s.company_name || "HS Labs").replace(/\s+/g, "-")}-movimentos-${month}.csv`);
   view.querySelectorAll("[data-xlsx]").forEach((b) => {
     b.onclick = async () => {
@@ -4976,23 +4982,25 @@ async function renderAccounting() {
       renderAccounting();
     };
   });
-  const salvar = (id, coluna, ler) => {
+  const salvar = (id, patchDe, okMessage = "Saved") => {
     const el = document.getElementById(id);
     el.onchange = async () => {
-      const valor = ler(el.value);
-      const salvo = await guard(() => save.accountingSettings({ [coluna]: valor }), "Saved");
+      const salvo = await guard(() => save.accountingSettings(patchDe(el.value)), okMessage);
       if (salvo) state.accounting = salvo;
       renderAccounting();
     };
   };
-  salvar("ac-phone", "whatsapp_phone", (v) => v.replace(/\D/g, ""));
-  salvar("ac-contact", "contact_name", (v) => v.trim() || null);
-  salvar("ac-machine", "sender_machine", (v) => v || null);
-  salvar("ac-company", "company_name", (v) => v.trim() || null);
-  salvar("ac-wallet", "wallet_label", (v) => v.trim() || null);
-  salvar("ac-hour", "report_hour", (v) => Math.min(23, Math.max(0, Number(v) || 18)));
-  salvar("ac-since", "notify_since", (v) => v || new Date().toISOString().slice(0, 10));
-  salvar("ac-on", "enabled", (v) => v === "1");
+  salvar("ac-phone", (v) => ({ whatsapp_phone: v.replace(/\D/g, "") }));
+  salvar("ac-contact", (v) => ({ contact_name: v.trim() || null }));
+  salvar("ac-machine", (v) => ({ sender_machine: v || null }));
+  salvar("ac-company", (v) => ({ company_name: v.trim() || null }));
+  salvar("ac-wallet", (v) => ({ wallet_label: v.trim() || null }));
+  salvar("ac-hour", (v) => ({ report_hour: Math.min(23, Math.max(0, Number(v) || 18)) }));
+  salvar("ac-since", (v) => ({ notify_since: v || hoje }));
+  // Ligar e "a partir de hoje": o que foi pedido ou gasto enquanto estava
+  // desligado nao vira aviso nem entra no Excel.
+  salvar("ac-on", (v) => (v === "1" ? { enabled: true, notify_since: hoje } : { enabled: false }),
+    "Saved — notices and the Excel start today");
 }
 
 const RENDERERS = {
