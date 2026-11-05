@@ -10,32 +10,32 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=cd72362eaf";
+} from "./db.js?v=b0344e8576";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=cd72362eaf";
+} from "./util.js?v=b0344e8576";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=cd72362eaf";
-import { cell, locked, wireEditables } from "./editable.js?v=cd72362eaf";
-import { exportChallenges } from "./export.js?v=cd72362eaf";
-import { mountPlanPicker } from "./plan-picker.js?v=cd72362eaf";
-import { nextLiveLot } from "./next-lot.js?v=cd72362eaf";
-import { buildPlan, sessionDay, weekOf } from "./plan.js?v=cd72362eaf";
-import { filterForFirm } from "./firm-accounts.js?v=cd72362eaf";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=cd72362eaf";
+} from "./charts.js?v=b0344e8576";
+import { cell, locked, wireEditables } from "./editable.js?v=b0344e8576";
+import { exportChallenges } from "./export.js?v=b0344e8576";
+import { mountPlanPicker } from "./plan-picker.js?v=b0344e8576";
+import { nextLiveLot } from "./next-lot.js?v=b0344e8576";
+import { buildPlan, sessionDay, weekOf } from "./plan.js?v=b0344e8576";
+import { filterForFirm } from "./firm-accounts.js?v=b0344e8576";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=b0344e8576";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges, collectorAlerts,
-} from "./machine.js?v=cd72362eaf";
+} from "./machine.js?v=b0344e8576";
 import { loader,
   renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
   initProfile, raf, odo, burst, landOn, blob, deltaChip,
-} from "./skin.js?v=cd72362eaf";
-import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=cd72362eaf";
-import { firmMark, logoBg, logoInner } from "./logos.js?v=cd72362eaf";
-import { startTour } from "./tour.js?v=cd72362eaf";
+} from "./skin.js?v=b0344e8576";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=b0344e8576";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=b0344e8576";
+import { startTour } from "./tour.js?v=b0344e8576";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");

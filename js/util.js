@@ -21,7 +21,7 @@ export const signClass = (v) => (Number(v) > 0 ? "pos" : Number(v) < 0 ? "neg" :
 // Folga da consistencia, em pontos percentuais: a mesa aprova com o melhor dia
 // um pouco acima do teto (50,1% contra 50% passou). Espelha
 // CONSISTENCY_SLACK_PCT em collector/main.py -- mudar nos dois.
-export const CONSISTENCY_SLACK_PCT = 2;
+export const CONSISTENCY_SLACK_PCT = 1;
 
 // Colunas `date` do Postgres chegam como "2026-08-31", sem hora. Passar isso
 // pelo construtor de Date faz o navegador ler como meia-noite UTC e exibir no
