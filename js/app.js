@@ -10,32 +10,32 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=dfe514432e";
+} from "./db.js?v=cd72362eaf";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=dfe514432e";
+} from "./util.js?v=cd72362eaf";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=dfe514432e";
-import { cell, locked, wireEditables } from "./editable.js?v=dfe514432e";
-import { exportChallenges } from "./export.js?v=dfe514432e";
-import { mountPlanPicker } from "./plan-picker.js?v=dfe514432e";
-import { nextLiveLot } from "./next-lot.js?v=dfe514432e";
-import { buildPlan, sessionDay, weekOf } from "./plan.js?v=dfe514432e";
-import { filterForFirm } from "./firm-accounts.js?v=dfe514432e";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=dfe514432e";
+} from "./charts.js?v=cd72362eaf";
+import { cell, locked, wireEditables } from "./editable.js?v=cd72362eaf";
+import { exportChallenges } from "./export.js?v=cd72362eaf";
+import { mountPlanPicker } from "./plan-picker.js?v=cd72362eaf";
+import { nextLiveLot } from "./next-lot.js?v=cd72362eaf";
+import { buildPlan, sessionDay, weekOf } from "./plan.js?v=cd72362eaf";
+import { filterForFirm } from "./firm-accounts.js?v=cd72362eaf";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=cd72362eaf";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges, collectorAlerts,
-} from "./machine.js?v=dfe514432e";
+} from "./machine.js?v=cd72362eaf";
 import { loader,
   renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
   initProfile, raf, odo, burst, landOn, blob, deltaChip,
-} from "./skin.js?v=dfe514432e";
-import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=dfe514432e";
-import { firmMark, logoBg, logoInner } from "./logos.js?v=dfe514432e";
-import { startTour } from "./tour.js?v=dfe514432e";
+} from "./skin.js?v=cd72362eaf";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=cd72362eaf";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=cd72362eaf";
+import { startTour } from "./tour.js?v=cd72362eaf";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -1053,6 +1053,20 @@ async function renderChallenges() {
   const propCell = (c, value) => `<td class="num">${
     c.prop_trades ? cash(value) : `<span class="dim">—</span>`}</td>`;
 
+  // Alvo e dias cumpridos, e o melhor dia acima do teto: a avaliação não passa
+  // sem mais um dia. Na tela ela parecia uma fase 1 qualquer.
+  const consistencyHold = (c) => {
+    if (!["phase1", "phase2"].includes(c.status)) return null;
+    const p = accountToBlow(c, progress);
+    if (!p || p.target_left == null || Number(p.target_left) > 0 || Number(p.days_left)
+        || p.consistency_pct == null
+        || Number(p.best_day_pct) <= Number(p.consistency_pct) + CONSISTENCY_SLACK_PCT) return null;
+    const falta = Number(p.best_day) / (Number(p.consistency_pct) / 100) - Number(p.pnl);
+    return `Target hit, but the best day is ${num(p.best_day_pct, 1)}% of the profit and `
+      + `the plan allows ${num(p.consistency_pct, 0)}%: at least ${money0(falta)} more, `
+      + "on another day. The Plan tab has the target.";
+  };
+
   const roomOf = (c) => accountToBlow(c, progress)?.drawdown_room ?? null;
   const roomCell = (c) => {
     const room = roomOf(c);
@@ -1101,7 +1115,9 @@ async function renderChallenges() {
           : "",
         format: () => `${badge(c.status, statusLabel(c.status, c.eval_phases))}${
           c.drawdown_blown && c.status !== "failed"
-            ? ` <span class="badge failed">blown</span>` : ""}` })}
+            ? ` <span class="badge failed">blown</span>` : ""}${
+          consistencyHold(c)
+            ? ` <span class="badge passed" title="${esc(consistencyHold(c))}">consistency</span>` : ""}` })}
       <td class="num" title="${esc(c.next_live_lot_reason)}">${c.next_live_lot == null ? "—" : num(c.next_live_lot, 2)}</td>
       ${propCell(c, c.eval_prop)}
       ${propCell(c, c.funded_prop)}
@@ -4627,7 +4643,8 @@ async function renderPlan() {
     <button class="prow${t.done ? " done" : ""}" type="button" data-row="${i}" aria-expanded="false">
       ${logo(t.firm)}
       <span class="ptx"><b>${esc(t.short)} <em>${esc(t.firm || "")} · ${esc(t.label.replace(/^(Eval|Farm|Big trade)/,
-        (m) => STAGE_WORD[m]).toLowerCase())}</em></b>${t.done ? `<span class="muted">traded today</span>` : ""}</span>
+        (m) => STAGE_WORD[m]).toLowerCase())}</em></b>${t.done ? `<span class="muted">traded today</span>` : ""}${
+        t.alert ? `<span class="muted">${esc(t.alert)}</span>` : ""}</span>
       <span class="ptgt n">${t.target != null ? money0(t.target) : "—"}</span>
       <span class="pmx n">${mult(t.multiplier)}</span>
     </button>

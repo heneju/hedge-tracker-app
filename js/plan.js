@@ -133,7 +133,13 @@ export function buildPlan({ journal, progress, accounts, firms, plans, policies,
     const exigidos = Number(c.payout_winning_days) || 0;
     // O ciclo só é dito a partir do 2º: no 1º ele é ruído na linha.
     const sufixoCiclo = ciclo > 1 ? ` · cycle ${ciclo}` : "";
-    const label = stage === "eval"
+    // Alvo batido e a avaliação ainda aberta: o que segura é a consistência, e
+    // a nota do coletor diz quanto falta. Ela aparece na linha, não no clique.
+    const consistencia = stage === "eval" && prog.target_left != null
+      && Number(prog.target_left) <= 0 && conta.rec_note ? conta.rec_note : null;
+    const label = consistencia
+      ? "Eval · consistency day"
+      : stage === "eval"
       ? `Eval · day ${(Number(prog.days_traded) || 0) + (operou ? 0 : 1)}`
       : stage === "big"
         ? `Big trade${sufixoCiclo}`
@@ -144,8 +150,8 @@ export function buildPlan({ journal, progress, accounts, firms, plans, policies,
       ...base, stage, label,
       target: n(conta.rec_today_target), multiplier: n(conta.rec_multiplier),
       hedge: n(conta.rec_hedge_cost), costToPayout: n(conta.rec_cost_to_payout),
-      payoutNet: n(conta.rec_payout_net), note: conta.rec_note || null,
-      done: operou, stepsLeft,
+      payoutNet: n(conta.rec_payout_net), note: consistencia ? null : conta.rec_note || null,
+      alert: consistencia, done: operou, stepsLeft,
     });
     // Saque possível só quando falta farm: os dias pequenos ($200 Lucid/
     // Tradeify, $300 Top One) quase sempre batem, a trade grande não. Contar a
