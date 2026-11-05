@@ -5,7 +5,7 @@
 // fica so no coletor, no PC.
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { CONFIG } from "./config.js?v=b0344e8576";
+import { CONFIG } from "./config.js?v=d3e66d7e57";
 
 export const supabase = createClient(CONFIG.url, CONFIG.anonKey);
 
@@ -385,6 +385,19 @@ export const save = {
     supabase.from("accounting_outbox")
       .update({ status: "manual", sent_at: new Date().toISOString(), last_error: null })
       .eq("id", id).then(unwrap),
+
+  // Excecao por linha a `notify_since` (0081). `include` null apaga a excecao
+  // e a data volta a mandar.
+  accountingOverride: async (moveId, include) => {
+    if (include == null) {
+      return supabase.from("accounting_overrides").delete().eq("move_id", moveId).then(unwrap);
+    }
+    const user = await currentUser();
+    if (!user) throw new Error("sessão expirada");
+    return supabase.from("accounting_overrides")
+      .upsert({ owner_id: user.id, move_id: moveId, include }, { onConflict: "owner_id,move_id" })
+      .then(unwrap);
+  },
 
   // Mesmo desenho de `settings`: upsert pelo dono, que é a chave do conflito.
   accountingSettings: async (patch) => {

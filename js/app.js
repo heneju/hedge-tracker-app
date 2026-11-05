@@ -10,32 +10,32 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=b0344e8576";
+} from "./db.js?v=d3e66d7e57";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=b0344e8576";
+} from "./util.js?v=d3e66d7e57";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=b0344e8576";
-import { cell, locked, wireEditables } from "./editable.js?v=b0344e8576";
-import { exportChallenges } from "./export.js?v=b0344e8576";
-import { mountPlanPicker } from "./plan-picker.js?v=b0344e8576";
-import { nextLiveLot } from "./next-lot.js?v=b0344e8576";
-import { buildPlan, sessionDay, weekOf } from "./plan.js?v=b0344e8576";
-import { filterForFirm } from "./firm-accounts.js?v=b0344e8576";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=b0344e8576";
+} from "./charts.js?v=d3e66d7e57";
+import { cell, locked, wireEditables } from "./editable.js?v=d3e66d7e57";
+import { exportChallenges } from "./export.js?v=d3e66d7e57";
+import { mountPlanPicker } from "./plan-picker.js?v=d3e66d7e57";
+import { nextLiveLot } from "./next-lot.js?v=d3e66d7e57";
+import { buildPlan, sessionDay, weekOf } from "./plan.js?v=d3e66d7e57";
+import { filterForFirm } from "./firm-accounts.js?v=d3e66d7e57";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=d3e66d7e57";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges, collectorAlerts,
-} from "./machine.js?v=b0344e8576";
+} from "./machine.js?v=d3e66d7e57";
 import { loader,
   renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
   initProfile, raf, odo, burst, landOn, blob, deltaChip,
-} from "./skin.js?v=b0344e8576";
-import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=b0344e8576";
-import { firmMark, logoBg, logoInner } from "./logos.js?v=b0344e8576";
-import { startTour } from "./tour.js?v=b0344e8576";
+} from "./skin.js?v=d3e66d7e57";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=d3e66d7e57";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=d3e66d7e57";
+import { startTour } from "./tour.js?v=d3e66d7e57";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -4869,8 +4869,10 @@ async function renderAccounting() {
   const moves = porMes.get(month) || [];
   // A contabilidade comeca em `notify_since`: o que veio antes fica na lista,
   // apagado, e fora dos totais, do .csv e do Excel que o escritorio recebe.
+  // A view ja decidiu (`included`, 0081): data, salvo a caixinha da linha.
   const desde = s.notify_since || "";
-  const daEmpresa = (m) => !desde || String(m.occurred_on) >= desde;
+  const pelaData = (m) => !desde || String(m.occurred_on) >= desde;
+  const daEmpresa = (m) => m.included !== false;
   const vis = moves.filter(daEmpresa);
   const out = vis.filter((m) => Number(m.amount) < 0);
   const inn = vis.filter((m) => Number(m.amount) > 0);
@@ -4879,7 +4881,13 @@ async function renderAccounting() {
   const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
   const telefone = String(s.whatsapp_phone || "").replace(/^(\d{2})(\d{2})(\d{4,5})(\d{4})$/, "+$1 $2 $3-$4");
 
-  const linha = (m) => `<tr${daEmpresa(m) ? "" : ` style="opacity:.42" title="before ${esc(day(desde))} — not the company's"`}>
+  // A caixinha: marcada, a linha e da empresa. Fora da regra da data ela vira
+  // excecao gravada; de volta a regra, a excecao some.
+  const linha = (m) => `<tr${daEmpresa(m) ? "" : ` style="opacity:.42" title="not the company's — tick to include"`}>
+    <td><input type="checkbox" data-books="${esc(m.move_id)}" data-default="${pelaData(m) ? 1 : 0}"${
+      daEmpresa(m) ? " checked" : ""} title="${daEmpresa(m)
+        ? (pelaData(m) ? "in the books · untick to leave it out" : "in the books by exception (before the start date)")
+        : (pelaData(m) ? "left out by exception" : `before ${esc(day(desde))} · tick to include`)}"></td>
     <td class="n">${day(m.occurred_on)}</td>
     <td>${esc(MOVE_LABEL[m.kind] || m.kind)}</td>
     <td>${esc(m.firm || "—")}${m.plan ? ` <span class="dim">${esc(m.plan)}${
@@ -4937,8 +4945,8 @@ async function renderAccounting() {
       <h2>Ledger <span class="dim">one row per wallet movement · the office gets this as Excel on the 2nd-to-last day of the month${
         desde ? ` · from ${esc(day(desde))} on` : ""}</span></h2>
       <div class="scroll"><table class="dt">
-        <thead><tr><th>Date</th><th>What</th><th>Firm · plan</th><th>Account</th><th style="text-align:right">Amount</th><th>Note</th></tr></thead>
-        <tbody>${moves.map(linha).join("") || `<tr><td colspan="6">${empty("nothing this month")}</td></tr>`}</tbody>
+        <thead><tr><th style="width:34px" title="ticked rows are the company's: totals, .csv and the office's Excel">Books</th><th>Date</th><th>What</th><th>Firm · plan</th><th>Account</th><th style="text-align:right">Amount</th><th>Note</th></tr></thead>
+        <tbody>${moves.map(linha).join("") || `<tr><td colspan="7">${empty("nothing this month")}</td></tr>`}</tbody>
       </table></div>
     </div>
     <div class="panel">
@@ -4982,6 +4990,22 @@ async function renderAccounting() {
     b.onclick = () => {
       const row = view.querySelector(`[data-body-of="${b.dataset.body}"]`);
       if (row) row.hidden = !row.hidden;
+    };
+  });
+  view.querySelectorAll("[data-books]").forEach((cb) => {
+    cb.onchange = async () => {
+      cb.disabled = true;
+      const include = cb.checked;
+      try {
+        // Igual a regra da data: apaga a excecao em vez de gravar o obvio.
+        await guard(() => save.accountingOverride(cb.dataset.books,
+          include === (cb.dataset.default === "1") ? null : include));
+        toast(include ? "In the books" : "Left out of the books");
+        renderAccounting();
+      } catch {
+        cb.checked = !include;
+        cb.disabled = false;
+      }
     };
   });
   view.querySelectorAll("[data-outbox]").forEach((b) => {
