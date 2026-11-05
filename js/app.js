@@ -10,32 +10,32 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=02dcc48dc4";
+} from "./db.js?v=50af717fa0";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=02dcc48dc4";
+} from "./util.js?v=50af717fa0";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=02dcc48dc4";
-import { cell, locked, wireEditables } from "./editable.js?v=02dcc48dc4";
-import { exportChallenges } from "./export.js?v=02dcc48dc4";
-import { mountPlanPicker } from "./plan-picker.js?v=02dcc48dc4";
-import { nextLiveLot } from "./next-lot.js?v=02dcc48dc4";
-import { buildPlan, sessionDay, weekOf } from "./plan.js?v=02dcc48dc4";
-import { filterForFirm } from "./firm-accounts.js?v=02dcc48dc4";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=02dcc48dc4";
+} from "./charts.js?v=50af717fa0";
+import { cell, locked, wireEditables } from "./editable.js?v=50af717fa0";
+import { exportChallenges } from "./export.js?v=50af717fa0";
+import { mountPlanPicker } from "./plan-picker.js?v=50af717fa0";
+import { nextLiveLot } from "./next-lot.js?v=50af717fa0";
+import { buildPlan, sessionDay, weekOf } from "./plan.js?v=50af717fa0";
+import { filterForFirm } from "./firm-accounts.js?v=50af717fa0";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=50af717fa0";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges, collectorAlerts,
-} from "./machine.js?v=02dcc48dc4";
+} from "./machine.js?v=50af717fa0";
 import { loader,
   renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
   initProfile, raf, odo, burst, landOn, blob, deltaChip,
-} from "./skin.js?v=02dcc48dc4";
-import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=02dcc48dc4";
-import { firmMark, logoBg, logoInner } from "./logos.js?v=02dcc48dc4";
-import { startTour } from "./tour.js?v=02dcc48dc4";
+} from "./skin.js?v=50af717fa0";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=50af717fa0";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=50af717fa0";
+import { startTour } from "./tour.js?v=50af717fa0";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -2321,6 +2321,14 @@ async function renderConfig() {
       ${cell(f.default_split, { id: f.id, field: "firm:default_split", type: "number", align: true,
         format: () => (f.default_split == null
           ? `<span class="dim">—</span>` : `${num(f.default_split, 0)}%`) })}
+      ${cell(f.invoice_name, { id: f.id, field: "firm:invoice_name", type: "text",
+        title: "taker name on the NFS-e (Lucid Trading, Top One Futures)",
+        format: () => (f.invoice_name ? esc(f.invoice_name) : `<span class="dim">—</span>`) })}
+      ${cell(f.invoice_address, { id: f.id, field: "firm:invoice_address", type: "text",
+        title: "one line: street, number, suite, district, city, state, ZIP, country",
+        format: () => (f.invoice_address
+          ? `<span class="muted" style="font-size:11px">${esc(f.invoice_address)}</span>`
+          : `<span class="dim" style="font-size:11px">— ask the office</span>`) })}
       ${cell(f.account_pattern, { id: f.id, field: "firm:account_pattern", type: "text",
         title: "regex for the account name. It limits the account selector on "
              + "Register to this firm. With the (?<funded>) and (?<size>) groups, "
@@ -2685,7 +2693,7 @@ async function renderConfig() {
     <div class="panel" data-setup="firms" ${tab === "firms" ? "" : "hidden"}>
       <h2>Prop firms</h2>
       <div class="scroll"><table>
-        <thead><tr><th>Name</th><th>Platform</th><th>Phases</th><th class="num">Split</th>
+        <thead><tr><th>Name</th><th>Platform</th><th>Phases</th><th class="num">Split</th><th title="taker name on the NFS-e, as the accounting office registered it">Invoice taker</th><th title="taker address on the NFS-e, one line">Invoice address</th>
           <th title="with it, the funded account links itself to the passed challenge"
             >Account name pattern</th>
           <th>Notes</th><th class="num">Plans</th><th></th></tr></thead>
@@ -4154,6 +4162,10 @@ function noticeWhat(r) {
   }
   if (r.kind === "monthly_report") return `Monthly statement · ${monthLabel(r.period)}`;
   if (r.kind === "monthly_supplement") return `Statement supplement · ${monthLabel(r.period)}`;
+  if (r.kind === "invoice_ready") {
+    return `Invoice ready (to you) · ${p.taker || "?"}${p.short ? ` · ${p.short}` : ""}${
+      p.usd != null ? ` · ${money0(p.usd)}` : ""}`;
+  }
   return "Test message";
 }
 
@@ -4856,9 +4868,10 @@ async function renderAccounting() {
   const hoje = new Date().toISOString().slice(0, 10);
   const month = state.acctMonth || hoje.slice(0, 7);
   const since = `${monthShift(hoje.slice(0, 7), -11)}-01`;
-  const [todos, outbox] = await Promise.all([
+  const [todos, outbox, notas] = await Promise.all([
     load.accountingMoves(since, `${monthShift(hoje.slice(0, 7), 1)}-01`),
-    load.accountingOutbox(new Date(Date.now() - 180 * 864e5).toISOString()).catch(() => [])]);
+    load.accountingOutbox(new Date(Date.now() - 180 * 864e5).toISOString()).catch(() => []),
+    load.invoices().catch(() => [])]);
 
   // Meses com movimento, mais o corrente: o seletor nunca aponta para o vazio.
   const porMes = new Map();
@@ -4919,6 +4932,52 @@ async function renderAccounting() {
     </tr>${r.body ? `<tr class="xbody" data-body-of="${r.id}" hidden><td colspan="5"><pre>${esc(r.body)}</pre></td></tr>` : ""}`;
   };
 
+  // A nota de cada saque: o coletor monta (tomador, competencia, USD pos-split,
+  // PTAX, R$, descricao); aqui ele corrige competencia/referencia, marca
+  // emitida com numero, chave e PDF, ou pula.
+  const brlFmt = (v) => (v == null ? "—"
+    : `R$ ${Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+  const ptaxFmt = (v) => (v == null ? "—" : Number(v).toFixed(4).replace(".", ","));
+  const NF_BADGE = { todo: ["passed", "to issue"], issued: ["funded", "issued"], skipped: ["closed", "skipped"] };
+  const nfRow = (r) => {
+    const [cls, label] = NF_BADGE[r.status] || ["closed", r.status];
+    const ce = r.cash_events || {};
+    const editavel = r.status === "todo";
+    const acoes = [];
+    if (editavel) {
+      acoes.push(`<button class="btn" type="button" data-nf-issued="${r.id}">Issued…</button>`,
+        `<button class="btn ghost" type="button" data-nf-skip="${r.id}">Skip</button>`);
+    }
+    if (r.status === "skipped") acoes.push(`<button class="btn ghost" type="button" data-nf-reopen="${r.id}">Reopen</button>`);
+    if (r.file_path) acoes.push(`<button class="btn ghost" type="button" data-xlsx="${esc(r.file_path)}">PDF</button>`);
+    return `<tr${r.status === "skipped" ? ` style="opacity:.5"` : ""}>
+      <td class="n">${r.nf_number ? `NFS-e ${esc(r.nf_number)}` : `#${r.id}`}</td>
+      <td><b class="bright">${esc(r.taker_name || "—")}</b>${r.taker_address
+        ? `<div class="muted" style="font-size:11px">${esc(r.taker_address)}</div>`
+        : `<div class="muted" style="font-size:11px">address missing — Setup › Firms</div>`}
+        <div class="muted" style="font-size:11px">received ${day(ce.occurred_on)} · wallet ${money(ce.amount)}</div></td>
+      <td class="n">${editavel
+        ? `<input class="inp n" type="date" data-nf-competence="${r.id}" value="${esc(r.competence)}" style="width:150px"
+             title="date on the firm's invoice/certificate — PTAX and R$ follow it on the next collector cycle">`
+        : day(r.competence)}</td>
+      <td class="n" style="text-align:right">${money(r.usd)}<div class="muted" style="font-size:11px">${ptaxFmt(r.ptax)} → ${brlFmt(r.brl)}</div></td>
+      <td class="wrap"><code style="font-size:11px">${esc(r.description || "")}</code>${editavel
+        ? `<div><input class="inp" placeholder="invoice / certificate no." data-nf-ref="${r.id}" value="${esc(r.invoice_ref || "")}" style="width:220px;margin-top:4px;font-size:12px"></div>`
+        : ""}${r.nf_key ? `<div class="muted" style="font-size:11px">key ${esc(r.nf_key)}</div>` : ""}</td>
+      <td class="wrap"><span class="badge ${cls}">${esc(label)}</span>${r.issued_on
+        ? `<span class="muted" style="margin-left:8px">${day(r.issued_on)}</span>` : ""}</td>
+      <td style="text-align:right;white-space:nowrap">${acoes.join(" ")}</td>
+    </tr>${editavel ? `<tr class="xbody" data-nf-form="${r.id}" hidden><td colspan="7">
+      <div class="row" style="gap:8px;flex-wrap:wrap;align-items:flex-end">
+        <label>NFS-e number <input class="inp n" data-nf-number="${r.id}" type="text" style="width:90px"></label>
+        <label>Access key <input class="inp n" data-nf-key="${r.id}" type="text" style="width:300px"></label>
+        <label>Issued on <input class="inp n" data-nf-date="${r.id}" type="date" value="${hoje}"></label>
+        <label>PDF <input data-nf-pdf="${r.id}" type="file" accept="application/pdf"></label>
+        <button class="btn" type="button" data-nf-save="${r.id}">Save</button>
+      </div></td></tr>` : ""}`;
+  };
+  const porEmitir = notas.filter((r) => r.status === "todo").length;
+
   const maquinas = [...new Set([...(state.machines || []), s.sender_machine].filter(Boolean))];
   render(`
     <div class="tool">
@@ -4953,6 +5012,14 @@ async function renderAccounting() {
       </table></div>
     </div>
     <div class="panel">
+      <h2>Invoices <span class="dim">one NFS-e per payout · the collector fills in taker, competence, USD after the split, PTAX and R$ · you issue it on the portal${
+        porEmitir ? ` · <b class="bright">${porEmitir} to issue</b>` : ""}</span></h2>
+      <div class="scroll"><table class="dt">
+        <thead><tr><th>NF</th><th>Taker</th><th>Competence</th><th style="text-align:right">USD · PTAX → R$</th><th>Description · ref</th><th>Status</th><th></th></tr></thead>
+        <tbody>${notas.map(nfRow).join("") || `<tr><td colspan="7">${empty("no payouts in the books yet")}</td></tr>`}</tbody>
+      </table></div>
+    </div>
+    <div class="panel">
       <h2>Sent to the office <span class="dim">payout notices as they are requested · the monthly Excel · retry or close by hand what did not go</span></h2>
       <div class="scroll"><table class="dt">
         <thead><tr><th>Ref</th><th>What</th><th>When</th><th>Status</th><th></th></tr></thead>
@@ -4970,6 +5037,10 @@ async function renderAccounting() {
         <label>Report hour (São Paulo) <input class="inp n" id="ac-hour" type="number" min="0" max="23" step="1" value="${s.report_hour ?? 18}"></label>
         <label>Notices since <input class="inp n" id="ac-since" type="date" value="${esc(s.notify_since || "")}"></label>
         <label>Enabled <select class="inp" id="ac-on"><option value="1"${s.enabled ? " selected" : ""}>yes</option><option value="0"${s.enabled ? "" : " selected"}>no</option></select></label>
+        <label title="where the 'invoice ready' notice goes — your own number, not the office">My WhatsApp (digits) <input class="inp n" id="ac-self-phone" type="text" inputmode="numeric" value="${esc(s.self_phone || "")}"></label>
+        <label title="your chat title in the sending PC's WhatsApp">My chat title <input class="inp" id="ac-self-contact" type="text" value="${esc(s.self_contact || "")}" style="width:120px"></label>
+        <label title="the office sends it every month; it goes in the NFS-e 'approximate taxes' field">Simples rate (%) <input class="inp n" id="ac-simples" type="number" min="0" max="100" step="0.01" value="${s.simples_rate ?? ""}" style="width:90px"></label>
+        <label>…for month <input class="inp n" id="ac-simples-month" type="month" value="${esc(s.simples_rate_month || "")}"></label>
         <span class="muted">The contact name must match the chat title exactly: the collector checks it before pressing Enter. The sending PC needs WhatsApp Desktop logged in and the screen unlocked.</span>
       </div>
     </details>`);
@@ -5011,6 +5082,56 @@ async function renderAccounting() {
       }
     };
   });
+  view.querySelectorAll("[data-nf-competence]").forEach((el) => {
+    el.onchange = async () => {
+      if (!el.value) return;
+      await guard(() => save.invoice(el.dataset.nfCompetence, { competence: el.value }),
+        "Saved — PTAX and R$ update on the next collector cycle");
+    };
+  });
+  view.querySelectorAll("[data-nf-ref]").forEach((el) => {
+    el.onchange = async () => {
+      await guard(() => save.invoice(el.dataset.nfRef, { invoice_ref: el.value.trim() || null }),
+        "Saved — the description updates on the next collector cycle");
+    };
+  });
+  view.querySelectorAll("[data-nf-issued]").forEach((b) => {
+    b.onclick = () => {
+      const row = view.querySelector(`[data-nf-form="${b.dataset.nfIssued}"]`);
+      if (row) row.hidden = !row.hidden;
+    };
+  });
+  view.querySelectorAll("[data-nf-save]").forEach((b) => {
+    b.onclick = async () => {
+      const id = b.dataset.nfSave;
+      const q = (attr) => view.querySelector(`[${attr}="${id}"]`);
+      const numero = q("data-nf-number").value.trim();
+      if (!numero) return toast("Enter the NFS-e number");
+      b.disabled = true;
+      try {
+        const file = q("data-nf-pdf").files[0];
+        const patch = { status: "issued", nf_number: numero, nf_key: q("data-nf-key").value.trim() || null,
+          issued_on: q("data-nf-date").value || hoje };
+        if (file) patch.file_path = await save.invoiceFile(`${patch.issued_on}-NFSe-${numero.padStart(4, "0")}.pdf`, file);
+        const salvo = await guard(() => save.invoice(id, patch), "Invoice saved");
+        if (salvo) renderAccounting();
+        else b.disabled = false;
+      } catch (err) {
+        toast(`Error: ${err.message}`);
+        b.disabled = false;
+      }
+    };
+  });
+  view.querySelectorAll("[data-nf-skip],[data-nf-reopen]").forEach((b) => {
+    b.onclick = async () => {
+      const skip = b.dataset.nfSkip != null;
+      b.disabled = true;
+      await guard(() => save.invoice(skip ? b.dataset.nfSkip : b.dataset.nfReopen,
+        skip ? { status: "skipped", notes: "skipped in the panel" } : { status: "todo", notes: null }),
+        skip ? "Skipped" : "Back to issue");
+      renderAccounting();
+    };
+  });
   view.querySelectorAll("[data-outbox]").forEach((b) => {
     b.onclick = async () => {
       b.disabled = true;
@@ -5041,6 +5162,10 @@ async function renderAccounting() {
   salvar("ac-wallet", (v) => ({ wallet_label: v.trim() || null }));
   salvar("ac-hour", (v) => ({ report_hour: Math.min(23, Math.max(0, Number(v) || 18)) }));
   salvar("ac-since", (v) => ({ notify_since: v || hoje }));
+  salvar("ac-self-phone", (v) => ({ self_phone: v.replace(/\D/g, "") || null }));
+  salvar("ac-self-contact", (v) => ({ self_contact: v.trim() || null }));
+  salvar("ac-simples", (v) => ({ simples_rate: v === "" ? null : Number(v) }));
+  salvar("ac-simples-month", (v) => ({ simples_rate_month: v || null }));
   // Ligar e "a partir de hoje": o que foi pedido ou gasto enquanto estava
   // desligado nao vira aviso nem entra no Excel.
   salvar("ac-on", (v) => (v === "1" ? { enabled: true, notify_since: hoje } : { enabled: false }),

@@ -5,7 +5,7 @@
 // fica so no coletor, no PC.
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { CONFIG } from "./config.js?v=02dcc48dc4";
+import { CONFIG } from "./config.js?v=50af717fa0";
 
 export const supabase = createClient(CONFIG.url, CONFIG.anonKey);
 
@@ -158,6 +158,13 @@ export const load = {
     supabase.from("accounting_moves").select("*")
       .gte("occurred_on", from).lt("occurred_on", to)
       .order("occurred_on").order("created_at").order("move_id").then(unwrap),
+
+  // As notas de cada saque (0083), com o saque junto para a linha dizer a mesa e a conta.
+  invoices: () =>
+    supabase.from("accounting_invoices")
+      .select("*, cash_events(id, occurred_on, amount, gross_amount, challenge_id)")
+      .order("status").order("competence", { ascending: false }).order("id", { ascending: false })
+      .then(unwrap),
 
   // O Excel que o coletor gerou, do bucket do dono (RLS pela pasta).
   accountingFile: async (path) => {
@@ -385,6 +392,25 @@ export const save = {
     supabase.from("accounting_outbox")
       .update({ status: "manual", sent_at: new Date().toISOString(), last_error: null })
       .eq("id", id).then(unwrap),
+
+  // A NFS-e de um saque (0083): competencia, referencia do invoice, numero,
+  // chave, data e status. O coletor refaz PTAX/R$/descricao no proximo ciclo
+  // quando a competencia muda.
+  invoice: (id, patch) =>
+    supabase.from("accounting_invoices")
+      .update({ ...patch, updated_at: new Date().toISOString() })
+      .eq("id", id).select().single().then(unwrap),
+
+  // PDF da nota ou comprovante da mesa, na pasta do dono do bucket.
+  invoiceFile: async (name, file) => {
+    const user = await currentUser();
+    if (!user) throw new Error("sessão expirada");
+    const path = `${user.id}/nf/${name}`;
+    const { error } = await supabase.storage.from("accounting")
+      .upload(path, file, { contentType: file.type || "application/pdf", upsert: true });
+    if (error) throw new Error(error.message);
+    return path;
+  },
 
   // Excecao por linha a `notify_since` (0081). `include` null apaga a excecao
   // e a data volta a mandar.
