@@ -5,7 +5,7 @@
 // fica so no coletor, no PC.
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { CONFIG } from "./config.js?v=d3e66d7e57";
+import { CONFIG } from "./config.js?v=02dcc48dc4";
 
 export const supabase = createClient(CONFIG.url, CONFIG.anonKey);
 
@@ -157,7 +157,7 @@ export const load = {
   accountingMoves: (from, to) =>
     supabase.from("accounting_moves").select("*")
       .gte("occurred_on", from).lt("occurred_on", to)
-      .order("occurred_on").order("created_at").then(unwrap),
+      .order("occurred_on").order("created_at").order("move_id").then(unwrap),
 
   // O Excel que o coletor gerou, do bucket do dono (RLS pela pasta).
   accountingFile: async (path) => {

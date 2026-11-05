@@ -10,32 +10,32 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=d3e66d7e57";
+} from "./db.js?v=02dcc48dc4";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=d3e66d7e57";
+} from "./util.js?v=02dcc48dc4";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=d3e66d7e57";
-import { cell, locked, wireEditables } from "./editable.js?v=d3e66d7e57";
-import { exportChallenges } from "./export.js?v=d3e66d7e57";
-import { mountPlanPicker } from "./plan-picker.js?v=d3e66d7e57";
-import { nextLiveLot } from "./next-lot.js?v=d3e66d7e57";
-import { buildPlan, sessionDay, weekOf } from "./plan.js?v=d3e66d7e57";
-import { filterForFirm } from "./firm-accounts.js?v=d3e66d7e57";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=d3e66d7e57";
+} from "./charts.js?v=02dcc48dc4";
+import { cell, locked, wireEditables } from "./editable.js?v=02dcc48dc4";
+import { exportChallenges } from "./export.js?v=02dcc48dc4";
+import { mountPlanPicker } from "./plan-picker.js?v=02dcc48dc4";
+import { nextLiveLot } from "./next-lot.js?v=02dcc48dc4";
+import { buildPlan, sessionDay, weekOf } from "./plan.js?v=02dcc48dc4";
+import { filterForFirm } from "./firm-accounts.js?v=02dcc48dc4";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=02dcc48dc4";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges, collectorAlerts,
-} from "./machine.js?v=d3e66d7e57";
+} from "./machine.js?v=02dcc48dc4";
 import { loader,
   renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
   initProfile, raf, odo, burst, landOn, blob, deltaChip,
-} from "./skin.js?v=d3e66d7e57";
-import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=d3e66d7e57";
-import { firmMark, logoBg, logoInner } from "./logos.js?v=d3e66d7e57";
-import { startTour } from "./tour.js?v=d3e66d7e57";
+} from "./skin.js?v=02dcc48dc4";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=02dcc48dc4";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=02dcc48dc4";
+import { startTour } from "./tour.js?v=02dcc48dc4";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -1567,7 +1567,7 @@ async function openChallenge(id, journal, firms, progress = []) {
         <h3>Record received payout</h3>
         <div class="row">
           <div class="field"><label for="payout-net">Net received ($)</label><input id="payout-net" type="number" min="0.01" step="0.01" required></div>
-          <div class="field"><label for="payout-gross">Gross withdrawn ($)</label><input id="payout-gross" type="number" min="0.01" step="0.01" required></div>
+          <div class="field"><label for="payout-gross" title="the amount on the firm's payout certificate, before the split — the office issues the invoice on certificate × split; the transfer fee is the rest">Gross withdrawn ($) · certificate</label><input id="payout-gross" type="number" min="0.01" step="0.01" required></div>
           <div class="field"><label for="payout-redeposit">Redeposited to Plexy ($)</label><input id="payout-redeposit" type="number" min="0" step="0.01" value="0" required></div>
           <div class="field"><label for="payout-date">Received on</label><input id="payout-date" type="date" required value="${new Date().toISOString().slice(0, 10)}"></div>
           <div class="field auto"><label>&nbsp;</label><button class="btn" type="submit" id="save-payout">Save payout</button></div>
@@ -4381,7 +4381,7 @@ function openPendingForm(items, plans, accounts, signature) {
         <div class="field"><label>Net received</label>
           <input type="number" min="0.01" step="0.01" inputmode="decimal"
                  data-pending-payout="${item.id}" value="${esc(item.net ?? "")}"></div>
-        <div class="field"><label>Gross withdrawn</label>
+        <div class="field"><label title="the amount on the firm's payout certificate, before the split">Gross withdrawn · certificate</label>
           <input type="number" min="0.01" step="0.01" inputmode="decimal"
                  data-pending-gross="${item.id}" value="${esc(item.gross ?? "")}"></div>
         <div class="field"><label>Received on</label>
@@ -4792,8 +4792,8 @@ function addDays(iso, n) {
 
 const MOVE_LABEL = {
   cost: "Evaluation purchase", activation: "Funded activation", refund: "Refund",
-  payout: "Payout received", deposit: "Hedge deposit", withdrawal: "Hedge withdrawal",
-  adjustment: "Broker adjustment",
+  payout: "Payout received", fee: "Payout transfer fee", deposit: "Hedge deposit",
+  withdrawal: "Hedge withdrawal", adjustment: "Broker adjustment",
 };
 const OUTBOX_LABEL = { sent: ["funded", "sent"], manual: ["closed", "sent by hand"],
   pending: ["passed", "pending"], failed: ["failed", "failed"], cancelled: ["closed", "cancelled"] };
@@ -4813,7 +4813,10 @@ function moveDescription(m) {
     case "cost": return `Compra de avaliação ${firm}${plan}${size}${conta}`;
     case "activation": return `Ativação da conta funded ${firm}${plan}${size}${conta}`;
     case "refund": return `Reembolso ${firm}${conta}`;
-    case "payout": return `Saque de lucro ${firm}${conta}`;
+    case "payout": return m.gross_amount && Number(m.split_pct) < 100
+      ? `Saque de lucro ${firm}${conta} — certificado US$ ${Number(m.gross_amount).toFixed(2)}, split da mesa ${100 - Number(m.split_pct)}%`
+      : `Saque de lucro ${firm}${conta}`;
+    case "fee": return `Taxa de transferência do saque ${firm}${conta} (não abate a nota)`;
     case "deposit": return `Depósito na conta de hedge ${firm}${conta}`;
     case "withdrawal": return `Saque da conta de hedge ${firm}${conta}`;
     default: return `${m.kind} ${firm}${conta}`;
