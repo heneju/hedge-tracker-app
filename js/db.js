@@ -5,7 +5,7 @@
 // fica so no coletor, no PC.
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { CONFIG } from "./config.js?v=50af717fa0";
+import { CONFIG } from "./config.js?v=9ff5166556";
 
 export const supabase = createClient(CONFIG.url, CONFIG.anonKey);
 
@@ -162,7 +162,7 @@ export const load = {
   // As notas de cada saque (0083), com o saque junto para a linha dizer a mesa e a conta.
   invoices: () =>
     supabase.from("accounting_invoices")
-      .select("*, cash_events(id, occurred_on, amount, gross_amount, challenge_id)")
+      .select("*, cash_events(id, occurred_on, amount, gross_amount, challenge_id, proof_path, proof_ref, proof_date)")
       .order("status").order("competence", { ascending: false }).order("id", { ascending: false })
       .then(unwrap),
 
@@ -298,6 +298,17 @@ async function costAnswered(challengeId, kind, amount) {
     .eq("id", challengeId).eq("cost_pending", true).then(unwrap);
 }
 
+// A nota `todo` do saque segue o comprovante (0085): a data do certificado vira
+// a competencia e o numero vira a referencia. Nota emitida ou pulada nao muda.
+async function proofToInvoice(cashEventId, row) {
+  const patch = {};
+  if (row.proof_date) patch.competence = row.proof_date;
+  if (row.proof_ref) patch.invoice_ref = row.proof_ref;
+  if (!Object.keys(patch).length) return;
+  await supabase.from("accounting_invoices").update({ ...patch, updated_at: new Date().toISOString() })
+    .eq("cash_event_id", cashEventId).eq("status", "todo").then(unwrap);
+}
+
 export const save = {
   challenge: (id, patch) =>
     supabase.from("challenges").update(patch).eq("id", id).then(unwrap),
@@ -330,6 +341,7 @@ export const save = {
   updateCashEvent: async (id, row) => {
     const salvo = await supabase.from("cash_events").update(row).eq("id", id).select().single().then(unwrap);
     await costAnswered(salvo?.challenge_id, salvo?.kind, salvo?.amount);
+    if (salvo?.kind === "payout") await proofToInvoice(id, row);
     return salvo;
   },
 
@@ -410,6 +422,27 @@ export const save = {
       .upload(path, file, { contentType: file.type || "application/pdf", upsert: true });
     if (error) throw new Error(error.message);
     return path;
+  },
+
+  // Comprovante do saque (print do certificado / PDF da invoice, 0085), na
+  // pasta do dono. O coletor nao le o arquivo: o que vale e o que o painel
+  // tirou dele (`proof_date`, `proof_ref` no cash_event).
+  proofFile: async (name, file) => {
+    const user = await currentUser();
+    if (!user) throw new Error("sessão expirada");
+    const path = `${user.id}/comprovantes/${name}`;
+    const { error } = await supabase.storage.from("accounting")
+      .upload(path, file, { contentType: file.type || "application/pdf", upsert: true });
+    if (error) throw new Error(error.message);
+    return path;
+  },
+
+  // Comprovante colado depois do saque gravado (aba Accounting): a nota `todo`
+  // recebe a competencia e a referencia na hora; o coletor refaz PTAX, R$ e
+  // descricao no ciclo seguinte.
+  cashProof: async (cashEventId, patch) => {
+    await supabase.from("cash_events").update(patch).eq("id", cashEventId).then(unwrap);
+    await proofToInvoice(cashEventId, patch);
   },
 
   // Excecao por linha a `notify_since` (0081). `include` null apaga a excecao

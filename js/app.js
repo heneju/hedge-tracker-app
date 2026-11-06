@@ -10,32 +10,33 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=50af717fa0";
+} from "./db.js?v=9ff5166556";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=50af717fa0";
+} from "./util.js?v=9ff5166556";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=50af717fa0";
-import { cell, locked, wireEditables } from "./editable.js?v=50af717fa0";
-import { exportChallenges } from "./export.js?v=50af717fa0";
-import { mountPlanPicker } from "./plan-picker.js?v=50af717fa0";
-import { nextLiveLot } from "./next-lot.js?v=50af717fa0";
-import { buildPlan, sessionDay, weekOf } from "./plan.js?v=50af717fa0";
-import { filterForFirm } from "./firm-accounts.js?v=50af717fa0";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=50af717fa0";
+} from "./charts.js?v=9ff5166556";
+import { cell, locked, wireEditables } from "./editable.js?v=9ff5166556";
+import { exportChallenges } from "./export.js?v=9ff5166556";
+import { mountPlanPicker } from "./plan-picker.js?v=9ff5166556";
+import { nextLiveLot } from "./next-lot.js?v=9ff5166556";
+import { buildPlan, sessionDay, weekOf } from "./plan.js?v=9ff5166556";
+import { mountProofZone } from "./proof.js?v=9ff5166556";
+import { filterForFirm } from "./firm-accounts.js?v=9ff5166556";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=9ff5166556";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges, collectorAlerts,
-} from "./machine.js?v=50af717fa0";
+} from "./machine.js?v=9ff5166556";
 import { loader,
   renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
   initProfile, raf, odo, burst, landOn, blob, deltaChip,
-} from "./skin.js?v=50af717fa0";
-import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=50af717fa0";
-import { firmMark, logoBg, logoInner } from "./logos.js?v=50af717fa0";
-import { startTour } from "./tour.js?v=50af717fa0";
+} from "./skin.js?v=9ff5166556";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=9ff5166556";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=9ff5166556";
+import { startTour } from "./tour.js?v=9ff5166556";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -128,6 +129,15 @@ function setMachine(next) {
 }
 
 // ------------------------------------------------------------------- helpers
+
+// Nome do comprovante no bucket: data, mesa e conta, com a extensao do que
+// foi colado (print do clipboard vem como image/png, sem nome).
+function proofFileName(firm, accounts, date, file) {
+  const ext = { "application/pdf": "pdf", "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" }[file.type]
+    || (file.name || "").split(".").pop() || "bin";
+  const slug = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return `${date}-${slug(firm) || "firm"}-${slug(accounts) || "acct"}.${ext}`;
+}
 
 function toast(message) {
   const el = document.createElement("div");
@@ -1573,7 +1583,12 @@ async function openChallenge(id, journal, firms, progress = []) {
           <div class="field auto"><label>&nbsp;</label><button class="btn" type="submit" id="save-payout">Save payout</button></div>
           <button class="btn ghost" type="button" id="cancel-payout" hidden>Cancel edit</button>
         </div>
-        <p class="muted" id="payout-help">Gross is suggested from the profit split; check the amount debited by the firm. Redeposit is a transfer, not additional profit. Plexy balance comes from the collector.</p>
+        <div class="row">
+          <div class="field wide"><label title="the firm's payout certificate (Lucid) or the Rise invoice (Top One) — the office issues the NFS-e from it">Certificate / invoice</label><div id="payout-proof"></div></div>
+          <div class="field"><label for="payout-proof-date" title="the date printed on the certificate/invoice — competence of the NFS-e">Certificate date</label><input id="payout-proof-date" type="date"></div>
+          <div class="field"><label for="payout-proof-ref">Invoice / certificate no.</label><input id="payout-proof-ref" type="text" placeholder="read from the file"></div>
+        </div>
+        <p class="muted" id="payout-help">Paste the certificate or invoice and the gross, date and number fill in from it — check them. Without it, gross is suggested from the profit split. Redeposit is a transfer, not additional profit. Plexy balance comes from the collector.</p>
       </form>
       <div class="panel-body row">
         <div class="field"><label>Kind</label><select id="cash-kind">
@@ -1611,6 +1626,20 @@ async function openChallenge(id, journal, firms, progress = []) {
   let payoutId = null;
   let grossEdited = false;
   let payoutRequestId = crypto.randomUUID();
+  const proofDate = modal.querySelector("#payout-proof-date");
+  const proofRef = modal.querySelector("#payout-proof-ref");
+  // O comprovante colado preenche bruto, data e numero; ele confere e salva.
+  const proof = mountProofZone(modal.querySelector("#payout-proof"), {
+    pasteTarget: modal,
+    onRead: (r) => {
+      if (r.amount != null) {
+        payoutGross.value = r.amount.toFixed(2);
+        grossEdited = true;
+      }
+      if (r.date) proofDate.value = r.date;
+      if (r.ref) proofRef.value = r.ref;
+    },
+  });
   payoutGross.oninput = () => { grossEdited = true; };
   payoutNet.oninput = () => {
     if (!grossEdited && Number(c.split_pct) > 0) {
@@ -1619,6 +1648,7 @@ async function openChallenge(id, journal, firms, progress = []) {
   };
   payoutCancel.onclick = () => {
     payoutForm.reset();
+    proof.reset();
     payoutId = null;
     grossEdited = false;
     payoutRequestId = crypto.randomUUID();
@@ -1635,6 +1665,9 @@ async function openChallenge(id, journal, firms, progress = []) {
       if (!grossEdited) payoutNet.oninput();
       payoutRedeposit.value = event.redeposit_amount || 0;
       payoutDate.value = event.occurred_on;
+      proofDate.value = event.proof_date || "";
+      proofRef.value = event.proof_ref || "";
+      proof.attached(event.proof_path);
       payoutButton.textContent = "Update payout";
       payoutCancel.hidden = false;
       payoutNet.focus();
@@ -1652,7 +1685,11 @@ async function openChallenge(id, journal, firms, progress = []) {
     payoutButton.disabled = true;
     try {
       const row = { challenge_id: id, kind: "payout", amount, gross_amount: gross,
-        redeposit_amount: redeposit, occurred_on: payoutDate.value, source: "manual" };
+        redeposit_amount: redeposit, occurred_on: payoutDate.value, source: "manual",
+        proof_date: proofDate.value || null, proof_ref: proofRef.value.trim() || null };
+      if (proof.file) {
+        row.proof_path = await save.proofFile(proofFileName(c.firm, c.account_ids, payoutDate.value, proof.file), proof.file);
+      }
       if (payoutId) await save.updateCashEvent(payoutId, row);
       else await save.createCashEvent({ ...row, request_id: payoutRequestId });
       toast("Payout saved");
@@ -4088,6 +4125,8 @@ async function loadPending() {
         net: c.funded_withdrawable,
         gross: c.funded_gross_request,
         date: c.resumed_on,
+        firm: c.firm,
+        accounts: c.account_ids,
       });
     }
 
@@ -4401,6 +4440,14 @@ function openPendingForm(items, plans, accounts, signature) {
                  value="${esc(item.date || "")}"></div>
         <div class="field auto"><label>&nbsp;</label>
           <button class="btn" data-save-payout="${item.id}">Save</button></div>
+      </div>
+      <div class="row" style="margin-top:4px">
+        <div class="field wide"><label title="the firm's payout certificate or the Rise invoice — gross, date and number fill in from it">Certificate / invoice</label>
+          <div data-pending-proof="${item.id}"></div></div>
+        <div class="field"><label title="the date printed on the certificate/invoice — competence of the NFS-e">Certificate date</label>
+          <input type="date" data-pending-proof-date="${item.id}"></div>
+        <div class="field"><label>Invoice / certificate no.</label>
+          <input type="text" data-pending-proof-ref="${item.id}" placeholder="read from the file"></div>
       </div>`;
     }
     if (item.kind === "failed") {
@@ -4516,6 +4563,23 @@ function openPendingForm(items, plans, accounts, signature) {
     };
   });
 
+  // Uma caixa de colar por saque pendente. Com uma so, o Ctrl+V em qualquer
+  // lugar do modal serve; com varias, e preciso clicar na caixa certa.
+  const proofs = new Map();
+  const proofHosts = [...modal.querySelectorAll("[data-pending-proof]")];
+  proofHosts.forEach((host) => {
+    const id = host.dataset.pendingProof;
+    const q = (attr) => modal.querySelector(`[${attr}="${id}"]`);
+    proofs.set(id, mountProofZone(host, {
+      pasteTarget: proofHosts.length === 1 ? modal : null,
+      onRead: (r) => {
+        if (r.amount != null) q("data-pending-gross").value = r.amount.toFixed(2);
+        if (r.date) q("data-pending-proof-date").value = r.date;
+        if (r.ref) q("data-pending-proof-ref").value = r.ref;
+      },
+    }));
+  });
+
   modal.querySelectorAll("[data-save-payout]").forEach((b) => {
     b.onclick = async () => {
       const id = Number(b.dataset.savePayout);
@@ -4528,15 +4592,20 @@ function openPendingForm(items, plans, accounts, signature) {
       if (!date) return toast("Enter the date you received it");
       // Sem redeposito aqui: é o caso raro, e ele se corrige na linha do
       // challenge. Perguntar tudo de uma vez é o que faz ninguém responder.
-      await guard(() => save.createCashEvent({
-        challenge_id: id,
-        kind: "payout",
-        amount: net,
-        gross_amount: gross,
-        redeposit_amount: 0,
-        occurred_on: date,
-        source: "manual",
-      }), "Payout saved");
+      const proof = proofs.get(String(id));
+      const item = items.find((i) => i.kind === "payout" && i.id === id) || {};
+      const row = {
+        challenge_id: id, kind: "payout", amount: net, gross_amount: gross, redeposit_amount: 0,
+        occurred_on: date, source: "manual",
+        proof_date: modal.querySelector(`[data-pending-proof-date="${id}"]`).value || null,
+        proof_ref: modal.querySelector(`[data-pending-proof-ref="${id}"]`).value.trim() || null,
+      };
+      await guard(async () => {
+        if (proof?.file) {
+          row.proof_path = await save.proofFile(proofFileName(item.firm, item.accounts, date, proof.file), proof.file);
+        }
+        return save.createCashEvent(row);
+      }, "Payout saved");
       finishPending();
     };
   });
@@ -4955,7 +5024,10 @@ async function renderAccounting() {
       <td><b class="bright">${esc(r.taker_name || "—")}</b>${r.taker_address
         ? `<div class="muted" style="font-size:11px">${esc(r.taker_address)}</div>`
         : `<div class="muted" style="font-size:11px">address missing — Setup › Firms</div>`}
-        <div class="muted" style="font-size:11px">received ${day(ce.occurred_on)} · wallet ${money(ce.amount)}</div></td>
+        <div class="muted" style="font-size:11px">received ${day(ce.occurred_on)} · wallet ${money(ce.amount)}</div>${
+          ce.proof_path
+            ? `<div class="muted" style="font-size:11px;margin-top:2px">proof <button class="btn ghost" type="button" data-xlsx="${esc(ce.proof_path)}" style="height:22px;padding:0 8px;font-size:11px">${esc(ce.proof_path.split("/").pop())}</button></div>`
+            : editavel ? `<div data-nf-proof="${r.id}" data-ce="${ce.id}" style="margin-top:4px"></div>` : ""}</td>
       <td class="n">${editavel
         ? `<input class="inp n" type="date" data-nf-competence="${r.id}" value="${esc(r.competence)}" style="width:150px"
              title="date on the firm's invoice/certificate — PTAX and R$ follow it on the next collector cycle">`
@@ -5081,6 +5153,27 @@ async function renderAccounting() {
         cb.disabled = false;
       }
     };
+  });
+  // Saque gravado sem comprovante: cola aqui e a nota recebe data e numero.
+  view.querySelectorAll("[data-nf-proof]").forEach((host) => {
+    const nota = notas.find((r) => String(r.id) === host.dataset.nfProof) || {};
+    const ce = nota.cash_events || {};
+    mountProofZone(host, {
+      compact: true,
+      onRead: async (r, file) => {
+        try {
+          const patch = { proof_date: r.date || null, proof_ref: r.ref || null,
+            proof_path: await save.proofFile(proofFileName(nota.taker_name, `ce${ce.id}`, ce.occurred_on, file), file) };
+          await save.cashProof(ce.id, patch);
+          toast(r.amount != null && Math.abs(Number(ce.gross_amount) - r.amount) >= 0.01
+            ? `Proof saved — it says ${money(r.amount)}, the gross recorded is ${money(ce.gross_amount)}; fix the payout on the challenge if needed`
+            : "Proof saved");
+          renderAccounting();
+        } catch (err) {
+          toast(`Error: ${err.message}`);
+        }
+      },
+    });
   });
   view.querySelectorAll("[data-nf-competence]").forEach((el) => {
     el.onchange = async () => {
