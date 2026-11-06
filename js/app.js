@@ -10,33 +10,33 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=2dcb139243";
+} from "./db.js?v=ebe4907c52";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=2dcb139243";
+} from "./util.js?v=ebe4907c52";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=2dcb139243";
-import { cell, locked, wireEditables } from "./editable.js?v=2dcb139243";
-import { exportChallenges } from "./export.js?v=2dcb139243";
-import { mountPlanPicker } from "./plan-picker.js?v=2dcb139243";
-import { nextLiveLot } from "./next-lot.js?v=2dcb139243";
-import { buildPlan, sessionDay, weekOf } from "./plan.js?v=2dcb139243";
-import { mountProofZone } from "./proof.js?v=2dcb139243";
-import { filterForFirm } from "./firm-accounts.js?v=2dcb139243";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=2dcb139243";
+} from "./charts.js?v=ebe4907c52";
+import { cell, locked, wireEditables } from "./editable.js?v=ebe4907c52";
+import { exportChallenges } from "./export.js?v=ebe4907c52";
+import { mountPlanPicker } from "./plan-picker.js?v=ebe4907c52";
+import { nextLiveLot } from "./next-lot.js?v=ebe4907c52";
+import { buildPlan, monthOf, sessionDay, weekOf } from "./plan.js?v=ebe4907c52";
+import { mountProofZone } from "./proof.js?v=ebe4907c52";
+import { filterForFirm } from "./firm-accounts.js?v=ebe4907c52";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=ebe4907c52";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges, collectorAlerts,
-} from "./machine.js?v=2dcb139243";
+} from "./machine.js?v=ebe4907c52";
 import { loader,
   renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
   initProfile, raf, odo, burst, landOn, blob, deltaChip,
-} from "./skin.js?v=2dcb139243";
-import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=2dcb139243";
-import { firmMark, logoBg, logoInner } from "./logos.js?v=2dcb139243";
-import { startTour } from "./tour.js?v=2dcb139243";
+} from "./skin.js?v=ebe4907c52";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=ebe4907c52";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=ebe4907c52";
+import { startTour } from "./tour.js?v=ebe4907c52";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -4660,14 +4660,14 @@ async function renderPlan() {
     load.payoutPolicies().catch(() => []), load.tradedToday().catch(() => []), load.settings()]);
   const session = sessionDay();
   const semana = weekOf(session);
-  const desde = settings.goal_since || null;
-  const corte = desde && desde < semana.start ? desde : semana.start;
+  const mes = monthOf(session);
+  const corte = mes.start < semana.start ? mes.start : semana.start;
   const janela = addDays(session, -45);
   const liveIds = accounts.filter((a) => a.kind === "live").map((a) => a.id);
   const [checkRows, cashRows, liveDays] = await Promise.all([
     load.planChecks(janela).catch(() => []),
     load.cashSince(corte).catch(() => []),
-    desde ? load.liveDaysSince(desde, liveIds).catch(() => []) : []]);
+    load.liveDaysSince(mes.start, liveIds).catch(() => [])]);
   const plan = buildPlan({
     journal, progress, accounts, firms, plans, policies, today, settings,
     checks: new Set(checkRows.map((r) => r.task_key)), cash: cashRows, liveDays,
@@ -4678,6 +4678,7 @@ async function renderPlan() {
   const logo = (firm) => `<span class="ic" style="background:${logoBg(firm)}"><span class="lgi">${logoInner(firm)}</span></span>`;
   const weekday = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" });
   const longDay = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  const monthName = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString("en-US", { month: "long", timeZone: "UTC" });
   const stepHead = (n, title, hint) => `
     <div class="pstep"><span class="pn" aria-hidden="true">${n}</span><h2>${title}</h2><span class="dim">${hint}</span></div>`;
 
@@ -4789,12 +4790,12 @@ async function renderPlan() {
     </div>
     <div class="plan-top">
       <div class="panel pgoal">
-        <h2>Goal <span class="dim">cash profit${g.since ? ` since ${longDay(g.since)}` : ""}</span></h2>
-        <div class="pbig n">${g.done == null ? "—" : money0(g.done)} <span class="dim">of ${money0(g.target)}</span></div>
+        <h2>${monthName(g.month)} <span class="dim">profit in hand</span></h2>
+        <div class="pbig n${g.done < 0 ? " neg" : ""}">${money0(g.done)} <span class="dim">of ${money0(g.target)}</span></div>
         <div class="bar2"><i class="ok" style="--w:${g.pct ?? 0}%"></i></div>
-        <div class="muted">${g.done == null
-          ? "Set the start date under Adjust to start counting."
-          : faltam <= 0 ? "Goal reached."
+        <div class="muted">+${money0(g.payouts)} payouts · ${money0(g.costs)} evaluations · ${
+          g.hedge < 0 ? "" : "+"}${money0(g.hedge)} hedge</div>
+        <div class="muted">${faltam <= 0 ? "Goal reached."
           : `About ${Math.ceil(faltam / porSaque)} payouts away. ${w.expectedThis} on the way this week.`}</div>
       </div>
       <div class="panel pweek">
@@ -4810,11 +4811,10 @@ async function renderPlan() {
       money0(cg.limit)} committed (${num(cg.pct, 0)}% of ${money0(cg.cash)})${
       totalCompra ? ` · ~${money0(totalCompra)} today` : ""}`)}${passo4}</div>
     <details class="padjust">
-      <summary><span>Goal ${money0(g.target)} · ${w.goal} payouts a week · ${porVaga} evaluations per free slot · ${
+      <summary><span>Goal ${money0(g.target)} a month · ${w.goal} payouts a week · ${porVaga} evaluations per free slot · ${
         num(cg.pct, 0)}% of cash max committed</span><b>Adjust ›</b></summary>
       <div class="pset">
-        <label>Goal <input class="inp n" id="pg-goal" type="number" min="0" step="100" value="${g.target}"></label>
-        <label>Since <input class="inp n" id="pg-since" type="date" value="${esc(g.since || "")}"></label>
+        <label>Goal a month <input class="inp n" id="pg-goal" type="number" min="0" step="100" value="${g.target}"></label>
         <label>Payouts a week <input class="inp n" id="pg-week" type="number" min="1" step="1" value="${w.goal}"></label>
         <label>Evaluations per free slot <input class="inp n" id="pg-slot" type="number" min="1" step="1" value="${porVaga}"></label>
         <label>Max committed, % of cash <input class="inp n" id="pg-cap" type="number" min="5" max="100" step="5" value="${num(cg.pct, 0)}"></label>
@@ -4853,7 +4853,6 @@ async function renderPlan() {
     };
   };
   salvar("pg-goal", "goal_profit", (v) => (v === "" ? null : Number(v)));
-  salvar("pg-since", "goal_since", (v) => v || null);
   salvar("pg-week", "goal_payouts_week", (v) => Math.max(1, Number(v) || 2));
   salvar("pg-slot", "evals_per_free_slot", (v) => Math.max(1, Number(v) || 3));
   salvar("pg-cap", "max_committed_pct", (v) => Math.min(100, Math.max(5, Number(v) || 60)));

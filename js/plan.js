@@ -50,6 +50,13 @@ export function weekOf(isoDay) {
   };
 }
 
+/** Primeiro e último dia do mês do dia. */
+export function monthOf(isoDay) {
+  const [a, m] = isoDay.split("-").map(Number);
+  const fim = new Date(Date.UTC(a, m, 0)).toISOString().slice(0, 10);
+  return { start: `${isoDay.slice(0, 7)}-01`, end: fim };
+}
+
 /** P* da política -- a mesma conta de playbook.max_payout_profit, só para a tabela de regras. */
 export function maxPayoutProfit(p) {
   if (p.cap == null) return p.cycle_target == null ? null : Number(p.cycle_target);
@@ -256,13 +263,18 @@ export function buildPlan({ journal, progress, accounts, firms, plans, policies,
   };
 
   // ------------------------------------------------------------ goal & week
+  // Lucro do mês em dinheiro na mão: saque que caiu, menos compra e ativação,
+  // mais o que a live fechou (Unassigned incluso, é dinheiro da conta). Lucro
+  // parado na mesa e posição aberta ficam de fora.
   const alvo = n(settings.goal_profit) ?? 6000;
-  const desde = settings.goal_since || null;
-  const feito = desde
-    ? cash.filter((e) => e.occurred_on >= desde && ["payout", "cost", "refund"].includes(e.kind))
-        .reduce((s, e) => s + Number(e.amount || 0), 0)
-      + liveDays.filter((d) => d.day >= desde).reduce((s, d) => s + Number(d.day_pnl || 0), 0)
-    : null;
+  const mes = monthOf(session);
+  const noMes = (d) => d >= mes.start && d <= mes.end;
+  const somaCash = (kinds) => cash.filter((e) => noMes(e.occurred_on) && kinds.includes(e.kind))
+    .reduce((s, e) => s + Number(e.amount || 0), 0);
+  const recebido = somaCash(["payout"]);
+  const pago = somaCash(["cost", "refund"]);
+  const hedgeMes = liveDays.filter((d) => noMes(d.day)).reduce((s, d) => s + Number(d.day_pnl || 0), 0);
+  const feito = recebido + pago + hedgeMes;
   const semana = weekOf(session);
   const proxima = weekOf(addTradingDays(semana.end, 1));
   const saquesSemana = cash.filter((e) => e.kind === "payout"
@@ -271,8 +283,8 @@ export function buildPlan({ journal, progress, accounts, firms, plans, policies,
 
   return {
     session,
-    goal: { target: alvo, since: desde, done: feito,
-      pct: feito == null || !alvo ? null : Math.max(0, Math.min(100, (feito / alvo) * 100)) },
+    goal: { target: alvo, month: mes.start, done: feito, payouts: recebido, costs: pago, hedge: hedgeMes,
+      pct: !alvo ? null : Math.max(0, Math.min(100, (feito / alvo) * 100)) },
     week: {
       ...semana, goal: Number(settings.goal_payouts_week) || 2, payouts: saquesSemana,
       expectedThis: forecast.filter((f) => f.day <= semana.end).length,
