@@ -10,33 +10,33 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=9ff5166556";
+} from "./db.js?v=2dcb139243";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=9ff5166556";
+} from "./util.js?v=2dcb139243";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=9ff5166556";
-import { cell, locked, wireEditables } from "./editable.js?v=9ff5166556";
-import { exportChallenges } from "./export.js?v=9ff5166556";
-import { mountPlanPicker } from "./plan-picker.js?v=9ff5166556";
-import { nextLiveLot } from "./next-lot.js?v=9ff5166556";
-import { buildPlan, sessionDay, weekOf } from "./plan.js?v=9ff5166556";
-import { mountProofZone } from "./proof.js?v=9ff5166556";
-import { filterForFirm } from "./firm-accounts.js?v=9ff5166556";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=9ff5166556";
+} from "./charts.js?v=2dcb139243";
+import { cell, locked, wireEditables } from "./editable.js?v=2dcb139243";
+import { exportChallenges } from "./export.js?v=2dcb139243";
+import { mountPlanPicker } from "./plan-picker.js?v=2dcb139243";
+import { nextLiveLot } from "./next-lot.js?v=2dcb139243";
+import { buildPlan, sessionDay, weekOf } from "./plan.js?v=2dcb139243";
+import { mountProofZone } from "./proof.js?v=2dcb139243";
+import { filterForFirm } from "./firm-accounts.js?v=2dcb139243";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=2dcb139243";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges, collectorAlerts,
-} from "./machine.js?v=9ff5166556";
+} from "./machine.js?v=2dcb139243";
 import { loader,
   renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
   initProfile, raf, odo, burst, landOn, blob, deltaChip,
-} from "./skin.js?v=9ff5166556";
-import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=9ff5166556";
-import { firmMark, logoBg, logoInner } from "./logos.js?v=9ff5166556";
-import { startTour } from "./tour.js?v=9ff5166556";
+} from "./skin.js?v=2dcb139243";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=2dcb139243";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=2dcb139243";
+import { startTour } from "./tour.js?v=2dcb139243";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -4726,7 +4726,8 @@ async function renderPlan() {
       <span class="ptx"><b>${esc(t.short)} <em>${esc(t.firm || "")} · ${esc(t.label.replace(/^(Eval|Farm|Big trade)/,
         (m) => STAGE_WORD[m]).toLowerCase())}</em></b>${t.done ? `<span class="muted">traded today</span>` : ""}${
         t.alert ? `<span class="muted">${esc(t.alert)}</span>` : ""}</span>
-      <span class="ptgt n">${t.target != null ? money0(t.target) : "—"}</span>
+      <span class="ptgt n">${t.target != null ? money0(t.target) : "—"}${
+        t.stop != null ? `<span class="pstop">stop ${money0(t.stop)}</span>` : ""}</span>
       <span class="pmx n">${mult(t.multiplier)}</span>
     </button>
     <div class="pwhy" hidden>${why(t)}</div>`).join("");

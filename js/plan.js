@@ -149,6 +149,8 @@ export function buildPlan({ journal, progress, accounts, firms, plans, policies,
     trades.push({
       ...base, stage, label,
       target: n(conta.rec_today_target), multiplier: n(conta.rec_multiplier),
+      // Stop da tentativa (Vest: 220 / 220 / o resto); nulo em futuros.
+      stop: n(conta.rec_stop),
       hedge: n(conta.rec_hedge_cost), costToPayout: n(conta.rec_cost_to_payout),
       payoutNet: n(conta.rec_payout_net), note: consistencia ? null : conta.rec_note || null,
       alert: consistencia, done: operou, stepsLeft,
