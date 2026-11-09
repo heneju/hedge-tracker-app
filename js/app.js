@@ -10,33 +10,33 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=ebe4907c52";
+} from "./db.js?v=0482a3ea6c";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=ebe4907c52";
+} from "./util.js?v=0482a3ea6c";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=ebe4907c52";
-import { cell, locked, wireEditables } from "./editable.js?v=ebe4907c52";
-import { exportChallenges } from "./export.js?v=ebe4907c52";
-import { mountPlanPicker } from "./plan-picker.js?v=ebe4907c52";
-import { nextLiveLot } from "./next-lot.js?v=ebe4907c52";
-import { buildPlan, monthOf, sessionDay, weekOf } from "./plan.js?v=ebe4907c52";
-import { mountProofZone } from "./proof.js?v=ebe4907c52";
-import { filterForFirm } from "./firm-accounts.js?v=ebe4907c52";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=ebe4907c52";
+} from "./charts.js?v=0482a3ea6c";
+import { cell, locked, wireEditables } from "./editable.js?v=0482a3ea6c";
+import { exportChallenges } from "./export.js?v=0482a3ea6c";
+import { mountPlanPicker } from "./plan-picker.js?v=0482a3ea6c";
+import { nextLiveLot } from "./next-lot.js?v=0482a3ea6c";
+import { buildPlan, monthOf, sessionDay, weekOf } from "./plan.js?v=0482a3ea6c";
+import { mountProofZone } from "./proof.js?v=0482a3ea6c";
+import { filterForFirm } from "./firm-accounts.js?v=0482a3ea6c";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=0482a3ea6c";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges, collectorAlerts,
-} from "./machine.js?v=ebe4907c52";
+} from "./machine.js?v=0482a3ea6c";
 import { loader,
   renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
   initProfile, raf, odo, burst, landOn, blob, deltaChip,
-} from "./skin.js?v=ebe4907c52";
-import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=ebe4907c52";
-import { firmMark, logoBg, logoInner } from "./logos.js?v=ebe4907c52";
-import { startTour } from "./tour.js?v=ebe4907c52";
+} from "./skin.js?v=0482a3ea6c";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=0482a3ea6c";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=0482a3ea6c";
+import { startTour } from "./tour.js?v=0482a3ea6c";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -4937,10 +4937,11 @@ async function renderAccounting() {
   const hoje = new Date().toISOString().slice(0, 10);
   const month = state.acctMonth || hoje.slice(0, 7);
   const since = `${monthShift(hoje.slice(0, 7), -11)}-01`;
-  const [todos, outbox, notas] = await Promise.all([
+  const [todos, outbox, notas, excluidas] = await Promise.all([
     load.accountingMoves(since, `${monthShift(hoje.slice(0, 7), 1)}-01`),
     load.accountingOutbox(new Date(Date.now() - 180 * 864e5).toISOString()).catch(() => []),
-    load.invoices().catch(() => [])]);
+    load.invoices().catch(() => []),
+    load.excludedAccounts().catch(() => [])]);
 
   // Meses com movimento, mais o corrente: o seletor nunca aponta para o vazio.
   const porMes = new Map();
@@ -4954,7 +4955,8 @@ async function renderAccounting() {
   const moves = porMes.get(month) || [];
   // A contabilidade comeca em `notify_since`: o que veio antes fica na lista,
   // apagado, e fora dos totais, do .csv e do Excel que o escritorio recebe.
-  // A view ja decidiu (`included`, 0081): data, salvo a caixinha da linha.
+  // A view ja decidiu (`included`): conta excluida (0087) > excecao da linha
+  // (0081) > data.
   const desde = s.notify_since || "";
   const pelaData = (m) => !desde || String(m.occurred_on) >= desde;
   const daEmpresa = (m) => m.included !== false;
@@ -4966,15 +4968,17 @@ async function renderAccounting() {
   const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
   const telefone = String(s.whatsapp_phone || "").replace(/^(\d{2})(\d{2})(\d{4,5})(\d{4})$/, "+$1 $2 $3-$4");
 
-  // A caixinha: marcada, a linha e da empresa. Fora da regra da data ela vira
-  // excecao gravada; de volta a regra, a excecao some.
-  const linha = (m) => `<tr${daEmpresa(m) ? "" : ` style="opacity:.42" title="not the company's — tick to include"`}>
-    <td><input type="checkbox" data-books="${esc(m.move_id)}" data-default="${pelaData(m) ? 1 : 0}"${
-      daEmpresa(m) ? " checked" : ""} title="${daEmpresa(m)
-        ? (pelaData(m) ? "in the books · untick to leave it out" : "in the books by exception (before the start date)")
-        : (pelaData(m) ? "left out by exception" : `before ${esc(day(desde))} · tick to include`)}"></td>
+  // Por que a linha esta fora dos livros, na ordem em que a view decide.
+  const motivo = (m) => (daEmpresa(m) ? ""
+    : m.account_excluded ? "account excluded"
+    : pelaData(m) ? "excluded"
+    : `before ${day(desde)}`);
+  // A caixinha so seleciona; a barra em cima diz o que fazer com as marcadas.
+  const linha = (m) => `<tr${daEmpresa(m) ? "" : ` style="opacity:.45"`}>
+    <td><input type="checkbox" data-sel="${esc(m.move_id)}" aria-label="select this row"></td>
     <td class="n">${day(m.occurred_on)}</td>
-    <td>${esc(MOVE_LABEL[m.kind] || m.kind)}</td>
+    <td>${esc(MOVE_LABEL[m.kind] || m.kind)}${motivo(m)
+      ? ` <span class="badge closed" style="margin-left:6px">${esc(motivo(m))}</span>` : ""}</td>
     <td>${esc(m.firm || "—")}${m.plan ? ` <span class="dim">${esc(m.plan)}${
       m.account_size ? ` ${Math.round(Number(m.account_size) / 1000)}k` : ""}</span>` : ""}</td>
     <td class="n">${esc(m.account || "—")}</td>
@@ -5077,9 +5081,21 @@ async function renderAccounting() {
     </div>
     <div class="panel">
       <h2>Ledger <span class="dim">one row per wallet movement · the office gets this as Excel on the 2nd-to-last day of the month${
-        desde ? ` · from ${esc(day(desde))} on` : ""}</span></h2>
+        desde ? ` · from ${esc(day(desde))} on` : ""} · tick rows to exclude them or their whole account</span></h2>
+      <div class="acct-bar" id="acct-bar" hidden>
+        <b id="acct-sel-n">0 selected</b>
+        <button class="btn" type="button" data-sel-act="accounts" title="every movement of these accounts — purchase, activation, payouts and fees, including the ones still to come — stays out of the totals, the .csv, the office's Excel, the invoices and the payout notices">Exclude account</button>
+        <button class="btn ghost" type="button" data-sel-act="rows" title="only the ticked rows; a payout and its transfer fee go out together">Exclude rows only</button>
+        <button class="btn ghost" type="button" data-sel-act="include" title="back in the books; an excluded account comes back whole">Put back</button>
+        <button class="btn ghost" type="button" data-sel-act="clear">Clear</button>
+      </div>
+      ${excluidas.length ? `<div class="acct-out"><span class="muted">Accounts out of the books:</span>${
+        excluidas.map((x) => `<span class="acct-chip">${esc(x.label || x.account_key)}<button type="button" data-unexclude="${
+          esc(x.account_key)}" data-label="${esc(x.label || x.account_key)}" title="put back in the books" aria-label="put ${
+          esc(x.label || x.account_key)} back in the books">×</button></span>`).join("")}</div>` : ""}
       <div class="scroll"><table class="dt">
-        <thead><tr><th style="width:34px" title="ticked rows are the company's: totals, .csv and the office's Excel">Books</th><th>Date</th><th>What</th><th>Firm · plan</th><th>Account</th><th style="text-align:right">Amount</th><th>Note</th></tr></thead>
+        <thead><tr><th style="width:34px"><input type="checkbox" id="acct-sel-all" aria-label="select every row of the month"${
+          moves.length ? "" : " disabled"}></th><th>Date</th><th>What</th><th>Firm · plan</th><th>Account</th><th style="text-align:right">Amount</th><th>Note</th></tr></thead>
         <tbody>${moves.map(linha).join("") || `<tr><td colspan="7">${empty("nothing this month")}</td></tr>`}</tbody>
       </table></div>
     </div>
@@ -5138,19 +5154,107 @@ async function renderAccounting() {
       if (row) row.hidden = !row.hidden;
     };
   });
-  view.querySelectorAll("[data-books]").forEach((cb) => {
-    cb.onchange = async () => {
-      cb.disabled = true;
-      const include = cb.checked;
+  // Selecao do livro-caixa: marca as linhas e a barra diz o que fazer.
+  const porId = new Map(moves.map((m) => [m.move_id, m]));
+  const sel = new Set();
+  const bar = document.getElementById("acct-bar");
+  const selAll = document.getElementById("acct-sel-all");
+  const acaoBtn = (act) => bar.querySelector(`[data-sel-act="${act}"]`);
+  const marcadas = () => [...sel].map((id) => porId.get(id)).filter(Boolean);
+  const atualizaBarra = () => {
+    const xs = marcadas();
+    bar.hidden = !xs.length;
+    document.getElementById("acct-sel-n").textContent = `${xs.length} selected`;
+    acaoBtn("accounts").disabled = !xs.some((m) => m.account_key && !m.account_excluded);
+    acaoBtn("rows").disabled = !xs.some(daEmpresa);
+    acaoBtn("include").disabled = !xs.some((m) => !daEmpresa(m));
+    selAll.checked = moves.length > 0 && xs.length === moves.length;
+    selAll.indeterminate = xs.length > 0 && xs.length < moves.length;
+  };
+  const marca = (cb, on) => {
+    cb.checked = on;
+    if (on) sel.add(cb.dataset.sel);
+    else sel.delete(cb.dataset.sel);
+  };
+  view.querySelectorAll("[data-sel]").forEach((cb) => {
+    cb.onchange = () => {
+      marca(cb, cb.checked);
+      atualizaBarra();
+    };
+  });
+  selAll.onchange = () => {
+    view.querySelectorAll("[data-sel]").forEach((cb) => marca(cb, selAll.checked));
+    atualizaBarra();
+  };
+  // Nome da conta para a lista de excluidas: mesa e os finais de todas as
+  // contas do challenge que aparecem no livro (avaliacao / funded).
+  const rotuloConta = (key) => {
+    const xs = todos.filter((m) => m.account_key === key);
+    const finais = [...new Set(xs.map((m) => m.account).filter(Boolean))].join(" / ");
+    return [xs[0]?.firm, finais].filter(Boolean).join(" ") || key;
+  };
+  // A excecao da linha vai pelo `override_id`: taxa e saque andam juntos.
+  const excecao = (m) => m.override_id || m.move_id;
+  const afetadas = (ids, dentro) => moves.filter((m) => ids.includes(excecao(m)) && daEmpresa(m) === dentro).length;
+  bar.querySelectorAll("[data-sel-act]").forEach((b) => {
+    b.onclick = async () => {
+      const act = b.dataset.selAct;
+      const xs = marcadas();
+      if (act === "clear") {
+        view.querySelectorAll("[data-sel]").forEach((cb) => marca(cb, false));
+        atualizaBarra();
+        return;
+      }
+      bar.querySelectorAll("button").forEach((x) => { x.disabled = true; });
       try {
-        // Igual a regra da data: apaga a excecao em vez de gravar o obvio.
-        await guard(() => save.accountingOverride(cb.dataset.books,
-          include === (cb.dataset.default === "1") ? null : include));
-        toast(include ? "In the books" : "Left out of the books");
+        if (act === "accounts") {
+          const keys = [...new Set(xs.filter((m) => m.account_key && !m.account_excluded).map((m) => m.account_key))];
+          await save.excludeAccounts(keys.map((k) => ({ account_key: k, label: rotuloConta(k) })));
+          toast(`${plural(keys.length, "account")} out of the books — what they post later stays out too`);
+        } else if (act === "rows") {
+          const dentro = xs.filter(daEmpresa);
+          // Depois da data ela entraria: grava a excecao. Antes da data ela so
+          // estava dentro por excecao: apagar devolve a regra, que a deixa fora.
+          const gravar = [...new Set(dentro.filter(pelaData).map(excecao))];
+          const apagar = [...new Set(dentro.filter((m) => !pelaData(m)).map(excecao))];
+          const n = afetadas([...gravar, ...apagar], true);
+          await save.accountingOverrides(gravar, false);
+          await save.accountingOverrides(apagar, null);
+          toast(`${plural(n, "row")} out of the books`);
+        } else if (act === "include") {
+          // Desfaz o motivo que a linha mostra: conta excluida volta a conta
+          // inteira (cada linha dela volta a sua regra); linha excluida, ou
+          // antes da data, entra.
+          const fora = xs.filter((m) => !daEmpresa(m));
+          const keys = [...new Set(fora.filter((m) => m.account_excluded).map((m) => m.account_key))];
+          const linhas = fora.filter((m) => !m.account_excluded);
+          const apagar = [...new Set(linhas.filter(pelaData).map(excecao))];
+          const gravar = [...new Set(linhas.filter((m) => !pelaData(m)).map(excecao))];
+          const n = afetadas([...apagar, ...gravar], false);
+          await save.includeAccounts(keys);
+          await save.accountingOverrides(apagar, null);
+          await save.accountingOverrides(gravar, true);
+          toast([keys.length ? `${keys.map(rotuloConta).join(", ")} back in the books` : "",
+            n ? `${plural(n, "row")} back in the books` : ""].filter(Boolean).join(" · "));
+        }
         renderAccounting();
-      } catch {
-        cb.checked = !include;
-        cb.disabled = false;
+      } catch (err) {
+        toast(`Error: ${err.message}`);
+        atualizaBarra();
+        bar.querySelectorAll("[data-sel-act=clear]").forEach((x) => { x.disabled = false; });
+      }
+    };
+  });
+  view.querySelectorAll("[data-unexclude]").forEach((b) => {
+    b.onclick = async () => {
+      b.disabled = true;
+      try {
+        await save.includeAccounts([b.dataset.unexclude]);
+        toast(`${b.dataset.label} back in the books`);
+        renderAccounting();
+      } catch (err) {
+        toast(`Error: ${err.message}`);
+        b.disabled = false;
       }
     };
   });

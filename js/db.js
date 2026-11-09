@@ -5,7 +5,7 @@
 // fica so no coletor, no PC.
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { CONFIG } from "./config.js?v=ebe4907c52";
+import { CONFIG } from "./config.js?v=0482a3ea6c";
 
 export const supabase = createClient(CONFIG.url, CONFIG.anonKey);
 
@@ -165,6 +165,11 @@ export const load = {
       .select("*, cash_events(id, occurred_on, amount, gross_amount, challenge_id, proof_path, proof_ref, proof_date)")
       .order("status").order("competence", { ascending: false }).order("id", { ascending: false })
       .then(unwrap),
+
+  // Contas inteiras fora dos livros (0087): challenge:<id> ou account:<id>.
+  excludedAccounts: () =>
+    supabase.from("accounting_excluded_accounts")
+      .select("account_key, label, created_at").order("created_at").then(unwrap),
 
   // O Excel que o coletor gerou, do bucket do dono (RLS pela pasta).
   accountingFile: async (path) => {
@@ -445,17 +450,36 @@ export const save = {
     await proofToInvoice(cashEventId, patch);
   },
 
-  // Excecao por linha a `notify_since` (0081). `include` null apaga a excecao
-  // e a data volta a mandar.
-  accountingOverride: async (moveId, include) => {
+  // Excecoes por linha a `notify_since` (0081), em lote. `include` null apaga
+  // as excecoes e a data volta a mandar. Os ids sao o `override_id` da view: a
+  // taxa do saque segue a excecao do proprio saque.
+  accountingOverrides: async (ids, include) => {
+    if (!ids.length) return null;
     if (include == null) {
-      return supabase.from("accounting_overrides").delete().eq("move_id", moveId).then(unwrap);
+      return supabase.from("accounting_overrides").delete().in("move_id", ids).then(unwrap);
     }
     const user = await currentUser();
     if (!user) throw new Error("sessão expirada");
     return supabase.from("accounting_overrides")
-      .upsert({ owner_id: user.id, move_id: moveId, include }, { onConflict: "owner_id,move_id" })
+      .upsert(ids.map((moveId) => ({ owner_id: user.id, move_id: moveId, include })),
+        { onConflict: "owner_id,move_id" })
       .then(unwrap);
+  },
+
+  // Conta inteira fora dos livros (0087): o que ela lancar depois tambem fica
+  // de fora. `rows` = [{ account_key, label }].
+  excludeAccounts: async (rows) => {
+    if (!rows.length) return null;
+    const user = await currentUser();
+    if (!user) throw new Error("sessão expirada");
+    return supabase.from("accounting_excluded_accounts")
+      .upsert(rows.map((r) => ({ owner_id: user.id, ...r })), { onConflict: "owner_id,account_key" })
+      .then(unwrap);
+  },
+
+  includeAccounts: async (keys) => {
+    if (!keys.length) return null;
+    return supabase.from("accounting_excluded_accounts").delete().in("account_key", keys).then(unwrap);
   },
 
   // Mesmo desenho de `settings`: upsert pelo dono, que é a chave do conflito.
