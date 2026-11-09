@@ -67,6 +67,9 @@ export function planReset(challenge, phases, { at, restartAs = "phase1", cost = 
       target: challenge.target ?? null,
       split_pct: challenge.split_pct ?? null,
       consistency_addon: Boolean(challenge.consistency_addon),
+      // A tentativa nova sabe de qual veio (0088): a pergunta do custo e o
+      // livro-caixa dizem "reset".
+      reset_of: challenge.id ?? null,
     },
     phase: {
       phase,
@@ -77,7 +80,7 @@ export function planReset(challenge, phases, { at, restartAs = "phase1", cost = 
     // O reset costuma ter preço, e é ele que o hedge da tentativa nova precisa
     // devolver. Sem preço não se inventa lançamento.
     cash: Number.isFinite(valor) && valor !== 0
-      ? { kind: "cost", amount: -Math.abs(valor), occurred_on: date, source: "manual" }
+      ? { kind: "cost", amount: -Math.abs(valor), occurred_on: date, source: "manual", ref: "reset" }
       : null,
   };
 }

@@ -10,33 +10,33 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=0482a3ea6c";
+} from "./db.js?v=ccbb6723a6";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=0482a3ea6c";
+} from "./util.js?v=ccbb6723a6";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=0482a3ea6c";
-import { cell, locked, wireEditables } from "./editable.js?v=0482a3ea6c";
-import { exportChallenges } from "./export.js?v=0482a3ea6c";
-import { mountPlanPicker } from "./plan-picker.js?v=0482a3ea6c";
-import { nextLiveLot } from "./next-lot.js?v=0482a3ea6c";
-import { buildPlan, monthOf, sessionDay, weekOf } from "./plan.js?v=0482a3ea6c";
-import { mountProofZone } from "./proof.js?v=0482a3ea6c";
-import { filterForFirm } from "./firm-accounts.js?v=0482a3ea6c";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=0482a3ea6c";
+} from "./charts.js?v=ccbb6723a6";
+import { cell, locked, wireEditables } from "./editable.js?v=ccbb6723a6";
+import { exportChallenges } from "./export.js?v=ccbb6723a6";
+import { mountPlanPicker } from "./plan-picker.js?v=ccbb6723a6";
+import { nextLiveLot } from "./next-lot.js?v=ccbb6723a6";
+import { buildPlan, monthOf, sessionDay, weekOf } from "./plan.js?v=ccbb6723a6";
+import { mountProofZone } from "./proof.js?v=ccbb6723a6";
+import { filterForFirm } from "./firm-accounts.js?v=ccbb6723a6";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=ccbb6723a6";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges, collectorAlerts,
-} from "./machine.js?v=0482a3ea6c";
+} from "./machine.js?v=ccbb6723a6";
 import { loader,
   renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
   initProfile, raf, odo, burst, landOn, blob, deltaChip,
-} from "./skin.js?v=0482a3ea6c";
-import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=0482a3ea6c";
-import { firmMark, logoBg, logoInner } from "./logos.js?v=0482a3ea6c";
-import { startTour } from "./tour.js?v=0482a3ea6c";
+} from "./skin.js?v=ccbb6723a6";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=ccbb6723a6";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=ccbb6723a6";
+import { startTour } from "./tour.js?v=ccbb6723a6";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -1220,7 +1220,7 @@ async function renderChallenges() {
           <span class="cqacct"><b>${esc(conta)}</b><span class="muted">${esc(plano.name || "")}${
             plano.account_size ? ` · ${money0(plano.account_size)}` : ""}${kind === "activation"
               ? ` · activation · funded ${day(p.activation_cost_due)}`
-              : ` · opened ${day(p.date_open)}`}</span></span>
+              : p.reset_of ? ` · reset · back on ${day(p.date_open)}` : ` · opened ${day(p.date_open)}`}</span></span>
           <input class="inp" type="number" min="0" step="0.01" inputmode="decimal"
                  placeholder="${sugerido ? Number(sugerido).toFixed(2) : "0.00"}"${
                  kind === "activation" && sugerido ? ` value="${Number(sugerido).toFixed(2)}"` : ""}
@@ -1298,6 +1298,9 @@ async function renderChallenges() {
             occurred_on: (ativacao ? pendente?.activation_cost_due : pendente?.date_open)
               || new Date().toISOString().slice(0, 10),
             source: "manual",
+            // Tentativa aberta pelo coletor num reset (0088): a nota diz isso
+            // no livro-caixa da contabilidade.
+            ...(!ativacao && pendente?.reset_of ? { ref: "reset" } : {}),
           }, { activation: ativacao });
           await save.challenge(id, ativacao ? { activation_cost_due: null } : { cost_pending: false });
         }, ativacao ? "Activation saved" : "Cost saved");
@@ -1812,6 +1815,12 @@ async function openResetDialog(c, journal, firms) {
         Nothing is deleted. The trades of the failed attempt stay on this challenge
         (${esc(c.account_ids || "?")} · ${day(c.date_open)}), which keeps showing what it cost.
       </p>
+      <p class="muted" style="line-height:1.7">
+        Firm gave you a <strong class="bright">new account number</strong> (Tradeify does)?
+        Don't use this: the new account registers itself when NinjaTrader sees it and
+        asks what you paid. The collector also notices on its own when the same account
+        comes back at full balance.
+      </p>
       <div class="row">
         <div class="field"><label for="reset-stage">Restart as</label>
           <select id="reset-stage">${etapas.map((o) =>
@@ -1871,6 +1880,13 @@ async function openResetDialog(c, journal, firms) {
       }
       botao.disabled = false;
       return;
+    }
+    // Conta fora dos livros (0087) continua fora depois do reset. Falha aqui
+    // nao desfaz o reset: so avisa.
+    try {
+      await save.carryExclusion(c.id, criado.id);
+    } catch (err) {
+      toast(`Reset done, but the books exclusion did not carry over: ${err.message}`);
     }
     modal.close();
     renderChallenges();
@@ -2121,8 +2137,19 @@ async function openChallengeEditor(c, firms) {
 
   const del = modal.querySelector("#delete-challenge");
   if (del) del.onclick = async () => {
-    if (!confirm("Delete this challenge and its entries?")) return;
-    await guard(() => save.deleteChallenge(c.id), "Deleted");
+    // Tentativa aberta num reset (0088): excluir desfaz o reset, e o coletor
+    // nao a abre de novo enquanto a conta nao voltar a operar.
+    const row = await load.challengeRow(c.id).catch(() => null);
+    if (row?.reset_of) {
+      if (!confirm("This attempt was opened by a reset. Delete it and undo the reset? "
+        + "The previous attempt goes back to running on this account, and the collector "
+        + "will not open it again unless the account trades and comes back full.")) return;
+      const fases = await load.phases(c.id);
+      await guard(() => save.undoReset(row, fases), "Reset undone");
+    } else {
+      if (!confirm("Delete this challenge and its entries?")) return;
+      await guard(() => save.deleteChallenge(c.id), "Deleted");
+    }
     modal.close();
     renderChallenges();
   };

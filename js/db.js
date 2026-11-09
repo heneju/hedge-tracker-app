@@ -5,7 +5,7 @@
 // fica so no coletor, no PC.
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { CONFIG } from "./config.js?v=0482a3ea6c";
+import { CONFIG } from "./config.js?v=ccbb6723a6";
 
 export const supabase = createClient(CONFIG.url, CONFIG.anonKey);
 
@@ -108,7 +108,7 @@ export const load = {
   // quanto pagou. Saem desta lista quando o custo é gravado.
   costPending: () =>
     supabase.from("challenges")
-      .select("id, date_open, cost_pending, activation_cost_due, prop_firms(name), "
+      .select("id, date_open, cost_pending, activation_cost_due, reset_of, prop_firms(name), "
         + "firm_plans(name, account_size, price, activation_fee), "
         + "challenge_phases(phase, accounts(login_or_name))")
       .or("cost_pending.eq.true,activation_cost_due.not.is.null").order("id").then(unwrap),
@@ -323,6 +323,33 @@ export const save = {
 
   deleteChallenge: (id) =>
     supabase.from("challenges").delete().eq("id", id).then(unwrap),
+
+  // Excluir a tentativa aberta num reset (0088) desfaz o reset: a fase velha,
+  // fechada no instante em que a nova abriu, reabre; o challenge velho ganha
+  // `reset_dismissed_at` (0089) para o coletor nao abrir de novo; e a nova sai.
+  undoReset: async (row, phases) => {
+    for (const f of phases.filter((x) => x.account_id && x.started_at)) {
+      await supabase.from("challenge_phases").update({ ended_at: null, outcome: "active" })
+        .eq("challenge_id", row.reset_of).eq("account_id", f.account_id)
+        .eq("ended_at", f.started_at).then(unwrap);
+    }
+    await supabase.from("challenges").update({ reset_dismissed_at: new Date().toISOString() })
+      .eq("id", row.reset_of).then(unwrap);
+    return supabase.from("challenges").delete().eq("id", row.id).then(unwrap);
+  },
+
+  // Conta fora dos livros (0087) passa a exclusao para o reset dela.
+  carryExclusion: async (oldId, newId) => {
+    const rows = await supabase.from("accounting_excluded_accounts").select("label")
+      .eq("account_key", `challenge:${oldId}`).limit(1).then(unwrap);
+    if (!rows?.length) return null;
+    const user = await currentUser();
+    if (!user) throw new Error("sessão expirada");
+    return supabase.from("accounting_excluded_accounts")
+      .upsert({ owner_id: user.id, account_key: `challenge:${newId}`, label: rows[0].label },
+        { onConflict: "owner_id,account_key" })
+      .then(unwrap);
+  },
 
   phase: (id, patch) =>
     supabase.from("challenge_phases").update(patch).eq("id", id).then(unwrap),
