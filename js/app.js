@@ -10,33 +10,33 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=ccbb6723a6";
+} from "./db.js?v=3d950904df";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=ccbb6723a6";
+} from "./util.js?v=3d950904df";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=ccbb6723a6";
-import { cell, locked, wireEditables } from "./editable.js?v=ccbb6723a6";
-import { exportChallenges } from "./export.js?v=ccbb6723a6";
-import { mountPlanPicker } from "./plan-picker.js?v=ccbb6723a6";
-import { nextLiveLot } from "./next-lot.js?v=ccbb6723a6";
-import { buildPlan, monthOf, sessionDay, weekOf } from "./plan.js?v=ccbb6723a6";
-import { mountProofZone } from "./proof.js?v=ccbb6723a6";
-import { filterForFirm } from "./firm-accounts.js?v=ccbb6723a6";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=ccbb6723a6";
+} from "./charts.js?v=3d950904df";
+import { cell, locked, wireEditables } from "./editable.js?v=3d950904df";
+import { exportChallenges } from "./export.js?v=3d950904df";
+import { mountPlanPicker } from "./plan-picker.js?v=3d950904df";
+import { nextLiveLot } from "./next-lot.js?v=3d950904df";
+import { buildPlan, monthOf, sessionDay, weekOf } from "./plan.js?v=3d950904df";
+import { mountProofZone } from "./proof.js?v=3d950904df";
+import { filterForFirm } from "./firm-accounts.js?v=3d950904df";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=3d950904df";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges, collectorAlerts,
-} from "./machine.js?v=ccbb6723a6";
+} from "./machine.js?v=3d950904df";
 import { loader,
   renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
   initProfile, raf, odo, burst, landOn, blob, deltaChip,
-} from "./skin.js?v=ccbb6723a6";
-import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=ccbb6723a6";
-import { firmMark, logoBg, logoInner } from "./logos.js?v=ccbb6723a6";
-import { startTour } from "./tour.js?v=ccbb6723a6";
+} from "./skin.js?v=3d950904df";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=3d950904df";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=3d950904df";
+import { startTour } from "./tour.js?v=3d950904df";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -318,6 +318,14 @@ function identifySource(source, firms, plans, usage = new Map()) {
       && (lido.size == null || Number(pl.account_size) === lido.size)
       && (lido.product == null || String(pl.product || "").toLowerCase() === lido.product.toLowerCase()));
 
+    // Tamanhos diferentes não se desempatam por uso: a Top One chama toda conta
+    // de TOF + número, e com 50k e 100k a maioria jogava a 100k no plano de 50k.
+    // O coletor decide pelo saldo; aqui a pessoa escolhe.
+    const tamanhos = new Set(candidatos.map((pl) => Number(pl.account_size)));
+    if (lido.size == null && tamanhos.size > 1) {
+      return { firm, parsed: lido, plan: null, why: "pick the size",
+        tellsFunded: /\(\?P?<funded>/.test(firm.account_pattern || ""), candidates: candidatos };
+    }
     let plan = candidatos.find((pl) => pl.is_preferred) || null;
     let why = plan ? "preferred" : "";
     if (!plan && candidatos.length === 1) {
