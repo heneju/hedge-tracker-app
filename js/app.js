@@ -10,33 +10,33 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=3d950904df";
+} from "./db.js?v=42e4644575";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=3d950904df";
+} from "./util.js?v=42e4644575";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=3d950904df";
-import { cell, locked, wireEditables } from "./editable.js?v=3d950904df";
-import { exportChallenges } from "./export.js?v=3d950904df";
-import { mountPlanPicker } from "./plan-picker.js?v=3d950904df";
-import { nextLiveLot } from "./next-lot.js?v=3d950904df";
-import { buildPlan, monthOf, sessionDay, weekOf } from "./plan.js?v=3d950904df";
-import { mountProofZone } from "./proof.js?v=3d950904df";
-import { filterForFirm } from "./firm-accounts.js?v=3d950904df";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=3d950904df";
+} from "./charts.js?v=42e4644575";
+import { cell, locked, wireEditables } from "./editable.js?v=42e4644575";
+import { exportChallenges } from "./export.js?v=42e4644575";
+import { mountPlanPicker } from "./plan-picker.js?v=42e4644575";
+import { nextLiveLot } from "./next-lot.js?v=42e4644575";
+import { buildPlan, monthOf, sessionDay, weekOf } from "./plan.js?v=42e4644575";
+import { mountProofZone } from "./proof.js?v=42e4644575";
+import { filterForFirm } from "./firm-accounts.js?v=42e4644575";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=42e4644575";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges, collectorAlerts,
-} from "./machine.js?v=3d950904df";
+} from "./machine.js?v=42e4644575";
 import { loader,
   renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
   initProfile, raf, odo, burst, landOn, blob, deltaChip,
-} from "./skin.js?v=3d950904df";
-import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=3d950904df";
-import { firmMark, logoBg, logoInner } from "./logos.js?v=3d950904df";
-import { startTour } from "./tour.js?v=3d950904df";
+} from "./skin.js?v=42e4644575";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=42e4644575";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=42e4644575";
+import { startTour } from "./tour.js?v=42e4644575";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -4244,6 +4244,7 @@ function noticeWhat(r) {
 }
 
 function noticeWhy(r) {
+  if (r.status === "staged") return "ready in WhatsApp (Edge) — press Enter there to send it";
   if (r.last_error === WHY_LOCKED) return "the sending PC is locked or off";
   const tries = `${r.attempts} attempt${r.attempts === 1 ? "" : "s"}`;
   if (r.status === "failed") return `gave up after ${tries}${r.last_error ? ` — ${r.last_error}` : ""}`;
@@ -4252,6 +4253,16 @@ function noticeWhy(r) {
 }
 
 function noticeRow(r) {
+  if (r.status === "staged") {
+    // Pronto no WhatsApp: o tracker nunca envia, o Enter e dele (0091).
+    return `<div class="notice">
+    <span class="warn">WhatsApp</span>
+    <span class="ntx"><b>${esc(noticeWhat(r))} is ready — press Enter in WhatsApp</b>
+      <span class="muted">${esc(noticeWhy(r))} · since ${esc(stamp(r.staged_at || r.last_attempt_at))}</span></span>
+    <button class="btn ghost" type="button" data-outbox="${r.id}" data-act="manual">Sent</button>
+    <button class="btn ghost" type="button" data-outbox="${r.id}" data-act="retry">Prepare again</button>
+  </div>`;
+  }
   return `<div class="notice">
     <span class="warn">Accounting</span>
     <span class="ntx"><b>${esc(noticeWhat(r))} hasn't reached the office</b>
@@ -4281,7 +4292,7 @@ async function refreshAccounting() {
   // Pendente com erro aparece na hora: o motivo ja e informacao (PC bloqueado,
   // contato errado). Sem erro, espera a folga -- o coletor pode so nao ter
   // passado ainda.
-  const stuck = rows.filter((r) => r.status === "failed"
+  const stuck = rows.filter((r) => r.status === "failed" || r.status === "staged"
     || (r.status === "pending" && (r.last_error || now - new Date(r.created_at) > NOTICE_GRACE_MS)));
   box.innerHTML = stuck.map(noticeRow).join("");
   box.querySelectorAll("[data-outbox]").forEach((b) => {
@@ -4912,6 +4923,7 @@ const MOVE_LABEL = {
   withdrawal: "Hedge withdrawal", adjustment: "Broker adjustment",
 };
 const OUTBOX_LABEL = { sent: ["funded", "sent"], manual: ["closed", "sent by hand"],
+  staged: ["passed", "ready — press Enter"],
   pending: ["passed", "pending"], failed: ["failed", "failed"], cancelled: ["closed", "cancelled"] };
 
 function monthShift(ym, n) {
@@ -5027,6 +5039,10 @@ async function renderAccounting() {
     if (r.status === "pending" || r.status === "failed") {
       acoes.push(`<button class="btn ghost" type="button" data-outbox="${r.id}" data-act="retry">Retry</button>`,
         `<button class="btn ghost" type="button" data-outbox="${r.id}" data-act="manual">Sent by hand</button>`);
+    }
+    if (r.status === "staged") {
+      acoes.push(`<button class="btn ghost" type="button" data-outbox="${r.id}" data-act="manual">Sent</button>`,
+        `<button class="btn ghost" type="button" data-outbox="${r.id}" data-act="retry">Prepare again</button>`);
     }
     if (r.file_path) acoes.push(`<button class="btn ghost" type="button" data-xlsx="${esc(r.file_path)}">Excel</button>`);
     if (r.body) acoes.push(`<button class="btn ghost" type="button" data-body="${r.id}">Text</button>`);
@@ -5154,6 +5170,7 @@ async function renderAccounting() {
       <div class="pset">
         <label>WhatsApp (digits, with country code) <input class="inp n" id="ac-phone" type="text" inputmode="numeric" value="${esc(s.whatsapp_phone || "")}"></label>
         <label>Contact name in WhatsApp <input class="inp" id="ac-contact" type="text" value="${esc(s.contact_name || "")}"></label>
+        <label title="Web = the WhatsApp tab in this PC's Edge (your number); Desktop = the WhatsApp app installed on it">Sends via <select class="inp" id="ac-via"><option value="web"${s.whatsapp_via === "desktop" ? "" : " selected"}>WhatsApp Web (Edge)</option><option value="desktop"${s.whatsapp_via === "desktop" ? " selected" : ""}>WhatsApp Desktop</option></select></label>
         <label>Sends from <select class="inp" id="ac-machine">${maquinas.map((m) => `<option value="${esc(m)}"${m === s.sender_machine ? " selected" : ""}>${esc(m)}</option>`).join("")}</select></label>
         <label>Company <input class="inp" id="ac-company" type="text" value="${esc(s.company_name || "")}"></label>
         <label>Wallet, as the office knows it <input class="inp" id="ac-wallet" type="text" value="${esc(s.wallet_label || "")}" style="width:240px"></label>
@@ -5161,10 +5178,10 @@ async function renderAccounting() {
         <label>Notices since <input class="inp n" id="ac-since" type="date" value="${esc(s.notify_since || "")}"></label>
         <label>Enabled <select class="inp" id="ac-on"><option value="1"${s.enabled ? " selected" : ""}>yes</option><option value="0"${s.enabled ? "" : " selected"}>no</option></select></label>
         <label title="where the 'invoice ready' notice goes — your own number, not the office">My WhatsApp (digits) <input class="inp n" id="ac-self-phone" type="text" inputmode="numeric" value="${esc(s.self_phone || "")}"></label>
-        <label title="your chat title in the sending PC's WhatsApp">My chat title <input class="inp" id="ac-self-contact" type="text" value="${esc(s.self_contact || "")}" style="width:120px"></label>
+        <label title="optional: the collector also accepts your number as the chat title">My chat title <input class="inp" id="ac-self-contact" type="text" value="${esc(s.self_contact || "")}" style="width:120px"></label>
         <label title="the office sends it every month; it goes in the NFS-e 'approximate taxes' field">Simples rate (%) <input class="inp n" id="ac-simples" type="number" min="0" max="100" step="0.01" value="${s.simples_rate ?? ""}" style="width:90px"></label>
         <label>…for month <input class="inp n" id="ac-simples-month" type="month" value="${esc(s.simples_rate_month || "")}"></label>
-        <span class="muted">The contact name must match the chat title exactly: the collector checks it before pressing Enter. The sending PC needs WhatsApp Desktop logged in and the screen unlocked.</span>
+        <span class="muted">The collector never sends: it opens the chat in the sending PC's WhatsApp, checks the title (the contact name exactly, or the number) and the text, and leaves it ready for you to press Enter (the monthly Excel waits in the preview with the message as caption). The sending PC needs the screen unlocked and, for Web, a WhatsApp tab open and logged in in Edge.</span>
       </div>
     </details>`);
 
@@ -5390,6 +5407,7 @@ async function renderAccounting() {
   salvar("ac-phone", (v) => ({ whatsapp_phone: v.replace(/\D/g, "") }));
   salvar("ac-contact", (v) => ({ contact_name: v.trim() || null }));
   salvar("ac-machine", (v) => ({ sender_machine: v || null }));
+  salvar("ac-via", (v) => ({ whatsapp_via: v === "desktop" ? "desktop" : "web" }));
   salvar("ac-company", (v) => ({ company_name: v.trim() || null }));
   salvar("ac-wallet", (v) => ({ wallet_label: v.trim() || null }));
   salvar("ac-hour", (v) => ({ report_hour: Math.min(23, Math.max(0, Number(v) || 18)) }));
