@@ -19,8 +19,10 @@ export function nextLiveLot(challenge, progress) {
       reason: `Evaluation: total cost to recover ${cost.toFixed(2)} / ${drawdown.toFixed(2)} left to lose. No extra buffer or contract scaling.`,
     };
   }
-  const contracts = Number(account.last_contracts);
-  if (!(contracts > 0)) return { lot: null, reason: "Contract quantity unavailable" };
+  // O numero e o MULTIPLICADOR por contrato, o que vai no Copyator -- o mesmo
+  // da avaliacao, do Plan e da lista de contas. Multiplicar pelos contratos da
+  // ultima trade fazia a coluna dobrar depois de um grande de 2 GC: a 0015
+  // mostrava 1,10 para o farm de 1 contrato que pede 0,55 (12/11).
   // O multiplicador vem pronto de `account_progress`, que ja aplica o regime
   // pos-saque (0,25 fixo). Repetir a regra aqui foi o que fez a tela discordar
   // do coletor -- e a versao daqui era estreita: so Tradeify Select diaria.
@@ -35,8 +37,9 @@ export function nextLiveLot(challenge, progress) {
   const room = Number(account.drawdown_room);
   const stop = !Number.isFinite(room) || room <= 0
     ? "" : ` Assumes the stop at the floor, ${room.toFixed(2)} away.`;
+  const m = Math.round(Number(multiplier) * 100) / 100;
   return {
-    lot: Math.round(Number(multiplier) * contracts * 100) / 100,
-    reason: `${afterPayout ? "Fixed after the first payout" : "Recovery calculation"}: ${Number(multiplier)} per contract × ${contracts} contract(s). Assumes the same contract quantity as the last operation.${stop}`,
+    lot: m,
+    reason: `${afterPayout ? "Fixed after the first payout" : "Recovery calculation"}: Copyator multiplier per contract (2 contracts = ${(m * 2).toFixed(2)} lot).${stop}`,
   };
 }

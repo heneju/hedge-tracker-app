@@ -10,33 +10,33 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=dddad9472f";
+} from "./db.js?v=c492e4214d";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=dddad9472f";
+} from "./util.js?v=c492e4214d";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=dddad9472f";
-import { cell, locked, wireEditables } from "./editable.js?v=dddad9472f";
-import { exportChallenges } from "./export.js?v=dddad9472f";
-import { mountPlanPicker } from "./plan-picker.js?v=dddad9472f";
-import { nextLiveLot } from "./next-lot.js?v=dddad9472f";
-import { buildPlan, monthOf, sessionDay, weekOf } from "./plan.js?v=dddad9472f";
-import { mountProofZone } from "./proof.js?v=dddad9472f";
-import { filterForFirm } from "./firm-accounts.js?v=dddad9472f";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=dddad9472f";
+} from "./charts.js?v=c492e4214d";
+import { cell, locked, wireEditables } from "./editable.js?v=c492e4214d";
+import { exportChallenges } from "./export.js?v=c492e4214d";
+import { mountPlanPicker } from "./plan-picker.js?v=c492e4214d";
+import { nextLiveLot } from "./next-lot.js?v=c492e4214d";
+import { buildPlan, monthOf, sessionDay, weekOf } from "./plan.js?v=c492e4214d";
+import { mountProofZone } from "./proof.js?v=c492e4214d";
+import { filterForFirm } from "./firm-accounts.js?v=c492e4214d";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=c492e4214d";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges, collectorAlerts,
-} from "./machine.js?v=dddad9472f";
+} from "./machine.js?v=c492e4214d";
 import { loader,
   renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
   initProfile, raf, odo, burst, landOn, blob, deltaChip,
-} from "./skin.js?v=dddad9472f";
-import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=dddad9472f";
-import { firmMark, logoBg, logoInner } from "./logos.js?v=dddad9472f";
-import { startTour } from "./tour.js?v=dddad9472f";
+} from "./skin.js?v=c492e4214d";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=c492e4214d";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=c492e4214d";
+import { startTour } from "./tour.js?v=c492e4214d";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -1244,7 +1244,7 @@ async function renderChallenges() {
         <table class="dt n">
           <thead><tr>
             <th>Acct</th><th>Firm</th><th>Opened</th><th>Status</th>
-            <th class="num" title="Live lot for the next operation. Evaluation: total recovery cost / drawdown.">Next lot</th>
+            <th class="num" title="Copyator multiplier per contract for the next operation: spent / room to blow (0.25 after the first payout). Live lot = this × contracts.">Mult</th>
             <th class="num">Prop eval</th><th class="num">Prop funded</th>
             <th class="num" title="how much this account can still lose before it breaches. What was already withdrawn is discounted.">To blow</th>
             <th class="num">Cost</th><th class="num">Phase 1 live</th>
