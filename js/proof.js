@@ -98,15 +98,24 @@ const REF_PATTERNS = [
   /(\d{12,})\s*Invoice\s*Number/i,                                                  // Rise: numero colado antes do rotulo
   /Invoice\s*(?:Number|No\.?|#|ID)[:\s#]*(?=[A-Z0-9-]*\d)([A-Z0-9][A-Z0-9-]{3,})/i,
   /(?:Certificate|Verification|Reference|Receipt|Transaction)\s*(?:ID|No\.?|#|Code|Number)[:\s#]*(?=[A-Z0-9-]*\d)([A-Z0-9][A-Z0-9-]{3,})/i,
-  /\b([A-Z0-9]{4}(?:-[A-Z0-9]{4}){3,})\b/,                                           // codigo do certificado da Lucid
+  // codigo do certificado da Lucid; o OCR as vezes poe um espaco dentro do
+  // grupo ou em volta do traco (18/11: "360B-16SK-QT OP-WCGP-ZCGG")
+  /\b([A-Z0-9](?: ?[A-Z0-9]){3}(?: ?- ?[A-Z0-9](?: ?[A-Z0-9]){3}){3,})\b/,
 ];
 
 export function findRef(flat) {
   for (const re of REF_PATTERNS) {
     const m = flat.match(re);
-    if (m) return m[1];
+    if (m) return m[1].replace(/\s+/g, "");
   }
   return null;
+}
+
+// O codigo da Lucid e base32 de Crockford: sem I, L, O e U (nenhuma nos tres
+// certificados ate 18/11). O OCR le o zero como O -- normaliza como a spec.
+export function lucidCode(ref) {
+  if (!/^[A-Z0-9]{4}(?:-[A-Z0-9]{4}){4}$/.test(ref || "")) return ref;
+  return ref.replace(/O/g, "0").replace(/[IL]/g, "1");
 }
 
 export function findSource(flat) {
@@ -117,7 +126,39 @@ export function findSource(flat) {
 
 export function parseProof(raw) {
   const flat = String(raw || "").replace(/\s+/g, " ").trim();
-  return { amount: findAmount(flat), date: findDate(flat), ref: findRef(flat), source: findSource(flat), text: flat };
+  const source = findSource(flat);
+  const ref = findRef(flat);
+  return { amount: findAmount(flat), date: findDate(flat), ref: source === "Lucid" ? lucidCode(ref) : ref, source, text: flat };
+}
+
+// ------------------------------------------------------------------- nota
+// A nota do saque = certificado x split, como a view `accounting_moves` faz
+// (round 2). O que caiu na carteira nunca passa dela: a taxa de transferencia
+// so tira. Liquido acima da nota e o valor pedido digitado no lugar do que
+// caiu (18/11: 1.800 contra 1.998 x 90% = 1.798,20) e a view usaria o maior.
+export function noteOf(gross, split) {
+  const g = Number(gross), s = Number(split);
+  if (!(g > 0) || !(s > 0)) return null;
+  // Em centavos x centesimos do split: o meio centavo fica exato e sobe, como
+  // o round(numeric, 2) da view. Em float, 2100.45 x 90 dava 189040.4999...
+  return Math.round(Math.round(g * 100) * Math.round(s * 100) / 10000) / 100;
+}
+
+// O bruto que o comprovante diz. Certificado da Lucid = bruto antes do split.
+// Invoice da Rise (Top One) = o que a mesa pagou, ja depois do split -- a
+// propria nota (NF 1 e 3: $1.350 = 1.500 x 90%); o bruto e valor ÷ split, e
+// sem split nao ha como saber. null = nao mexer no bruto.
+export function grossFromProof(r, split) {
+  if (r?.amount == null) return null;
+  if (r.source !== "Rise") return r.amount;
+  const s = Number(split);
+  return s > 0 ? Math.round(Math.round(r.amount * 100) * 100 / s) / 100 : null;
+}
+
+// A nota, quando o liquido passa dela; senao null (inclusive sem split).
+export function netAboveNote(net, gross, split) {
+  const nota = noteOf(gross, split);
+  return nota != null && Number(net) > nota + 0.005 ? nota : null;
 }
 
 // ---------------------------------------------------------------- leitura
@@ -233,56 +274,79 @@ function script(url) {
 
 // ----------------------------------------------------------------- a caixa
 // `host` recebe a caixa de colar; `pasteTarget` e quem escuta o Ctrl+V (o
-// modal inteiro, quando so ha uma caixa nele); `onRead(result, file)` recebe
-// o que foi lido. Devolve o arquivo que entrou para quem for gravar.
-export function mountProofZone(host, { pasteTarget = null, onRead = () => {}, compact = false } = {}) {
+// modal ou a aba inteira, quando so ha uma caixa ali); `confirmPaste(file)`,
+// quando dado, pergunta antes de aceitar o Ctrl+V que nao caiu na caixa;
+// `onRead(result, file)` recebe o que foi lido. Devolve o arquivo que entrou
+// para quem for gravar e `reading`, a leitura em andamento -- quem grava
+// espera por ela.
+export function mountProofZone(host, { pasteTarget = null, confirmPaste = null, onRead = () => {}, compact = false } = {}) {
   const prompt = compact
-    ? "paste the certificate / invoice here (Ctrl+V) or <u>choose a file</u>"
-    : "paste the payout certificate or the Rise invoice here (Ctrl+V), drop the file, or <u>choose one</u>";
+    ? "paste the certificate / invoice here (Ctrl+V) or"
+    : "paste the payout certificate or the Rise invoice here (Ctrl+V), drop the file, or";
   host.innerHTML = `<div class="proof-zone${compact ? " compact" : ""}" tabindex="0" role="button">
-      <span class="pz-text">${prompt}</span>
+      <span class="pz-text">${prompt}</span><u class="pz-pick">choose a file</u>
       <input type="file" accept="image/*,application/pdf" hidden></div>
     <div class="pz-read" hidden></div>`;
   const zone = host.querySelector(".proof-zone");
   const text = host.querySelector(".pz-text");
   const input = host.querySelector("input[type=file]");
   const read = host.querySelector(".pz-read");
-  const state = { file: null, result: null };
+  const state = { file: null, result: null, reading: null };
   const status = (msg) => {
     read.hidden = !msg;
     read.textContent = msg || "";
   };
 
-  const take = async (file) => {
-    if (!file) return;
-    state.file = file;
-    state.result = null;
+  const readFile = async (file) => {
     zone.classList.add("busy");
     text.textContent = file.name && file.name !== "image.png" ? file.name
       : (file.type || "").startsWith("image/") ? "pasted image" : "file";
     try {
-      const r = await readProof(file, status);
+      // O progresso de uma leitura velha (colou outro, ou reset) nao escreve
+      // por cima da linha "read: …" da atual.
+      const r = await readProof(file, (m) => { if (state.file === file) status(m); });
+      if (state.file !== file) return;   // colou outro no meio da leitura: vale o novo
       state.result = r;
       const parts = [r.amount != null ? `$${r.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })}` : null,
         r.date, r.ref].filter(Boolean);
       status(parts.length ? `read: ${parts.join(" · ")} — check and fix if needed`
         : "could not read a value — fill the fields by hand; the file is still attached");
-      onRead(r, file);
+      await onRead(r, file);
     } catch (err) {
+      if (state.file !== file) return;
       status(`could not read it (${err.message}) — fill the fields by hand; the file is still attached`);
-      onRead({ amount: null, date: null, ref: null, text: "" }, file);
+      await onRead({ amount: null, date: null, ref: null, text: "" }, file);
     } finally {
-      zone.classList.remove("busy");
+      if (state.file === file) zone.classList.remove("busy");
     }
   };
+  const take = (file) => {
+    if (!file) return;
+    state.file = file;
+    state.result = null;
+    const p = readFile(file);
+    state.reading = p;
+    p.finally(() => { if (state.reading === p) state.reading = null; });
+  };
+  const clipboardFile = (e) => [...(e.clipboardData?.files || [])][0]
+    || [...(e.clipboardData?.items || [])].filter((i) => i.kind === "file").map((i) => i.getAsFile())[0];
   const fromClipboard = (e) => {
-    const file = [...(e.clipboardData?.files || [])][0]
-      || [...(e.clipboardData?.items || [])].filter((i) => i.kind === "file").map((i) => i.getAsFile())[0];
+    const file = clipboardFile(e);
     if (!file) return;
     e.preventDefault();
     take(file);
   };
-  zone.onclick = (e) => { if (e.target !== input) input.click(); };
+  // Clicar na caixa so a foca, e o Ctrl+V vai para ela; o seletor de arquivo
+  // abre pelo "choose a file" (ou Enter/Espaco). Antes o clique abria o
+  // seletor e nao havia como focar a caixa para colar. No toque (celular) nao
+  // ha Ctrl+V: o toque em qualquer ponto da caixa abre o seletor.
+  const coarse = typeof matchMedia === "function" ? matchMedia("(hover: none), (pointer: coarse)") : null;
+  zone.onclick = (e) => {
+    if (e.target === input) return;
+    const toque = e.pointerType === "touch" || e.pointerType === "pen" || (!e.pointerType && coarse?.matches);
+    if (toque || e.target.closest(".pz-pick")) input.click();
+    else zone.focus();
+  };
   zone.onkeydown = (e) => {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
@@ -302,28 +366,47 @@ export function mountProofZone(host, { pasteTarget = null, onRead = () => {}, co
     take(e.dataTransfer?.files?.[0]);
   };
   if (pasteTarget) {
-    // Ctrl+V em qualquer lugar do modal: so quando e arquivo (num campo de
-    // texto o Ctrl+V continua sendo texto) e a caixa ainda nao pegou.
-    pasteTarget.addEventListener("paste", (e) => {
-      if (!e.defaultPrevented && e.clipboardData?.files?.length) fromClipboard(e);
-    });
+    // Ctrl+V em qualquer lugar do modal/aba: so quando e arquivo (num campo de
+    // texto o Ctrl+V continua sendo texto) e a caixa ainda nao pegou. O modal
+    // e a aba sao os MESMOS elementos a cada abertura: o ouvinte de uma caixa
+    // que ja saiu da tela se desliga e deixa o arquivo para a de agora. Antes
+    // o primeiro ouvinte registrado, de uma caixa velha fora da tela, pegava o
+    // Ctrl+V e a caixa visivel nao via nada (18/11: colou e nada aconteceu).
+    const onPaste = (e) => {
+      if (!zone.isConnected) {
+        pasteTarget.removeEventListener("paste", onPaste);
+        return;
+      }
+      if (e.defaultPrevented || !clipboardFile(e)) return;
+      // Colar num campo de texto com texto na area de transferencia continua
+      // sendo texto: o Excel e o Word poem tambem um bitmap das celulas.
+      const campo = e.target?.closest?.("input, textarea, select, [contenteditable]");
+      if (campo && !zone.contains(campo) && [...(e.clipboardData?.types || [])].includes("text/plain")) return;
+      if (confirmPaste && !confirmPaste(clipboardFile(e))) return;
+      fromClipboard(e);
+    };
+    pasteTarget.addEventListener("paste", onPaste);
   }
   return {
     get file() { return state.file; },
     get result() { return state.result; },
+    get reading() { return state.reading; },
     reset() {
       state.file = null;
       state.result = null;
+      state.reading = null;
       input.value = "";
-      text.innerHTML = prompt;
+      text.textContent = prompt;
+      zone.classList.remove("busy");
       status(null);
     },
     attached(path) {
       state.file = null;
       state.result = null;
+      state.reading = null;
       input.value = "";
-      if (path) text.textContent = `attached: ${path.split("/").pop()} — paste another to replace it`;
-      else text.innerHTML = prompt;
+      text.textContent = path ? `attached: ${path.split("/").pop()} — paste another to replace it` : prompt;
+      zone.classList.remove("busy");
       status(null);
     },
   };

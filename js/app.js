@@ -10,33 +10,33 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=c492e4214d";
+} from "./db.js?v=d510f59afa";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=c492e4214d";
+} from "./util.js?v=d510f59afa";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=c492e4214d";
-import { cell, locked, wireEditables } from "./editable.js?v=c492e4214d";
-import { exportChallenges } from "./export.js?v=c492e4214d";
-import { mountPlanPicker } from "./plan-picker.js?v=c492e4214d";
-import { nextLiveLot } from "./next-lot.js?v=c492e4214d";
-import { buildPlan, monthOf, sessionDay, weekOf } from "./plan.js?v=c492e4214d";
-import { mountProofZone } from "./proof.js?v=c492e4214d";
-import { filterForFirm } from "./firm-accounts.js?v=c492e4214d";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=c492e4214d";
+} from "./charts.js?v=d510f59afa";
+import { cell, locked, wireEditables } from "./editable.js?v=d510f59afa";
+import { exportChallenges } from "./export.js?v=d510f59afa";
+import { mountPlanPicker } from "./plan-picker.js?v=d510f59afa";
+import { nextLiveLot } from "./next-lot.js?v=d510f59afa";
+import { buildPlan, monthOf, sessionDay, weekOf } from "./plan.js?v=d510f59afa";
+import { grossFromProof, mountProofZone, netAboveNote } from "./proof.js?v=d510f59afa";
+import { filterForFirm } from "./firm-accounts.js?v=d510f59afa";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=d510f59afa";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges, collectorAlerts,
-} from "./machine.js?v=c492e4214d";
+} from "./machine.js?v=d510f59afa";
 import { loader,
   renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
   initProfile, raf, odo, burst, landOn, blob, deltaChip,
-} from "./skin.js?v=c492e4214d";
-import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=c492e4214d";
-import { firmMark, logoBg, logoInner } from "./logos.js?v=c492e4214d";
-import { startTour } from "./tour.js?v=c492e4214d";
+} from "./skin.js?v=d510f59afa";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=d510f59afa";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=d510f59afa";
+import { startTour } from "./tour.js?v=d510f59afa";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -139,12 +139,12 @@ function proofFileName(firm, accounts, date, file) {
   return `${date}-${slug(firm) || "firm"}-${slug(accounts) || "acct"}.${ext}`;
 }
 
-function toast(message) {
+function toast(message, ms = 2600) {
   const el = document.createElement("div");
   el.className = "toast";
   el.textContent = message;
   document.body.appendChild(el);
-  setTimeout(() => el.remove(), 2600);
+  setTimeout(() => el.remove(), ms);
 }
 
 /**
@@ -1643,8 +1643,9 @@ async function openChallenge(id, journal, firms, progress = []) {
   const proof = mountProofZone(modal.querySelector("#payout-proof"), {
     pasteTarget: modal,
     onRead: (r) => {
-      if (r.amount != null) {
-        payoutGross.value = r.amount.toFixed(2);
+      const bruto = grossFromProof(r, c.split_pct);   // Rise: valor pago ÷ split
+      if (bruto != null) {
+        payoutGross.value = bruto.toFixed(2);
         grossEdited = true;
       }
       if (r.date) proofDate.value = r.date;
@@ -1686,13 +1687,26 @@ async function openChallenge(id, journal, firms, progress = []) {
   });
   payoutForm.onsubmit = async (event) => {
     event.preventDefault();
-    if (payoutButton.disabled || !payoutForm.reportValidity()) return;
+    if (payoutButton.disabled) return;
+    // Colou e clicou antes do OCR terminar (~6 s no certificado da Lucid):
+    // espera, senao o bruto sugerido e a data vazia iam para a nota.
+    // Ate nao haver leitura nenhuma: colar outro durante a espera troca a leitura.
+    if (proof.reading) {
+      payoutButton.disabled = true;
+      toast("Reading the certificate — one moment");
+      try { while (proof.reading) await proof.reading; } finally { payoutButton.disabled = false; }
+    }
+    if (!payoutForm.reportValidity()) return;
     const amount = Number(payoutNet.value);
     const gross = Number(payoutGross.value);
     const redeposit = Number(payoutRedeposit.value);
     if (![amount, gross, redeposit].every(Number.isFinite) || amount <= 0 || gross < amount || redeposit < 0 || redeposit > amount) {
       return toast("Gross must cover net received. Redeposit must be between zero and net received.");
     }
+    const nota = netAboveNote(amount, gross, c.split_pct);
+    if (nota != null && !confirm(`Net received ${money(amount)} is above certificate × ${num(c.split_pct, 0)}% split = `
+        + `${money(nota)}. What lands in the wallet can't exceed that — the transfer fee only takes. `
+        + "Enter what actually landed. Save anyway?")) return;
     payoutButton.disabled = true;
     try {
       const row = { challenge_id: id, kind: "payout", amount, gross_amount: gross,
@@ -4162,6 +4176,7 @@ async function loadPending() {
         date: c.resumed_on,
         firm: c.firm,
         accounts: c.account_ids,
+        split: c.split_pct,
       });
     }
 
@@ -4619,7 +4634,9 @@ function openPendingForm(items, plans, accounts, signature) {
     proofs.set(id, mountProofZone(host, {
       pasteTarget: proofHosts.length === 1 ? modal : null,
       onRead: (r) => {
-        if (r.amount != null) q("data-pending-gross").value = r.amount.toFixed(2);
+        const item = items.find((i) => i.kind === "payout" && String(i.id) === id) || {};
+        const bruto = grossFromProof(r, item.split);   // Rise: valor pago ÷ split
+        if (bruto != null) q("data-pending-gross").value = bruto.toFixed(2);
         if (r.date) q("data-pending-proof-date").value = r.date;
         if (r.ref) q("data-pending-proof-ref").value = r.ref;
       },
@@ -4629,6 +4646,14 @@ function openPendingForm(items, plans, accounts, signature) {
   modal.querySelectorAll("[data-save-payout]").forEach((b) => {
     b.onclick = async () => {
       const id = Number(b.dataset.savePayout);
+      const proof = proofs.get(String(id));
+      const item = items.find((i) => i.kind === "payout" && i.id === id) || {};
+      // Leitura do comprovante ainda rodando: espera, ela preenche bruto, data e numero.
+      if (proof?.reading) {
+        b.disabled = true;
+        toast("Reading the certificate — one moment");
+        try { while (proof.reading) await proof.reading; } finally { b.disabled = false; }
+      }
       const valor = (attr) => Number(modal.querySelector(`[${attr}="${id}"]`).value);
       const net = valor("data-pending-payout");
       const gross = valor("data-pending-gross");
@@ -4636,10 +4661,12 @@ function openPendingForm(items, plans, accounts, signature) {
       if (!(net > 0)) return toast("Enter what you received");
       if (!(gross >= net)) return toast("Gross must cover what you received");
       if (!date) return toast("Enter the date you received it");
+      const nota = netAboveNote(net, gross, item.split);
+      if (nota != null && !confirm(`Net received ${money(net)} is above certificate × ${num(item.split, 0)}% split = `
+          + `${money(nota)}. What lands in the wallet can't exceed that — the transfer fee only takes. `
+          + "Enter what actually landed. Save anyway?")) return;
       // Sem redeposito aqui: é o caso raro, e ele se corrige na linha do
       // challenge. Perguntar tudo de uma vez é o que faz ninguém responder.
-      const proof = proofs.get(String(id));
-      const item = items.find((i) => i.kind === "payout" && i.id === id) || {};
       const row = {
         challenge_id: id, kind: "payout", amount: net, gross_amount: gross, redeposit_amount: 0,
         occurred_on: date, source: "manual",
@@ -5309,23 +5336,52 @@ async function renderAccounting() {
       }
     };
   });
-  // Saque gravado sem comprovante: cola aqui e a nota recebe data e numero.
-  view.querySelectorAll("[data-nf-proof]").forEach((host) => {
+  // Saque gravado sem comprovante: cola aqui e o saque recebe o bruto do
+  // certificado, a data e o numero; a nota, competencia e referencia. Com uma
+  // caixa so na aba, o Ctrl+V em qualquer lugar dela serve; com varias, clica
+  // na caixa da linha e cola.
+  const nfProofHosts = [...view.querySelectorAll("[data-nf-proof]")];
+  nfProofHosts.forEach((host) => {
     const nota = notas.find((r) => String(r.id) === host.dataset.nfProof) || {};
     const ce = nota.cash_events || {};
     mountProofZone(host, {
       compact: true,
+      pasteTarget: nfProofHosts.length === 1 ? view : null,
+      // Grava na hora, sem botao: o Ctrl+V fora da caixa pergunta de qual saque e.
+      confirmPaste: (file) => confirm(`Attach ${file?.name && file.name !== "image.png" ? file.name : "the pasted image"} `
+        + `as the proof of ${nota.taker_name || "this payout"}, received ${day(ce.occurred_on)}, wallet ${money(ce.amount)}?`),
       onRead: async (r, file) => {
         try {
           const patch = { proof_date: r.date || null, proof_ref: r.ref || null,
             proof_path: await save.proofFile(proofFileName(nota.taker_name, `ce${ce.id}`, ce.occurred_on, file), file) };
+          // O bruto e o do comprovante: e dele que sai a nota. Antes so avisava
+          // a diferenca e o bruto chutado (liquido ÷ split) ia para a NF. Rise
+          // traz o valor pago, ja depois do split (grossFromProof). Abaixo do
+          // que caiu na carteira nao grava: o banco recusa e e leitura errada.
+          const split = (await load.payoutMove(ce.id))?.split_pct;
+          const net = Number(ce.amount);
+          const lido = grossFromProof(r, split);
+          const antes = ce.gross_amount != null ? Number(ce.gross_amount) : null;
+          if (lido != null && lido >= net && (antes == null || Math.abs(lido - antes) >= 0.005)) {
+            patch.gross_amount = lido;
+          }
           await save.cashProof(ce.id, patch);
-          toast(r.amount != null && Math.abs(Number(ce.gross_amount) - r.amount) >= 0.01
-            ? `Proof saved — it says ${money(r.amount)}, the gross recorded is ${money(ce.gross_amount)}; fix the payout on the challenge if needed`
-            : "Proof saved");
+          const gross = patch.gross_amount ?? antes;
+          const avisos = [];
+          if (r.amount == null) avisos.push(`could not read the amount — gross stays ${money(antes)}`);
+          else if (lido == null) avisos.push(`no split set for this firm — gross stays ${money(antes)}`);
+          else if (lido < net) avisos.push(`it reads ${money(lido)}, below the ${money(net)} received — gross kept at ${money(antes)}, check the file`);
+          else if (patch.gross_amount != null && antes != null) avisos.push(`gross ${money(antes)} → ${money(lido)}`);
+          const teto = netAboveNote(net, gross, split);
+          if (teto != null) {
+            avisos.push(`net received ${money(net)} is above certificate × split = ${money(teto)} — fix "Net received" on the challenge to what landed`);
+          }
+          const alerta = teto != null || (lido != null && lido < net);
+          toast(`Proof saved${avisos.length ? ` — ${avisos.join("; ")}` : ""}. USD and R$ update on the next collector cycle`,
+            alerta ? 12000 : 6000);
           renderAccounting();
         } catch (err) {
-          toast(`Error: ${err.message}`);
+          toast(`Error: ${err.message}`, 8000);
         }
       },
     });

@@ -5,7 +5,7 @@
 // fica so no coletor, no PC.
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { CONFIG } from "./config.js?v=c492e4214d";
+import { CONFIG } from "./config.js?v=d510f59afa";
 
 export const supabase = createClient(CONFIG.url, CONFIG.anonKey);
 
@@ -165,6 +165,13 @@ export const load = {
       .select("*, cash_events(id, occurred_on, amount, gross_amount, challenge_id, proof_path, proof_ref, proof_date)")
       .order("status").order("competence", { ascending: false }).order("id", { ascending: false })
       .then(unwrap),
+
+  // A linha do saque no livro-caixa: `split_pct` ja resolvido como a nota usa
+  // (challenge > plano > mesa > 100), para o bruto da Rise e o liquido x nota.
+  payoutMove: (cashEventId) =>
+    supabase.from("accounting_moves").select("amount, split_pct")
+      .eq("move_id", `cash:${cashEventId}`).limit(1)
+      .then(unwrap).then((rows) => rows?.[0] || null),
 
   // Contas inteiras fora dos livros (0087): challenge:<id> ou account:<id>.
   excludedAccounts: () =>
@@ -469,9 +476,9 @@ export const save = {
     return path;
   },
 
-  // Comprovante colado depois do saque gravado (aba Accounting): a nota `todo`
-  // recebe a competencia e a referencia na hora; o coletor refaz PTAX, R$ e
-  // descricao no ciclo seguinte.
+  // Comprovante colado depois do saque gravado (aba Accounting): o saque recebe
+  // o bruto do certificado e a nota `todo` a competencia e a referencia na
+  // hora; o coletor refaz USD, PTAX, R$ e descricao no ciclo seguinte.
   cashProof: async (cashEventId, patch) => {
     await supabase.from("cash_events").update(patch).eq("id", cashEventId).then(unwrap);
     await proofToInvoice(cashEventId, patch);
