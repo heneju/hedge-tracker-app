@@ -10,33 +10,33 @@
 import {
   load, save, manualPatch, supabase, currentUser, signInWithPassword,
   signInWithEmail, changePassword, signOut,
-} from "./db.js?v=d510f59afa";
+} from "./db.js?v=b1d9197577";
 import {
   money, money0, num, signClass, day, stamp, monthLabel, esc,
   STATUS_LABEL, PHASE_LABEL, statusLabel, statusOptions, phaseLabel, phasesFor,
   magicSourcePart, accountShort, signedCash, CONSISTENCY_SLACK_PCT,
-} from "./util.js?v=d510f59afa";
+} from "./util.js?v=b1d9197577";
 import {
   equityCurve, equityFinal, firmBreakdown, accountProgress,
-} from "./charts.js?v=d510f59afa";
-import { cell, locked, wireEditables } from "./editable.js?v=d510f59afa";
-import { exportChallenges } from "./export.js?v=d510f59afa";
-import { mountPlanPicker } from "./plan-picker.js?v=d510f59afa";
-import { nextLiveLot } from "./next-lot.js?v=d510f59afa";
-import { buildPlan, monthOf, sessionDay, weekOf } from "./plan.js?v=d510f59afa";
-import { grossFromProof, mountProofZone, netAboveNote } from "./proof.js?v=d510f59afa";
-import { filterForFirm } from "./firm-accounts.js?v=d510f59afa";
-import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=d510f59afa";
+} from "./charts.js?v=b1d9197577";
+import { cell, locked, wireEditables } from "./editable.js?v=b1d9197577";
+import { exportChallenges } from "./export.js?v=b1d9197577";
+import { mountPlanPicker } from "./plan-picker.js?v=b1d9197577";
+import { nextLiveLot } from "./next-lot.js?v=b1d9197577";
+import { buildPlan, monthOf, sessionDay, weekOf } from "./plan.js?v=b1d9197577";
+import { grossFromProof, mountProofZone, netAboveNote } from "./proof.js?v=b1d9197577";
+import { filterForFirm } from "./firm-accounts.js?v=b1d9197577";
+import { currentPhase, newerAttempt, planReset } from "./reset-account.js?v=b1d9197577";
 import {
   ALL, machineNames, keep as keepOfMachine, keepByAccount, keepChallenges, collectorAlerts,
-} from "./machine.js?v=d510f59afa";
+} from "./machine.js?v=b1d9197577";
 import { loader,
   renderTabs, placePill, tabCount, notify, initTabsHover, setIsland, islandSay,
   initProfile, raf, odo, burst, landOn, blob, deltaChip,
-} from "./skin.js?v=d510f59afa";
-import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=d510f59afa";
-import { firmMark, logoBg, logoInner } from "./logos.js?v=d510f59afa";
-import { startTour } from "./tour.js?v=d510f59afa";
+} from "./skin.js?v=b1d9197577";
+import { mountField, fieldEvent, fieldExit, fieldBox, fieldSize } from "./field.js?v=b1d9197577";
+import { firmMark, logoBg, logoInner } from "./logos.js?v=b1d9197577";
+import { startTour } from "./tour.js?v=b1d9197577";
 
 const view = document.getElementById("view");
 const modal = document.getElementById("modal");
@@ -5670,6 +5670,7 @@ async function pulse() {
     const [sessao, journal, contas] = await Promise.all([load.tradedToday(), load.journal(), load.accounts()]);
     const shortOf = new Map(contas.map((a) => [a.id, accountShort(a.login_or_name)]));
     snap = {
+      accts: new Set(contas.map((a) => a.id)),
       trades: new Map(sessao.map((r) => [r.account_id, { n: Number(r.trades_today || 0), open: Boolean(r.open_now), short: shortOf.get(r.account_id) }])),
       ch: new Map(journal.map((c) => [c.id, { status: c.status, total: Number(c.total_pnl || 0), hedge: Number(c.lost_hedging || 0), acct: (c.account_ids || "").split("/").pop().trim(), firm: c.firm, trades: Number(c.trade_count || 0) }])),
     };
@@ -5682,6 +5683,13 @@ async function pulse() {
       if (before && now.n > before.n) pushEvent({ kind: "fill", acc: now.short, title: `${now.short} · ${now.n - before.n} trade${now.n - before.n > 1 ? "s" : ""} closed`, tag: "fill", color: "#67E8F9" });
       else if (before && now.open && !before.open) pushEvent({ kind: "fill", acc: now.short, title: `${now.short} · position open`, tag: "open", color: "#67E8F9" });
     }
+    // Conta nova (cadastro automatico, ou feita em outro aparelho): avisa e
+    // redesenha a aba, senao o Plan so a mostrava depois de trocar de aba.
+    const novas = [...snap.ch].filter(([id]) => !lastSnap.ch.has(id));
+    for (const [, now] of novas) {
+      pushEvent({ kind: "new", acc: now.acct, ic: "+", title: `${now.acct} registered`, sub: `${now.firm} · it's in the Plan now`, tag: "new", color: "#67E8F9" });
+    }
+    if (novas.length || [...snap.accts].some((id) => !lastSnap.accts.has(id))) redrawPending = true;
     for (const [id, now] of snap.ch) {
       const before = lastSnap.ch.get(id);
       if (!before) continue;
@@ -5696,8 +5704,28 @@ async function pulse() {
     }
   }
   lastSnap = snap;
+  if (redrawPending) redrawIfIdle();
   refreshAccounting();
 }
+
+// Redesenha a aba aberta sem apagar o que ele esta preenchendo: com campo em
+// foco, valor digitado e nao salvo, ou dialogo aberto, espera o proximo pulso.
+const REDRAW_PAGES = ["plan", "challenges", "overview"];
+let redrawPending = false;
+function redrawIfIdle() {
+  if (!REDRAW_PAGES.includes(state.page)) { redrawPending = false; return; }
+  const campos = [...view.querySelectorAll("input, textarea, select")];
+  const sujo = campos.some((el) => el.tagName === "SELECT"
+    ? [...el.options].some((o) => o.selected !== o.defaultSelected)
+    : (el.type === "checkbox" || el.type === "radio") ? el.checked !== el.defaultChecked
+      : el.value !== el.defaultValue);
+  if (goBusy || modal.open || sujo || campos.includes(document.activeElement)) return;
+  redrawPending = false;
+  RENDERERS[state.page]().then(placePill).catch(() => {});
+}
+
+// Voltou para a aba do painel: confere na hora, sem esperar os 20 s.
+document.addEventListener("visibilitychange", () => { if (!document.hidden) pulse(); });
 
 function pushEvent(ev) {
   ev.when = new Date().toISOString().slice(11, 16);
